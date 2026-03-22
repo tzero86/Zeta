@@ -30,5 +30,6 @@
     }
   },
 
-  "plugin": ["context-mode"]
+  "plugin": ["context-mode"],
+  "plugin": ["opencode-anthropic-oauth@latest"]
 }

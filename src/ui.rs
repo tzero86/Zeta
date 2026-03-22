@@ -1,5 +1,6 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
+use ratatui::symbols::border as border_symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
@@ -12,12 +13,24 @@ use crate::fs::EntryKind;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
+/// ASCII border set — renders correctly on any Windows terminal font.
+const ASCII_BORDERS: border_symbols::Set = border_symbols::Set {
+    top_left: "+",
+    top_right: "+",
+    bottom_left: "+",
+    bottom_right: "+",
+    vertical_left: "|",
+    vertical_right: "|",
+    horizontal_top: "-",
+    horizontal_bottom: "-",
+};
+
 fn get_entry_icon(kind: EntryKind) -> &'static str {
     match kind {
-        EntryKind::Directory => "[D]",
-        EntryKind::Symlink => "[L]",
-        EntryKind::File => "[F]",
-        EntryKind::Other => "[?]",
+        EntryKind::Directory => "/",
+        EntryKind::Symlink => "@",
+        EntryKind::File => "-",
+        EntryKind::Other => "?",
     }
 }
 
@@ -221,6 +234,7 @@ fn render_menu_popup(
 
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.surface_bg));
     let inner = block.inner(popup_area);
@@ -279,6 +293,7 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
     let block = Block::default()
         .title(prompt.title)
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
@@ -334,6 +349,7 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
     let block = Block::default()
         .title(dialog.title)
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
@@ -372,6 +388,7 @@ fn render_collision_dialog(
     let block = Block::default()
         .title("Resolve Collision")
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(
             Style::default()
                 .fg(palette.prompt_border)
@@ -416,6 +433,7 @@ fn render_pane(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -462,8 +480,8 @@ fn render_item(
     available_width: usize,
     palette: ThemePalette,
 ) -> ListItem<'static> {
-    let guide = if is_last { " " } else { "| " };
-    let branch = if is_last { "\\" } else { "|" };
+    let guide = if is_last { "  " } else { "|  " };
+    let branch = if is_last { "`" } else { "+" };
     let label_style = match entry.kind {
         crate::fs::EntryKind::Directory => Style::default()
             .fg(palette.directory_fg)
@@ -597,58 +615,53 @@ fn render_editor(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // Gutter width: enough for 5-digit line numbers + 1 space separator.
+    let gutter_width = 6u16;
     let editor_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(6), Constraint::Min(1)])
+        .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
         .split(inner);
 
-    let line_gutter = Block::default().style(
-        Style::default()
-            .fg(palette.text_muted)
-            .bg(palette.surface_bg),
-    );
-    frame.render_widget(line_gutter, editor_chunks[0]);
-
-    let line_number_width = 4usize;
+    let line_number_width = (gutter_width as usize).saturating_sub(1);
     let (visible_start, visible_lines) =
         editor.visible_line_window(editor_chunks[1].height as usize);
+
+    // Build gutter: right-align numbers, pad with a space on the right.
     let numbers = visible_lines
         .iter()
         .enumerate()
         .map(|(index, _)| {
             format!(
-                "{:>width$}",
+                "{:>width$} ",
                 visible_start + index + 1,
-                width = line_number_width
+                width = line_number_width.saturating_sub(1),
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let gutter = Paragraph::new(numbers)
-        .style(
-            Style::default()
-                .fg(palette.text_muted)
-                .bg(palette.surface_bg),
-        )
-        .wrap(Wrap { trim: false });
+    let gutter = Paragraph::new(numbers).style(
+        Style::default()
+            .fg(palette.text_muted)
+            .bg(palette.surface_bg),
+    );
     frame.render_widget(gutter, editor_chunks[0]);
 
+    // Content: no word-wrap so line numbers stay in sync with visible rows.
     let preview = visible_lines
         .into_iter()
         .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    let paragraph = Paragraph::new(preview)
-        .style(
-            Style::default()
-                .fg(palette.text_primary)
-                .bg(palette.surface_bg),
-        )
-        .wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(preview).style(
+        Style::default()
+            .fg(palette.text_primary)
+            .bg(palette.surface_bg),
+    );
     frame.render_widget(paragraph, editor_chunks[1]);
 
     if is_active {
