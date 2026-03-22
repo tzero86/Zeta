@@ -1,6 +1,6 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
@@ -61,9 +61,9 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
     let menu_text = if state.is_editor_focused() {
-        " Zeta | File  Open:F4  Save:Ctrl+S  Discard:Ctrl+D  Close:Esc  Quit:Ctrl+Q "
+        " Zeta | File  Open:F4  Save:Ctrl+S  Discard:Ctrl+D  Close:Esc  Quit:Ctrl+Q | Editor "
     } else {
-        " Zeta | File  Open Dir:Enter  Parent:Backspace  Open Editor:F4  Quit:Ctrl+Q "
+        " Zeta | Navigate  Open:Enter  Parent:Backspace  Editor:F4  Quit:Ctrl+Q | Browser "
     };
 
     let menu = Paragraph::new(Line::raw(menu_text)).style(
@@ -78,13 +78,18 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
 fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {
     let border_style = if is_focused {
         Style::default()
-            .fg(Color::Cyan)
+            .fg(Color::Rgb(118, 196, 182))
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
     };
 
-    let title = format!("{}  {}", pane.title, pane.cwd.display());
+    let title = format!(
+        "{} [{}]  {}",
+        pane.title,
+        pane.entries.len(),
+        pane.cwd.display()
+    );
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -98,17 +103,24 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: 
         .split(inner);
 
     let visible_height = pane_chunks[0].height as usize;
+    let visible_entries = pane.visible_entries(visible_height);
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
     } else {
-        pane.visible_entries(visible_height)
+        visible_entries
             .iter()
-            .map(render_item)
+            .enumerate()
+            .map(|(index, entry)| render_item(entry, index + 1 == visible_entries.len()))
             .collect()
     };
 
     let list = List::new(items)
-        .highlight_style(Style::default().bg(Color::DarkGray).fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .bg(Color::Rgb(47, 58, 66))
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol("> ");
 
     let mut list_state = ListState::default();
@@ -119,19 +131,32 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: 
     frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
 
     let legend = Paragraph::new(Line::raw(
-        "+- branch  |- leaf  [D] folder  [F] file  [L] link",
+        "|-- node  `-- last  [D] dir/  [F] file  [L] link",
     ))
     .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(legend, pane_chunks[1]);
 }
 
-fn render_item(entry: &EntryInfo) -> ListItem<'static> {
-    let branch = match entry.kind {
-        crate::fs::EntryKind::Directory => "+-o",
-        _ => "|-o",
+fn render_item(entry: &EntryInfo, is_last: bool) -> ListItem<'static> {
+    let branch = if is_last { "`--" } else { "|--" };
+    let label_style = match entry.kind {
+        crate::fs::EntryKind::Directory => Style::default()
+            .fg(Color::Rgb(118, 196, 182))
+            .add_modifier(Modifier::BOLD),
+        crate::fs::EntryKind::Symlink => Style::default().fg(Color::Rgb(214, 179, 92)),
+        crate::fs::EntryKind::File => Style::default().fg(Color::Gray),
+        crate::fs::EntryKind::Other => Style::default().fg(Color::DarkGray),
     };
-    let line = format!("{} {} {}", branch, entry.kind.ascii_label(), entry.name);
-    ListItem::new(line)
+    let name = match entry.kind {
+        crate::fs::EntryKind::Directory => format!("{}/", entry.name),
+        _ => entry.name.clone(),
+    };
+
+    ListItem::new(Line::from(vec![
+        Span::styled(format!("{} ", branch), Style::default().fg(Color::DarkGray)),
+        Span::styled(format!("{} ", entry.kind.ascii_label()), label_style),
+        Span::styled(name, label_style),
+    ]))
 }
 
 fn render_editor(
@@ -143,7 +168,7 @@ fn render_editor(
 ) {
     let border_style = if is_focused {
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Rgb(230, 188, 98))
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(Color::DarkGray)
