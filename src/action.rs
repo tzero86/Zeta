@@ -64,6 +64,7 @@ pub enum Action {
     SetPaneLayout(PaneLayout),
     SetTheme(ThemePreset),
     ToggleHiddenFiles,
+    TogglePreviewPanel,
     Quit,
     Resize { width: u16, height: u16 },
 }
@@ -155,6 +156,7 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
+            KeyCode::F(3) => Some(Self::TogglePreviewPanel),
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
             KeyCode::F(5) => Some(Self::OpenCopyPrompt),
             KeyCode::F(6) if key_event.modifiers == KeyModifiers::SHIFT => {

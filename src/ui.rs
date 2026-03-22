@@ -42,43 +42,35 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         PaneLayout::SideBySide => Direction::Horizontal,
         PaneLayout::Stacked => Direction::Vertical,
     };
+
+    let is_preview_open = state.is_preview_panel_open();
+
+    let pane_area;
+    let preview_area_opt: Option<Rect>;
+
+    if is_preview_open {
+        // Split vertically: 60% panes, 40% preview.
+        let vertical = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(areas[1]);
+        pane_area = vertical[0];
+        preview_area_opt = Some(vertical[1]);
+    } else {
+        pane_area = areas[1];
+        preview_area_opt = None;
+    }
+
+    // Horizontal split of pane_area into left/right (or top/bottom when stacked).
     let panes = Layout::default()
         .direction(pane_direction)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(areas[1]);
+        .split(pane_area);
 
     let left_focused = state.focus() == PaneId::Left;
     let right_focused = state.focus() == PaneId::Right;
     let is_editor_focused = state.is_editor_focused();
     let has_editor = state.editor().is_some();
-
-    // Compute preview content by cloning it out to avoid borrow conflicts.
-    let left_preview_content: Option<PreviewContent> = if left_focused {
-        state
-            .preview()
-            .filter(|(path, _)| {
-                state
-                    .left_pane()
-                    .selected_path()
-                    .is_some_and(|sel| sel == *path)
-            })
-            .map(|(_, content)| content.clone())
-    } else {
-        None
-    };
-    let right_preview_content: Option<PreviewContent> = if right_focused && !has_editor {
-        state
-            .preview()
-            .filter(|(path, _)| {
-                state
-                    .right_pane()
-                    .selected_path()
-                    .is_some_and(|sel| sel == *path)
-            })
-            .map(|(_, content)| content.clone())
-    } else {
-        None
-    };
 
     let is_stacked = state.pane_layout() == PaneLayout::Stacked;
     let (first_label, second_label) = if is_stacked {
@@ -121,15 +113,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         );
     }
 
-    // Preview overlay — rendered after panes so it floats on top.
-    let active_pane_area = if left_focused { panes[0] } else { panes[1] };
-    let active_preview = if left_focused {
-        left_preview_content.as_ref()
+    // Dedicated preview panel — rendered below panes when open.
+    let preview_content: Option<&PreviewContent> = if is_preview_open {
+        state.preview().map(|(_, c)| c)
     } else {
-        right_preview_content.as_ref()
+        None
     };
-    if let Some(content) = active_preview {
-        render_preview_overlay(frame, active_pane_area, content, palette);
+
+    if let Some(area) = preview_area_opt {
+        let filename = state.active_pane_title().to_string();
+        render_preview_panel(frame, area, preview_content, &filename, palette);
     }
 
     if let Some(menu) = state.active_menu() {
@@ -517,41 +510,26 @@ fn render_pane(
     frame.render_stateful_widget(list, list_area, &mut list_state);
 }
 
-fn render_preview_overlay(
+fn render_preview_panel(
     frame: &mut Frame<'_>,
     area: Rect,
-    content: &PreviewContent,
+    content: Option<&PreviewContent>,
+    filename: &str,
     palette: ThemePalette,
 ) {
-    // Centered floating overlay: 90% width, 80% height of the pane area.
-    let width = (area.width as f32 * 0.90) as u16;
-    let height = (area.height as f32 * 0.80) as u16;
-    let x = area.x + (area.width.saturating_sub(width)) / 2;
-    let y = area.y + (area.height.saturating_sub(height)) / 2;
-    let popup_area = Rect {
-        x,
-        y,
-        width,
-        height,
-    };
-
+    let title = format!(" Preview  {} ", filename);
     let block = Block::default()
-        .title(" Preview ")
+        .title(title)
         .borders(Borders::ALL)
-        .border_style(
-            Style::default()
-                .fg(palette.prompt_border)
-                .add_modifier(Modifier::BOLD),
-        )
-        .style(Style::default().bg(palette.surface_bg));
-    let inner = block.inner(popup_area);
-    frame.render_widget(Clear, popup_area);
-    frame.render_widget(block, popup_area);
+        .border_style(Style::default().fg(palette.text_muted));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
 
     let body = match content {
-        PreviewContent::Text(text) => text.clone(),
-        PreviewContent::Binary { size_bytes } => format!("[binary — {size_bytes} bytes]"),
-        PreviewContent::Empty => String::from("[empty file]"),
+        Some(PreviewContent::Text(t)) => t.clone(),
+        Some(PreviewContent::Binary { size_bytes }) => format!("[binary — {size_bytes} bytes]"),
+        Some(PreviewContent::Empty) => String::from("[empty file]"),
+        None => String::from("[directory — select a file to preview]"),
     };
 
     let paragraph = Paragraph::new(body)

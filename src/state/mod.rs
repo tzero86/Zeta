@@ -37,6 +37,7 @@ pub struct AppState {
     dialog: Option<DialogState>,
     collision: Option<CollisionState>,
     pub preview: Option<(PathBuf, PreviewContent)>,
+    pub preview_panel_open: bool,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -75,6 +76,7 @@ impl AppState {
             dialog: None,
             collision: None,
             preview: None,
+            preview_panel_open: false,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "loading panes | config {} ({})",
@@ -752,6 +754,10 @@ impl AppState {
                 self.preview = None;
                 self.needs_redraw = true;
             }
+            Action::TogglePreviewPanel => {
+                self.preview_panel_open = !self.preview_panel_open;
+                self.needs_redraw = true;
+            }
             Action::PreviewFile { path } => {
                 commands.push(Command::PreviewFile { path: path.clone() });
             }
@@ -873,6 +879,17 @@ impl AppState {
 
     pub fn preview(&self) -> Option<&(PathBuf, PreviewContent)> {
         self.preview.as_ref()
+    }
+
+    pub fn is_preview_panel_open(&self) -> bool {
+        self.preview_panel_open
+    }
+
+    pub fn active_pane_title(&self) -> &str {
+        self.active_pane()
+            .selected_entry()
+            .map(|e| e.name.as_str())
+            .unwrap_or("")
     }
 
     pub fn active_menu(&self) -> Option<MenuId> {
@@ -1158,6 +1175,7 @@ mod tests {
             dialog: None,
             collision: None,
             preview: None,
+            preview_panel_open: false,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
