@@ -81,28 +81,29 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 }
 
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
-    let menu = Paragraph::new(Line::from(vec![
-        menu_span(" Zeta ", None, false, palette),
-        menu_span(
-            " File ",
-            Some('F'),
-            state.active_menu() == Some(MenuId::File),
-            palette,
-        ),
-        menu_span(
-            " Navigate ",
-            Some('N'),
-            state.active_menu() == Some(MenuId::Navigate),
-            palette,
-        ),
-        menu_span(
-            " View ",
-            Some('V'),
-            state.active_menu() == Some(MenuId::View),
-            palette,
-        ),
-    ]))
-    .style(
+    let mut line = Line::default();
+    line.spans
+        .extend(menu_spans(" Zeta ", None, false, palette));
+    line.spans.extend(menu_spans(
+        " File ",
+        Some('F'),
+        state.active_menu() == Some(MenuId::File),
+        palette,
+    ));
+    line.spans.extend(menu_spans(
+        " Navigate ",
+        Some('N'),
+        state.active_menu() == Some(MenuId::Navigate),
+        palette,
+    ));
+    line.spans.extend(menu_spans(
+        " View ",
+        Some('V'),
+        state.active_menu() == Some(MenuId::View),
+        palette,
+    ));
+
+    let menu = Paragraph::new(line).style(
         Style::default()
             .fg(palette.menu_fg)
             .bg(palette.menu_bg)
@@ -111,12 +112,12 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette:
     frame.render_widget(menu, area);
 }
 
-fn menu_span(
+fn menu_spans(
     label: &'static str,
     mnemonic: Option<char>,
     active: bool,
     palette: ThemePalette,
-) -> Span<'static> {
+) -> Vec<Span<'static>> {
     let style = if active {
         Style::default()
             .fg(palette.menu_fg)
@@ -127,7 +128,7 @@ fn menu_span(
     };
 
     let highlighted = mnemonic.map(|value| value.to_ascii_uppercase());
-    let mut line = Line::default();
+    let mut spans = Vec::with_capacity(label.len());
     let mut used_highlight = false;
 
     for ch in label.chars() {
@@ -136,10 +137,10 @@ fn menu_span(
             char_style = char_style.fg(palette.menu_mnemonic_fg);
             used_highlight = true;
         }
-        line.spans.push(Span::styled(ch.to_string(), char_style));
+        spans.push(Span::styled(ch.to_string(), char_style));
     }
 
-    Span::from(line.to_string())
+    spans
 }
 
 fn render_menu_popup(
