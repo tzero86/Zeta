@@ -28,6 +28,15 @@ impl EntryKind {
             Self::Other => '?',
         }
     }
+
+    pub fn ascii_label(self) -> &'static str {
+        match self {
+            Self::Directory => "[D]",
+            Self::File => "[F]",
+            Self::Symlink => "[L]",
+            Self::Other => "[?]",
+        }
+    }
 }
 
 #[derive(Debug, Error)]

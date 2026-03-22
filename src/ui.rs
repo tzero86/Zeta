@@ -1,4 +1,4 @@
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
@@ -53,12 +53,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     frame.render_widget(status, areas[1]);
 }
 
-fn render_pane(
-    frame: &mut Frame<'_>,
-    area: ratatui::layout::Rect,
-    pane: &PaneState,
-    is_focused: bool,
-) {
+fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {
     let border_style = if is_focused {
         Style::default()
             .fg(Color::Cyan)
@@ -75,7 +70,12 @@ fn render_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let visible_height = inner.height as usize;
+    let pane_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(inner);
+
+    let visible_height = pane_chunks[0].height as usize;
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
     } else {
@@ -94,17 +94,25 @@ fn render_pane(
         list_state.select(pane.visible_selection(visible_height));
     }
 
-    frame.render_stateful_widget(list, inner, &mut list_state);
+    frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
+
+    let legend = Paragraph::new(Line::raw("+- dir  [D] folder  [F] file  [L] link"))
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(legend, pane_chunks[1]);
 }
 
 fn render_item(entry: &EntryInfo) -> ListItem<'static> {
-    let line = format!("{} {}", entry.kind.symbol(), entry.name);
+    let branch = match entry.kind {
+        crate::fs::EntryKind::Directory => "+-",
+        _ => "|-",
+    };
+    let line = format!("{} {} {}", branch, entry.kind.ascii_label(), entry.name);
     ListItem::new(line)
 }
 
 fn render_editor(
     frame: &mut Frame<'_>,
-    area: ratatui::layout::Rect,
+    area: Rect,
     editor: &EditorBuffer,
     is_focused: bool,
     is_active: bool,
@@ -131,31 +139,49 @@ fn render_editor(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let editor_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(6), Constraint::Min(1)])
+        .split(inner);
+
+    let line_gutter = Block::default().style(Style::default().fg(Color::DarkGray).bg(Color::Black));
+    frame.render_widget(line_gutter, editor_chunks[0]);
+
     let line_number_width = 4usize;
-    let (visible_start, visible_lines) = editor.visible_line_window(inner.height as usize);
-    let preview = visible_lines
-        .into_iter()
+    let (visible_start, visible_lines) =
+        editor.visible_line_window(editor_chunks[1].height as usize);
+    let numbers = visible_lines
+        .iter()
         .enumerate()
-        .map(|(index, line)| {
-            let trimmed = line.strip_suffix('\n').unwrap_or(&line);
+        .map(|(index, _)| {
             format!(
-                "{:>width$} {}",
+                "{:>width$}",
                 visible_start + index + 1,
-                trimmed,
                 width = line_number_width
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let gutter = Paragraph::new(numbers)
+        .style(Style::default().fg(Color::DarkGray).bg(Color::Black))
+        .wrap(Wrap { trim: false });
+    frame.render_widget(gutter, editor_chunks[0]);
+
+    let preview = visible_lines
+        .into_iter()
+        .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
     let paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(paragraph, editor_chunks[1]);
 
     if is_active {
         let (line, column) = editor.cursor_line_col();
         let visible_line = line.saturating_sub(visible_start);
-        let cursor_y = inner.y + (visible_line as u16).min(inner.height.saturating_sub(1));
+        let cursor_y = editor_chunks[1].y
+            + (visible_line as u16).min(editor_chunks[1].height.saturating_sub(1));
         let cursor_x =
-            inner.x + ((column + line_number_width + 1) as u16).min(inner.width.saturating_sub(1));
+            editor_chunks[1].x + (column as u16).min(editor_chunks[1].width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
