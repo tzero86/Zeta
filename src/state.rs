@@ -198,7 +198,7 @@ impl AppState {
                         "Delete",
                         self.active_pane().cwd.clone(),
                         Some(entry_path),
-                        String::from("type DELETE to confirm"),
+                        String::new(),
                     ));
                     self.status_message = format!("confirm delete for {entry_name}");
                 } else {

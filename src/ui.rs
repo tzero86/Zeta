@@ -191,7 +191,7 @@ fn render_menu_popup(
 
 fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
     let width = area.width.min(48);
-    let height = 5;
+    let height = 6;
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {
@@ -209,11 +209,22 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
-    let body = format!(
-        "Path: {}\nValue: {}\nEnter submit | Esc cancel",
-        prompt.base_path.display(),
-        prompt.value
-    );
+    let body = match prompt.kind {
+        crate::state::PromptKind::Delete => format!(
+            "Delete target:\n{}\n\nType DELETE: {}\nEnter submit | Esc cancel",
+            prompt
+                .source_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| String::from("<missing target>")),
+            prompt.value,
+        ),
+        _ => format!(
+            "Path: {}\nValue: {}\nEnter submit | Esc cancel",
+            prompt.base_path.display(),
+            prompt.value
+        ),
+    };
     let paragraph = Paragraph::new(body).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
