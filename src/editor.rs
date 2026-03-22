@@ -8,6 +8,7 @@ use thiserror::Error;
 pub struct EditorBuffer {
     pub path: Option<PathBuf>,
     pub cursor_char_idx: usize,
+    pub scroll_col: usize,
     pub text: Rope,
     pub is_dirty: bool,
 }
@@ -17,6 +18,7 @@ impl Default for EditorBuffer {
         Self {
             path: None,
             cursor_char_idx: 0,
+            scroll_col: 0,
             text: Rope::new(),
             is_dirty: false,
         }
@@ -34,6 +36,7 @@ impl EditorBuffer {
         Ok(Self {
             path: Some(path.to_path_buf()),
             cursor_char_idx: 0,
+            scroll_col: 0,
             text: Rope::from_str(&contents),
             is_dirty: false,
         })
@@ -134,6 +137,18 @@ impl EditorBuffer {
         let line = self.text.char_to_line(safe_idx);
         let line_start = self.text.line_to_char(line);
         (line, safe_idx.saturating_sub(line_start))
+    }
+
+    /// Called by the renderer after layout is known.
+    /// Adjusts `scroll_col` so the cursor column is always visible within
+    /// the given `viewport_cols` wide content area.
+    pub fn clamp_horizontal_scroll(&mut self, viewport_cols: usize) {
+        let (_, col) = self.cursor_line_col();
+        if col < self.scroll_col {
+            self.scroll_col = col;
+        } else if viewport_cols > 0 && col >= self.scroll_col + viewport_cols {
+            self.scroll_col = col.saturating_sub(viewport_cols) + 1;
+        }
     }
 
     fn line_to_char_with_column(&self, line: usize, column: usize) -> usize {
@@ -263,5 +278,51 @@ mod tests {
 
         assert_eq!(start, 2);
         assert_eq!(visible.len(), 2);
+    }
+
+    #[test]
+    fn horizontal_scroll_advances_when_cursor_moves_right_past_viewport() {
+        let mut buffer = EditorBuffer::default();
+        // Write 20 characters on one line.
+        for _ in 0..20 {
+            buffer.insert_char('x');
+        }
+        // Cursor is now at column 20; viewport is 10 wide.
+        // scroll_col should pan so the cursor stays visible.
+        buffer.clamp_horizontal_scroll(10);
+        let (_, col) = buffer.cursor_line_col();
+        assert!(
+            col >= buffer.scroll_col && col < buffer.scroll_col + 10,
+            "cursor col {col} should be inside scroll window [{}, {})",
+            buffer.scroll_col,
+            buffer.scroll_col + 10
+        );
+        assert!(
+            buffer.scroll_col > 0,
+            "scroll_col should have advanced beyond 0"
+        );
+    }
+
+    #[test]
+    fn horizontal_scroll_retreats_when_cursor_moves_left_past_scroll_origin() {
+        let mut buffer = EditorBuffer::default();
+        // Write 20 characters, then scroll right.
+        for _ in 0..20 {
+            buffer.insert_char('x');
+        }
+        buffer.clamp_horizontal_scroll(10);
+        let scroll_after_right = buffer.scroll_col;
+        assert!(scroll_after_right > 0, "precondition: scroll_col > 0");
+
+        // Move cursor all the way back to column 0.
+        for _ in 0..20 {
+            buffer.move_left();
+        }
+        buffer.clamp_horizontal_scroll(10);
+
+        assert_eq!(
+            buffer.scroll_col, 0,
+            "scroll_col should retreat to 0 when cursor is at column 0"
+        );
     }
 }

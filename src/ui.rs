@@ -34,7 +34,7 @@ fn get_entry_icon(kind: EntryKind) -> &'static str {
     }
 }
 
-pub fn render(frame: &mut Frame<'_>, state: &AppState) {
+pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     let palette = state.theme().palette;
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -64,13 +64,15 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         palette,
     );
 
-    if let Some(editor) = state.editor() {
+    let right_is_focused = state.focus() == PaneId::Right;
+    let editor_is_active = state.is_editor_focused();
+    if let Some(editor) = state.editor_mut() {
         render_editor(
             frame,
             panes[1],
             editor,
-            state.focus() == PaneId::Right,
-            state.is_editor_focused(),
+            right_is_focused,
+            editor_is_active,
             palette,
         );
     } else {
@@ -78,7 +80,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             frame,
             panes[1],
             state.right_pane(),
-            state.focus() == PaneId::Right,
+            right_is_focused,
             palette,
         );
     }
@@ -592,7 +594,7 @@ fn human_size(size: u64) -> String {
 fn render_editor(
     frame: &mut Frame<'_>,
     area: Rect,
-    editor: &EditorBuffer,
+    editor: &mut EditorBuffer,
     is_focused: bool,
     is_active: bool,
     palette: ThemePalette,
@@ -627,6 +629,10 @@ fn render_editor(
         .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
         .split(inner);
 
+    let viewport_cols = editor_chunks[1].width as usize;
+    editor.clamp_horizontal_scroll(viewport_cols);
+    let scroll_col = editor.scroll_col;
+
     let line_number_width = (gutter_width as usize).saturating_sub(1);
     let (visible_start, visible_lines) =
         editor.visible_line_window(editor_chunks[1].height as usize);
@@ -651,10 +657,15 @@ fn render_editor(
     );
     frame.render_widget(gutter, editor_chunks[0]);
 
-    // Content: no word-wrap so line numbers stay in sync with visible rows.
+    // Content: slice each line by scroll_col so the viewport pans horizontally.
+    // No word-wrap so line numbers stay in sync with visible rows.
     let preview = visible_lines
         .into_iter()
-        .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
+        .map(|line| {
+            let stripped = line.strip_suffix('\n').unwrap_or(&line);
+            let chars: Vec<char> = stripped.chars().collect();
+            chars.into_iter().skip(scroll_col).collect::<String>()
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let paragraph = Paragraph::new(preview).style(
@@ -669,8 +680,10 @@ fn render_editor(
         let visible_line = line.saturating_sub(visible_start);
         let cursor_y = editor_chunks[1].y
             + (visible_line as u16).min(editor_chunks[1].height.saturating_sub(1));
+        // Offset cursor X by the horizontal scroll position.
+        let visible_col = column.saturating_sub(scroll_col);
         let cursor_x =
-            editor_chunks[1].x + (column as u16).min(editor_chunks[1].width.saturating_sub(1));
+            editor_chunks[1].x + (visible_col as u16).min(editor_chunks[1].width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
