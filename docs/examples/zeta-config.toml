@@ -1,0 +1,8 @@
+[theme]
+accent = "amber"
+status_bar_label = "Zeta"
+
+[keymap]
+quit = "q"
+switch_pane = "tab"
+refresh = "r"

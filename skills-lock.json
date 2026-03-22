@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "jira": {
+      "source": "davila7/claude-code-templates",
+      "sourceType": "github",
+      "computedHash": "be408703bd1bdebbdd1631c36ab030b7fd19606ca2d8550fadb0079fe88befd9"
+    },
+    "rust-engineer": {
+      "source": "jeffallan/claude-skills",
+      "sourceType": "github",
+      "computedHash": "5a8b4c69ded4bec7009af144c8aea3de5f463765f211c780afea8d7a47fb35e6"
+    }
+  }
+}
