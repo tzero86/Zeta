@@ -48,6 +48,8 @@ pub enum FileSystemError {
     ReadDir { path: String, source: io::Error },
     #[error("failed to inspect entry in {path}: {source}")]
     ReadEntryType { path: String, source: io::Error },
+    #[error("destination already exists: {path}")]
+    PathExists { path: String },
     #[error("failed to create directory {path}: {source}")]
     CreateDir { path: String, source: io::Error },
     #[error("failed to create file {path}: {source}")]
@@ -127,6 +129,7 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
 }
 
 pub fn create_directory(path: &Path) -> Result<(), FileSystemError> {
+    ensure_destination_available(path)?;
     std_fs::create_dir(path).map_err(|source| FileSystemError::CreateDir {
         path: path.display().to_string(),
         source,
@@ -134,6 +137,7 @@ pub fn create_directory(path: &Path) -> Result<(), FileSystemError> {
 }
 
 pub fn create_file(path: &Path) -> Result<(), FileSystemError> {
+    ensure_destination_available(path)?;
     std_fs::File::create(path).map_err(|source| FileSystemError::CreateFile {
         path: path.display().to_string(),
         source,
@@ -142,6 +146,9 @@ pub fn create_file(path: &Path) -> Result<(), FileSystemError> {
 }
 
 pub fn rename_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
+    if from != to {
+        ensure_destination_available(to)?;
+    }
     std_fs::rename(from, to).map_err(|source| FileSystemError::RenamePath {
         from: from.display().to_string(),
         to: to.display().to_string(),
@@ -150,6 +157,7 @@ pub fn rename_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
 }
 
 pub fn copy_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
+    ensure_destination_available(to)?;
     let metadata = std_fs::symlink_metadata(from).map_err(|source| FileSystemError::CopyPath {
         from: from.display().to_string(),
         to: to.display().to_string(),
@@ -189,6 +197,16 @@ pub fn copy_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
     }
 }
 
+fn ensure_destination_available(path: &Path) -> Result<(), FileSystemError> {
+    if path.exists() {
+        return Err(FileSystemError::PathExists {
+            path: path.display().to_string(),
+        });
+    }
+
+    Ok(())
+}
+
 pub fn delete_path(path: &Path) -> Result<(), FileSystemError> {
     let metadata =
         std_fs::symlink_metadata(path).map_err(|source| FileSystemError::DeletePath {
@@ -213,15 +231,19 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use super::{scan_directory, EntryKind};
+    use super::{copy_path, create_file, rename_path, scan_directory, EntryKind, FileSystemError};
 
-    #[test]
-    fn sorts_directories_before_files() {
+    fn temp_root() -> std::path::PathBuf {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("clock should be after unix epoch")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("zeta-fs-test-{unique}"));
+        std::env::temp_dir().join(format!("zeta-fs-test-{unique}"))
+    }
+
+    #[test]
+    fn sorts_directories_before_files() {
+        let root = temp_root();
 
         fs::create_dir_all(root.join("aaa-dir")).expect("dir should be created");
         fs::write(root.join("zzz-file.txt"), "demo").expect("file should be created");
@@ -230,6 +252,49 @@ mod tests {
 
         assert_eq!(entries[0].kind, EntryKind::Directory);
         assert_eq!(entries[1].kind, EntryKind::File);
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn create_file_rejects_existing_destination() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("temp dir should be created");
+        let path = root.join("note.txt");
+        fs::write(&path, "demo").expect("file should be created");
+
+        let error = create_file(&path).expect_err("existing path should fail");
+        assert!(matches!(error, FileSystemError::PathExists { .. }));
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn copy_path_rejects_existing_destination() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("temp dir should be created");
+        let source = root.join("source.txt");
+        let destination = root.join("destination.txt");
+        fs::write(&source, "demo").expect("source should be created");
+        fs::write(&destination, "existing").expect("destination should be created");
+
+        let error = copy_path(&source, &destination).expect_err("existing dest should fail");
+        assert!(matches!(error, FileSystemError::PathExists { .. }));
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn rename_path_rejects_existing_destination() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("temp dir should be created");
+        let source = root.join("source.txt");
+        let destination = root.join("destination.txt");
+        fs::write(&source, "demo").expect("source should be created");
+        fs::write(&destination, "existing").expect("destination should be created");
+
+        let error = rename_path(&source, &destination).expect_err("existing dest should fail");
+        assert!(matches!(error, FileSystemError::PathExists { .. }));
 
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
