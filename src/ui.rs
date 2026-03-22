@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::action::MenuId;
@@ -207,6 +207,7 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
         .border_style(Style::default().fg(Color::Rgb(212, 196, 168)))
         .style(Style::default().bg(Color::Rgb(24, 27, 30)));
     let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
     let body = match prompt.kind {
@@ -225,7 +226,9 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
             prompt.value
         ),
     };
-    let paragraph = Paragraph::new(body).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(body)
+        .style(Style::default().bg(Color::Rgb(24, 27, 30)).fg(Color::White))
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
 
