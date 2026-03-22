@@ -1,5 +1,5 @@
 [theme]
-accent = "amber"
+preset = "sandbar"
 status_bar_label = "Zeta"
 
 [keymap]

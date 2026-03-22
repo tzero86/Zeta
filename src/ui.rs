@@ -1,16 +1,18 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::action::MenuId;
+use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, MenuItem, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
+    let palette = state.theme().palette;
     let areas = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -20,7 +22,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         ])
         .split(frame.area());
 
-    render_menu_bar(frame, areas[0], state);
+    render_menu_bar(frame, areas[0], state, palette);
 
     let panes = Layout::default()
         .direction(Direction::Horizontal)
@@ -32,6 +34,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         panes[0],
         state.left_pane(),
         state.focus() == PaneId::Left,
+        palette,
     );
 
     if let Some(editor) = state.editor() {
@@ -41,6 +44,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             editor,
             state.focus() == PaneId::Right,
             state.is_editor_focused(),
+            palette,
         );
     } else {
         render_pane(
@@ -48,6 +52,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             panes[1],
             state.right_pane(),
             state.focus() == PaneId::Right,
+            palette,
         );
     }
 
@@ -58,60 +63,67 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             menu,
             &state.menu_items(),
             state.menu_selection(),
+            palette,
         );
     }
 
     if let Some(prompt) = state.prompt() {
-        render_prompt(frame, areas[1], prompt);
+        render_prompt(frame, areas[1], prompt, palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Cyan)
+            .fg(palette.status_fg)
+            .bg(palette.status_bg)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(status, areas[2]);
 }
 
-fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
+fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
     let menu = Paragraph::new(Line::from(vec![
-        menu_span(" Zeta ", None, false),
+        menu_span(" Zeta ", None, false, palette),
         menu_span(
             " File ",
             Some('F'),
             state.active_menu() == Some(MenuId::File),
+            palette,
         ),
         menu_span(
             " Navigate ",
             Some('N'),
             state.active_menu() == Some(MenuId::Navigate),
+            palette,
         ),
         menu_span(
             " View ",
             Some('V'),
             state.active_menu() == Some(MenuId::View),
+            palette,
         ),
     ]))
     .style(
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Rgb(212, 196, 168))
+            .fg(palette.menu_fg)
+            .bg(palette.menu_bg)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
 }
 
-fn menu_span(label: &'static str, mnemonic: Option<char>, active: bool) -> Span<'static> {
+fn menu_span(
+    label: &'static str,
+    mnemonic: Option<char>,
+    active: bool,
+    palette: ThemePalette,
+) -> Span<'static> {
     let style = if active {
         Style::default()
-            .fg(Color::Black)
-            .bg(Color::Rgb(240, 223, 193))
+            .fg(palette.menu_fg)
+            .bg(palette.menu_active_bg)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
     } else {
-        Style::default()
-            .fg(Color::Black)
-            .bg(Color::Rgb(212, 196, 168))
+        Style::default().fg(palette.menu_fg).bg(palette.menu_bg)
     };
 
     let highlighted = mnemonic.map(|value| value.to_ascii_uppercase());
@@ -121,7 +133,7 @@ fn menu_span(label: &'static str, mnemonic: Option<char>, active: bool) -> Span<
     for ch in label.chars() {
         let mut char_style = style;
         if !used_highlight && Some(ch.to_ascii_uppercase()) == highlighted {
-            char_style = char_style.fg(Color::Rgb(120, 34, 17));
+            char_style = char_style.fg(palette.menu_mnemonic_fg);
             used_highlight = true;
         }
         line.spans.push(Span::styled(ch.to_string(), char_style));
@@ -136,6 +148,7 @@ fn render_menu_popup(
     menu: MenuId,
     items: &[MenuItem],
     selection: usize,
+    palette: ThemePalette,
 ) {
     let x = match menu {
         MenuId::File => area.x + 1,
@@ -153,8 +166,8 @@ fn render_menu_popup(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Rgb(212, 196, 168)))
-        .style(Style::default().bg(Color::Rgb(30, 34, 38)));
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.surface_bg));
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
@@ -165,11 +178,13 @@ fn render_menu_popup(
             let selected = index == selection;
             let base_style = if selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Rgb(118, 196, 182))
+                    .fg(palette.menu_fg)
+                    .bg(palette.selection_bg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White).bg(Color::Rgb(30, 34, 38))
+                Style::default()
+                    .fg(palette.text_primary)
+                    .bg(palette.surface_bg)
             };
 
             let content_width = inner.width.saturating_sub(2) as usize;
@@ -189,7 +204,7 @@ fn render_menu_popup(
     frame.render_stateful_widget(list, inner, &mut state);
 }
 
-fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
+fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palette: ThemePalette) {
     let width = area.width.min(48);
     let height = 6;
     let x = area.x + (area.width.saturating_sub(width)) / 2;
@@ -204,8 +219,8 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
     let block = Block::default()
         .title(prompt.title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Rgb(212, 196, 168)))
-        .style(Style::default().bg(Color::Rgb(24, 27, 30)));
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
@@ -226,18 +241,28 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
         ),
     };
     let paragraph = Paragraph::new(body)
-        .style(Style::default().bg(Color::Rgb(24, 27, 30)).fg(Color::White))
+        .style(
+            Style::default()
+                .bg(palette.prompt_bg)
+                .fg(palette.text_primary),
+        )
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
 
-fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {
+fn render_pane(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    pane: &PaneState,
+    is_focused: bool,
+    palette: ThemePalette,
+) {
     let border_style = if is_focused {
         Style::default()
-            .fg(Color::Rgb(118, 196, 182))
+            .fg(palette.border_focus)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(palette.text_muted)
     };
 
     let title = format!(
@@ -266,15 +291,15 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: 
         visible_entries
             .iter()
             .enumerate()
-            .map(|(index, entry)| render_item(entry, index + 1 == visible_entries.len()))
+            .map(|(index, entry)| render_item(entry, index + 1 == visible_entries.len(), palette))
             .collect()
     };
 
     let list = List::new(items)
         .highlight_style(
             Style::default()
-                .bg(Color::Rgb(47, 58, 66))
-                .fg(Color::White)
+                .bg(palette.selection_bg)
+                .fg(palette.selection_fg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("> ");
@@ -289,19 +314,19 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: 
     let legend = Paragraph::new(Line::raw(
         "|-- node  `-- last  [D] dir/  [F] file  [L] link",
     ))
-    .style(Style::default().fg(Color::DarkGray));
+    .style(Style::default().fg(palette.text_muted));
     frame.render_widget(legend, pane_chunks[1]);
 }
 
-fn render_item(entry: &EntryInfo, is_last: bool) -> ListItem<'static> {
+fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListItem<'static> {
     let branch = if is_last { "`--" } else { "|--" };
     let label_style = match entry.kind {
         crate::fs::EntryKind::Directory => Style::default()
-            .fg(Color::Rgb(118, 196, 182))
+            .fg(palette.directory_fg)
             .add_modifier(Modifier::BOLD),
-        crate::fs::EntryKind::Symlink => Style::default().fg(Color::Rgb(214, 179, 92)),
-        crate::fs::EntryKind::File => Style::default().fg(Color::Gray),
-        crate::fs::EntryKind::Other => Style::default().fg(Color::DarkGray),
+        crate::fs::EntryKind::Symlink => Style::default().fg(palette.symlink_fg),
+        crate::fs::EntryKind::File => Style::default().fg(palette.file_fg),
+        crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
     };
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
@@ -309,7 +334,10 @@ fn render_item(entry: &EntryInfo, is_last: bool) -> ListItem<'static> {
     };
 
     ListItem::new(Line::from(vec![
-        Span::styled(format!("{} ", branch), Style::default().fg(Color::DarkGray)),
+        Span::styled(
+            format!("{} ", branch),
+            Style::default().fg(palette.text_muted),
+        ),
         Span::styled(format!("{} ", entry.kind.ascii_label()), label_style),
         Span::styled(name, label_style),
     ]))
@@ -321,13 +349,14 @@ fn render_editor(
     editor: &EditorBuffer,
     is_focused: bool,
     is_active: bool,
+    palette: ThemePalette,
 ) {
     let border_style = if is_focused {
         Style::default()
-            .fg(Color::Rgb(230, 188, 98))
+            .fg(palette.border_editor_focus)
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(palette.text_muted)
     };
 
     let path = editor
@@ -349,7 +378,11 @@ fn render_editor(
         .constraints([Constraint::Length(6), Constraint::Min(1)])
         .split(inner);
 
-    let line_gutter = Block::default().style(Style::default().fg(Color::DarkGray).bg(Color::Black));
+    let line_gutter = Block::default().style(
+        Style::default()
+            .fg(palette.text_muted)
+            .bg(palette.surface_bg),
+    );
     frame.render_widget(line_gutter, editor_chunks[0]);
 
     let line_number_width = 4usize;
@@ -368,7 +401,11 @@ fn render_editor(
         .collect::<Vec<_>>()
         .join("\n");
     let gutter = Paragraph::new(numbers)
-        .style(Style::default().fg(Color::DarkGray).bg(Color::Black))
+        .style(
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        )
         .wrap(Wrap { trim: false });
     frame.render_widget(gutter, editor_chunks[0]);
 
@@ -377,7 +414,13 @@ fn render_editor(
         .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
         .collect::<Vec<_>>()
         .join("\n");
-    let paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(preview)
+        .style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        )
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, editor_chunks[1]);
 
     if is_active {

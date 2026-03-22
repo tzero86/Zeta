@@ -5,7 +5,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::action::{Action, Command, MenuId};
-use crate::config::LoadedConfig;
+use crate::config::{LoadedConfig, ResolvedTheme};
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
@@ -25,6 +25,7 @@ pub struct AppState {
     focus: PaneFocus,
     app_label: String,
     config_path: String,
+    theme: ResolvedTheme,
     active_menu: Option<MenuId>,
     editor: Option<EditorBuffer>,
     menu_selection: usize,
@@ -45,6 +46,8 @@ impl AppState {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_else(|| cwd.clone());
+        let resolved_theme = loaded_config.config.resolve_theme();
+        let status_bar_label = loaded_config.config.theme.status_bar_label.clone();
 
         let left = PaneState::load("Left", cwd.clone())?;
         let right = PaneState::load("Right", secondary)?;
@@ -53,17 +56,20 @@ impl AppState {
             left,
             right,
             focus: PaneFocus::Left,
-            app_label: loaded_config.config.theme.status_bar_label,
+            app_label: status_bar_label,
             config_path: loaded_config.path.display().to_string(),
+            theme: resolved_theme.clone(),
             active_menu: None,
             editor: None,
             menu_selection: 0,
             prompt: None,
-            status_message: format!(
-                "ready | config {} ({})",
-                loaded_config.path.display(),
-                loaded_config.source.label()
-            ),
+            status_message: resolved_theme.warning.unwrap_or_else(|| {
+                format!(
+                    "ready | config {} ({})",
+                    loaded_config.path.display(),
+                    loaded_config.source.label()
+                )
+            }),
             last_size: None,
             redraw_count: 0,
             startup_time_ms: started_at.elapsed().as_millis(),
@@ -478,6 +484,10 @@ impl AppState {
         self.active_menu
     }
 
+    pub fn theme(&self) -> &ResolvedTheme {
+        &self.theme
+    }
+
     pub fn right_pane(&self) -> &PaneState {
         &self.right
     }
@@ -756,6 +766,8 @@ mod tests {
     use crate::fs::{EntryInfo, EntryKind};
     use crate::pane::{PaneId, PaneState, SortMode};
 
+    use crate::config::{ResolvedTheme, ThemePalette};
+
     use super::{AppState, PaneFocus};
 
     fn pane_with_file(path: &str) -> PaneState {
@@ -789,6 +801,11 @@ mod tests {
             focus: PaneFocus::Left,
             app_label: String::from("Zeta"),
             config_path: String::from("/tmp/zeta/config.toml"),
+            theme: ResolvedTheme {
+                palette: ThemePalette::resolve(&crate::config::ThemeConfig::default()).palette,
+                preset: String::from("fjord"),
+                warning: None,
+            },
             active_menu: None,
             editor: None,
             menu_selection: 0,

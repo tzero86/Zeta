@@ -3,6 +3,7 @@ use std::fs as std_fs;
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyModifiers};
+use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -50,6 +51,10 @@ impl AppConfig {
 
     pub fn compile_keymap(&self) -> Result<RuntimeKeymap, ConfigError> {
         self.keymap.compile()
+    }
+
+    pub fn resolve_theme(&self) -> ResolvedTheme {
+        ThemePalette::resolve(&self.theme)
     }
 }
 
@@ -120,15 +125,140 @@ fn resolve_config_path_from_env(
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ThemeConfig {
-    pub accent: String,
+    pub preset: String,
     pub status_bar_label: String,
 }
 
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            accent: String::from("cyan"),
+            preset: String::from("fjord"),
             status_bar_label: String::from("Zeta"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ThemePalette {
+    pub menu_bg: Color,
+    pub menu_fg: Color,
+    pub menu_active_bg: Color,
+    pub menu_mnemonic_fg: Color,
+    pub border_focus: Color,
+    pub border_editor_focus: Color,
+    pub selection_bg: Color,
+    pub selection_fg: Color,
+    pub surface_bg: Color,
+    pub prompt_bg: Color,
+    pub prompt_border: Color,
+    pub text_primary: Color,
+    pub text_muted: Color,
+    pub directory_fg: Color,
+    pub symlink_fg: Color,
+    pub file_fg: Color,
+    pub status_bg: Color,
+    pub status_fg: Color,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResolvedTheme {
+    pub palette: ThemePalette,
+    pub preset: String,
+    pub warning: Option<String>,
+}
+
+impl ThemePalette {
+    pub fn resolve(config: &ThemeConfig) -> ResolvedTheme {
+        match config.preset.to_lowercase().as_str() {
+            "fjord" => ResolvedTheme {
+                palette: Self::fjord(),
+                preset: String::from("fjord"),
+                warning: None,
+            },
+            "sandbar" => ResolvedTheme {
+                palette: Self::sandbar(),
+                preset: String::from("sandbar"),
+                warning: None,
+            },
+            "oxide" => ResolvedTheme {
+                palette: Self::oxide(),
+                preset: String::from("oxide"),
+                warning: None,
+            },
+            other => ResolvedTheme {
+                palette: Self::fjord(),
+                preset: String::from("fjord"),
+                warning: Some(format!("unknown theme preset '{other}', using fjord")),
+            },
+        }
+    }
+
+    fn fjord() -> Self {
+        Self {
+            menu_bg: Color::Rgb(212, 196, 168),
+            menu_fg: Color::Black,
+            menu_active_bg: Color::Rgb(240, 223, 193),
+            menu_mnemonic_fg: Color::Rgb(120, 34, 17),
+            border_focus: Color::Rgb(118, 196, 182),
+            border_editor_focus: Color::Rgb(230, 188, 98),
+            selection_bg: Color::Rgb(47, 58, 66),
+            selection_fg: Color::White,
+            surface_bg: Color::Rgb(30, 34, 38),
+            prompt_bg: Color::Rgb(24, 27, 30),
+            prompt_border: Color::Rgb(212, 196, 168),
+            text_primary: Color::White,
+            text_muted: Color::DarkGray,
+            directory_fg: Color::Rgb(118, 196, 182),
+            symlink_fg: Color::Rgb(214, 179, 92),
+            file_fg: Color::Gray,
+            status_bg: Color::Cyan,
+            status_fg: Color::Black,
+        }
+    }
+
+    fn sandbar() -> Self {
+        Self {
+            menu_bg: Color::Rgb(224, 207, 175),
+            menu_fg: Color::Black,
+            menu_active_bg: Color::Rgb(246, 232, 203),
+            menu_mnemonic_fg: Color::Rgb(139, 69, 19),
+            border_focus: Color::Rgb(83, 148, 117),
+            border_editor_focus: Color::Rgb(205, 143, 57),
+            selection_bg: Color::Rgb(72, 82, 90),
+            selection_fg: Color::White,
+            surface_bg: Color::Rgb(36, 33, 29),
+            prompt_bg: Color::Rgb(28, 26, 22),
+            prompt_border: Color::Rgb(224, 207, 175),
+            text_primary: Color::Rgb(241, 236, 228),
+            text_muted: Color::Rgb(128, 118, 106),
+            directory_fg: Color::Rgb(140, 201, 157),
+            symlink_fg: Color::Rgb(227, 196, 109),
+            file_fg: Color::Rgb(222, 218, 210),
+            status_bg: Color::Rgb(114, 164, 199),
+            status_fg: Color::Black,
+        }
+    }
+
+    fn oxide() -> Self {
+        Self {
+            menu_bg: Color::Rgb(189, 178, 166),
+            menu_fg: Color::Black,
+            menu_active_bg: Color::Rgb(224, 216, 205),
+            menu_mnemonic_fg: Color::Rgb(101, 45, 32),
+            border_focus: Color::Rgb(102, 174, 197),
+            border_editor_focus: Color::Rgb(205, 130, 107),
+            selection_bg: Color::Rgb(61, 67, 79),
+            selection_fg: Color::White,
+            surface_bg: Color::Rgb(27, 31, 36),
+            prompt_bg: Color::Rgb(20, 24, 28),
+            prompt_border: Color::Rgb(189, 178, 166),
+            text_primary: Color::Rgb(233, 236, 239),
+            text_muted: Color::Rgb(122, 129, 138),
+            directory_fg: Color::Rgb(102, 174, 197),
+            symlink_fg: Color::Rgb(221, 176, 98),
+            file_fg: Color::Rgb(203, 210, 217),
+            status_bg: Color::Rgb(116, 181, 201),
+            status_fg: Color::Black,
         }
     }
 }
@@ -237,7 +367,7 @@ mod tests {
     fn parses_partial_config() {
         let raw = r#"
             [theme]
-            accent = "amber"
+            preset = "sandbar"
             status_bar_label = "Test"
 
             [keymap]
@@ -247,7 +377,7 @@ mod tests {
         "#;
 
         let config: AppConfig = toml::from_str(raw).expect("config should parse");
-        assert_eq!(config.theme.accent, "amber");
+        assert_eq!(config.theme.preset, "sandbar");
         assert_eq!(config.keymap.quit, "x");
     }
 
