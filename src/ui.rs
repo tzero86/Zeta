@@ -347,12 +347,7 @@ fn render_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let pane_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
-        .split(inner);
-
-    let visible_height = pane_chunks[0].height as usize;
+    let visible_height = inner.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
@@ -360,7 +355,14 @@ fn render_pane(
         visible_entries
             .iter()
             .enumerate()
-            .map(|(index, entry)| render_item(entry, index + 1 == visible_entries.len(), palette))
+            .map(|(index, entry)| {
+                render_item(
+                    entry,
+                    index + 1 == visible_entries.len(),
+                    inner.width as usize,
+                    palette,
+                )
+            })
             .collect()
     };
 
@@ -378,14 +380,15 @@ fn render_pane(
         list_state.select(pane.visible_selection(visible_height));
     }
 
-    frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
-
-    let legend = Paragraph::new(Line::raw("▣ dir  • file  ↗ link  ≡ meta"))
-        .style(Style::default().fg(palette.text_muted));
-    frame.render_widget(legend, pane_chunks[1]);
+    frame.render_stateful_widget(list, inner, &mut list_state);
 }
 
-fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListItem<'static> {
+fn render_item(
+    entry: &EntryInfo,
+    is_last: bool,
+    available_width: usize,
+    palette: ThemePalette,
+) -> ListItem<'static> {
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└─" } else { "├─" };
     let label_style = match entry.kind {
@@ -407,6 +410,21 @@ fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListI
         _ => entry.name.clone(),
     };
     let meta = format_entry_meta(entry);
+    let prefix = format!("{}{} {} ", guide, branch, icon);
+    let prefix_width = display_width(&prefix);
+    let meta_width = display_width(&meta);
+    let content_width = available_width.saturating_sub(2);
+    let name_width = content_width
+        .saturating_sub(prefix_width)
+        .saturating_sub(meta_width)
+        .saturating_sub(1)
+        .max(1);
+    let name = truncate_text(&name, name_width);
+    let spacer_width = content_width
+        .saturating_sub(prefix_width)
+        .saturating_sub(display_width(&name))
+        .saturating_sub(meta_width)
+        .max(1);
 
     ListItem::new(Line::from(vec![
         Span::styled(guide, Style::default().fg(palette.text_muted)),
@@ -416,11 +434,27 @@ fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListI
         ),
         Span::styled(format!("{} ", icon), label_style),
         Span::styled(name, label_style),
-        Span::styled(
-            format!("  {}", meta),
-            Style::default().fg(palette.text_muted),
-        ),
+        Span::styled(" ".repeat(spacer_width), Style::default()),
+        Span::styled(meta, Style::default().fg(palette.text_muted)),
     ]))
+}
+
+fn display_width(value: &str) -> usize {
+    value.chars().count()
+}
+
+fn truncate_text(value: &str, max_width: usize) -> String {
+    let width = display_width(value);
+    if width <= max_width {
+        return value.to_string();
+    }
+
+    if max_width <= 2 {
+        return value.chars().take(max_width).collect();
+    }
+
+    let truncated: String = value.chars().take(max_width - 2).collect();
+    format!("{}..", truncated)
 }
 
 fn format_entry_meta(entry: &EntryInfo) -> String {
