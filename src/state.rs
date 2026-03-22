@@ -4,12 +4,13 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::action::{Action, Command, FileOperation, MenuId, RefreshTarget};
+use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
 use crate::fs;
+use crate::fs::suggest_non_conflicting_path;
 use crate::fs::EntryKind;
-use crate::jobs::JobResult;
+use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,11 +39,13 @@ pub struct AppState {
     menu_selection: usize,
     prompt: Option<PromptState>,
     dialog: Option<DialogState>,
+    collision: Option<CollisionState>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
     startup_time_ms: u128,
     last_scan_time_ms: Option<u128>,
+    file_operation_status: Option<FileOperationStatus>,
     needs_redraw: bool,
     should_quit: bool,
 }
@@ -73,6 +76,7 @@ impl AppState {
             menu_selection: 0,
             prompt: None,
             dialog: None,
+            collision: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "loading panes | config {} ({})",
@@ -84,6 +88,7 @@ impl AppState {
             redraw_count: 0,
             startup_time_ms: started_at.elapsed().as_millis(),
             last_scan_time_ms: None,
+            file_operation_status: None,
             needs_redraw: true,
             should_quit: false,
         })
@@ -106,6 +111,38 @@ impl AppState {
         let mut commands = Vec::new();
 
         match action {
+            Action::CollisionCancel => {
+                self.collision = None;
+                self.status_message = String::from("cancelled collision resolution");
+                self.needs_redraw = true;
+            }
+            Action::CollisionOverwrite => {
+                if let Some(collision) = self.collision.take() {
+                    commands.push(Command::RunFileOperation {
+                        operation: collision.operation,
+                        refresh: collision.refresh,
+                        collision: CollisionPolicy::Overwrite,
+                    });
+                    self.status_message = String::from("overwriting existing destination");
+                } else {
+                    self.status_message = String::from("no collision to resolve");
+                }
+                self.needs_redraw = true;
+            }
+            Action::CollisionRename => {
+                if let Some(collision) = self.collision.take() {
+                    self.prompt = Some(collision.rename_prompt());
+                    self.status_message = String::from("edit the new destination");
+                } else {
+                    self.status_message = String::from("no collision to resolve");
+                }
+                self.needs_redraw = true;
+            }
+            Action::CollisionSkip => {
+                self.collision = None;
+                self.status_message = String::from("skipped collided destination");
+                self.needs_redraw = true;
+            }
             Action::CloseDialog => {
                 self.dialog = None;
                 self.status_message = String::from("closed dialog");
@@ -215,12 +252,14 @@ impl AppState {
                 }
             }
             Action::OpenMenu(menu) => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = Some(menu);
                 self.menu_selection = 0;
                 self.needs_redraw = true;
             }
             Action::OpenAboutDialog => {
+                self.collision = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 self.dialog = Some(DialogState::about(
@@ -231,6 +270,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenCopyPrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -251,6 +291,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenDeletePrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -273,6 +314,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenNewDirectoryPrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -285,6 +327,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenNewFilePrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -297,6 +340,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenRenamePrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -315,6 +359,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenMovePrompt => {
+                self.collision = None;
                 self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -426,6 +471,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenHelpDialog => {
+                self.collision = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 self.dialog = Some(DialogState::help());
@@ -501,7 +547,11 @@ impl AppState {
                             };
 
                         if let Some(operation) = operation {
-                            commands.push(Command::RunFileOperation { operation, refresh });
+                            commands.push(Command::RunFileOperation {
+                                operation,
+                                refresh,
+                                collision: CollisionPolicy::Fail,
+                            });
                             self.status_message = match kind {
                                 PromptKind::Copy => String::from("copying item"),
                                 PromptKind::Delete => String::from("deleting item"),
@@ -600,6 +650,8 @@ impl AppState {
                 refreshed,
                 elapsed_ms,
             } => {
+                self.collision = None;
+                self.file_operation_status = None;
                 for pane in refreshed {
                     let target = self.pane_mut(pane.pane);
                     target.cwd = pane.path;
@@ -609,14 +661,38 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
                 self.needs_redraw = true;
             }
+            JobResult::FileOperationCollision {
+                operation,
+                refresh,
+                path,
+                elapsed_ms,
+            } => {
+                self.file_operation_status = None;
+                self.collision = Some(CollisionState {
+                    operation,
+                    refresh,
+                    path: path.clone(),
+                });
+                self.status_message = format!(
+                    "destination exists after {elapsed_ms} ms: {}",
+                    path.display()
+                );
+                self.last_scan_time_ms = Some(elapsed_ms);
+                self.needs_redraw = true;
+            }
+            JobResult::FileOperationProgress { status } => {
+                self.file_operation_status = Some(status);
+                self.needs_redraw = true;
+            }
             JobResult::JobFailed {
                 pane: _,
                 path,
                 message,
                 elapsed_ms,
             } => {
+                self.file_operation_status = None;
                 self.status_message = format!(
-                    "refresh failed for {} after {elapsed_ms} ms: {message}",
+                    "job failed for {} after {elapsed_ms} ms: {message}",
                     path.display()
                 );
                 self.last_scan_time_ms = Some(elapsed_ms);
@@ -657,6 +733,10 @@ impl AppState {
         self.dialog.as_ref()
     }
 
+    pub fn collision(&self) -> Option<&CollisionState> {
+        self.collision.as_ref()
+    }
+
     pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
         self.editor.as_mut()
     }
@@ -681,6 +761,10 @@ impl AppState {
         self.dialog.is_some()
     }
 
+    pub fn is_collision_open(&self) -> bool {
+        self.collision.is_some()
+    }
+
     pub fn menu_items(&self) -> Vec<MenuItem> {
         self.active_menu
             .map(|menu| self.menu_items_for(menu))
@@ -696,13 +780,29 @@ impl AppState {
             .last_scan_time_ms
             .map(|value| format!("scan:{value}ms"))
             .unwrap_or_else(|| String::from("scan:-"));
+        let progress = self
+            .file_operation_status
+            .as_ref()
+            .map(|status| {
+                let current = status
+                    .current_path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or(".");
+                format!(
+                    " | {}:{}/{} {}",
+                    status.operation, status.completed, status.total, current
+                )
+            })
+            .unwrap_or_default();
         format!(
-            "{} | {} | {} | up:{}ms {} | d:{}",
+            "{} | {} | {} | up:{}ms {}{} | d:{}",
             self.app_label,
             self.status_message,
             self.theme.preset,
             self.startup_time_ms,
             scan,
+            progress,
             self.redraw_count,
         )
     }
@@ -1036,6 +1136,96 @@ impl DialogState {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CollisionState {
+    pub operation: FileOperation,
+    pub refresh: Vec<RefreshTarget>,
+    pub path: PathBuf,
+}
+
+impl CollisionState {
+    pub fn lines(&self) -> Vec<String> {
+        vec![
+            format!("Destination exists: {}", self.path.display()),
+            format!("Pending: {}", self.operation_label()),
+            String::new(),
+            String::from("O overwrite  R rename  S skip  Esc cancel"),
+        ]
+    }
+
+    fn operation_label(&self) -> String {
+        match &self.operation {
+            FileOperation::Copy { source, .. } => format!("copy {}", source.display()),
+            FileOperation::CreateDirectory { .. } => String::from("create directory"),
+            FileOperation::CreateFile { .. } => String::from("create file"),
+            FileOperation::Delete { path } => format!("delete {}", path.display()),
+            FileOperation::Move { source, .. } => format!("move {}", source.display()),
+            FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
+        }
+    }
+
+    fn rename_prompt(self) -> PromptState {
+        let suggested = suggest_non_conflicting_path(self.destination_path());
+        let value = suggested.display().to_string();
+
+        match self.operation {
+            FileOperation::Copy { source, .. } => PromptState::with_value(
+                PromptKind::Copy,
+                "Copy",
+                prompt_base_path(&suggested),
+                Some(source),
+                value,
+            ),
+            FileOperation::CreateDirectory { .. } => PromptState::with_value(
+                PromptKind::NewDirectory,
+                "New Directory",
+                prompt_base_path(&suggested),
+                None,
+                value,
+            ),
+            FileOperation::CreateFile { .. } => PromptState::with_value(
+                PromptKind::NewFile,
+                "New File",
+                prompt_base_path(&suggested),
+                None,
+                value,
+            ),
+            FileOperation::Delete { path } => PromptState::with_value(
+                PromptKind::Delete,
+                "Delete",
+                prompt_base_path(&path),
+                Some(path),
+                String::new(),
+            ),
+            FileOperation::Move { source, .. } => PromptState::with_value(
+                PromptKind::Move,
+                "Move",
+                prompt_base_path(&suggested),
+                Some(source),
+                value,
+            ),
+            FileOperation::Rename { source, .. } => PromptState::with_value(
+                PromptKind::Rename,
+                "Rename",
+                prompt_base_path(&suggested),
+                Some(source),
+                value,
+            ),
+        }
+    }
+
+    fn destination_path(&self) -> &Path {
+        match &self.operation {
+            FileOperation::Copy { destination, .. } => destination,
+            FileOperation::CreateDirectory { path } => path,
+            FileOperation::CreateFile { path } => path,
+            FileOperation::Delete { path } => path,
+            FileOperation::Move { destination, .. } => destination,
+            FileOperation::Rename { destination, .. } => destination,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PromptState {
     pub kind: PromptKind,
     pub title: &'static str,
@@ -1066,18 +1256,28 @@ impl PromptState {
     }
 }
 
+fn prompt_base_path(path: &Path) -> PathBuf {
+    path.parent().map(Path::to_path_buf).unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
+    use std::fs;
     use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-    use crate::action::{Action, Command, FileOperation, MenuId, RefreshTarget};
+    use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
+    use crate::jobs::{FileOperationStatus, JobResult};
     use crate::pane::{PaneId, PaneState, SortMode};
 
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
 
-    use super::{resolve_prompt_target, AppState, PaneFocus, PaneLayout, PromptKind, PromptState};
+    use super::{
+        resolve_prompt_target, AppState, CollisionState, PaneFocus, PaneLayout, PromptKind,
+        PromptState,
+    };
 
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
@@ -1094,6 +1294,14 @@ mod tests {
             show_hidden: false,
             sort_mode: SortMode::Name,
         }
+    }
+
+    fn temp_root() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock should be after unix epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("zeta-state-test-{unique}"))
     }
 
     fn test_state() -> AppState {
@@ -1122,11 +1330,13 @@ mod tests {
             menu_selection: 0,
             prompt: None,
             dialog: None,
+            collision: None,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
             startup_time_ms: 0,
             last_scan_time_ms: None,
+            file_operation_status: None,
             needs_redraw: false,
             should_quit: false,
         }
@@ -1312,6 +1522,40 @@ mod tests {
     }
 
     #[test]
+    fn status_line_includes_file_operation_progress() {
+        let mut state = test_state();
+        state.file_operation_status = Some(FileOperationStatus {
+            operation: "copy",
+            completed: 2,
+            total: 5,
+            current_path: PathBuf::from("/tmp/target/note.txt"),
+        });
+
+        let status = state.status_line();
+
+        assert!(status.contains("copy:2/5 note.txt"));
+    }
+
+    #[test]
+    fn file_operation_completion_clears_progress_state() {
+        let mut state = test_state();
+        state.file_operation_status = Some(FileOperationStatus {
+            operation: "copy",
+            completed: 2,
+            total: 5,
+            current_path: PathBuf::from("/tmp/target/note.txt"),
+        });
+
+        state.apply_job_result(JobResult::FileOperationCompleted {
+            message: String::from("copied to /tmp/target/note.txt"),
+            refreshed: Vec::new(),
+            elapsed_ms: 42,
+        });
+
+        assert!(state.file_operation_status.is_none());
+    }
+
+    #[test]
     fn open_move_prompt_prefills_inactive_pane_destination() {
         let mut state = test_state();
         state.right.cwd = PathBuf::from("/tmp/target");
@@ -1369,9 +1613,97 @@ mod tests {
                         path: PathBuf::from("/tmp/target"),
                     },
                 ],
+                collision: CollisionPolicy::Fail,
             }]
         );
         assert!(state.prompt.is_none());
+    }
+
+    #[test]
+    fn collision_job_result_opens_resolution_dialog() {
+        let mut state = test_state();
+
+        state.apply_job_result(JobResult::FileOperationCollision {
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            },
+            refresh: vec![RefreshTarget {
+                pane: PaneId::Left,
+                path: PathBuf::from("."),
+            }],
+            path: PathBuf::from("/tmp/target/note.txt"),
+            elapsed_ms: 4,
+        });
+
+        assert!(state.is_collision_open());
+        assert_eq!(
+            state.collision().map(|collision| collision.path.clone()),
+            Some(PathBuf::from("/tmp/target/note.txt"))
+        );
+    }
+
+    #[test]
+    fn collision_overwrite_requeues_job_with_overwrite_policy() {
+        let mut state = test_state();
+        state.collision = Some(CollisionState {
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            },
+            refresh: vec![RefreshTarget {
+                pane: PaneId::Right,
+                path: PathBuf::from("/tmp/target"),
+            }],
+            path: PathBuf::from("/tmp/target/note.txt"),
+        });
+
+        let commands = state
+            .apply(Action::CollisionOverwrite)
+            .expect("overwrite should enqueue work");
+
+        assert_eq!(
+            commands,
+            vec![Command::RunFileOperation {
+                operation: FileOperation::Copy {
+                    source: PathBuf::from("./note.txt"),
+                    destination: PathBuf::from("/tmp/target/note.txt"),
+                },
+                refresh: vec![RefreshTarget {
+                    pane: PaneId::Right,
+                    path: PathBuf::from("/tmp/target"),
+                }],
+                collision: CollisionPolicy::Overwrite,
+            }]
+        );
+        assert!(!state.is_collision_open());
+    }
+
+    #[test]
+    fn collision_rename_reopens_prompt_with_new_destination() {
+        let root = temp_root();
+        fs::create_dir_all(&root).expect("temp dir should exist");
+        fs::write(root.join("note.txt"), "demo").expect("collision target should exist");
+        let mut state = test_state();
+        state.collision = Some(CollisionState {
+            operation: FileOperation::Rename {
+                source: root.join("source.txt"),
+                destination: root.join("note.txt"),
+            },
+            refresh: vec![],
+            path: root.join("note.txt"),
+        });
+
+        state
+            .apply(Action::CollisionRename)
+            .expect("rename should reopen prompt");
+
+        let prompt = state.prompt().expect("prompt should reopen");
+        assert_eq!(prompt.kind, PromptKind::Rename);
+        assert_eq!(prompt.value, root.join("note-1.txt").display().to_string());
+        assert!(!state.is_collision_open());
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
     }
 
     #[test]

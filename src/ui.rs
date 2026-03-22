@@ -9,7 +9,7 @@ use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
-use crate::state::{AppState, DialogState, MenuItem, PaneLayout, PromptState};
+use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let palette = state.theme().palette;
@@ -77,6 +77,10 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 
     if let Some(dialog) = state.dialog() {
         render_dialog(frame, areas[1], dialog, palette);
+    }
+
+    if let Some(collision) = state.collision() {
+        render_collision_dialog(frame, areas[1], collision, palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(
@@ -328,6 +332,47 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
 
     let body = dialog.lines.join("\n");
     let paragraph = Paragraph::new(body)
+        .style(
+            Style::default()
+                .bg(palette.prompt_bg)
+                .fg(palette.text_primary),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_collision_dialog(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    collision: &CollisionState,
+    palette: ThemePalette,
+) {
+    let lines = collision.lines();
+    let width = area.width.min(72);
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2).max(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .title("Resolve Collision")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(palette.prompt_border)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(palette.prompt_bg));
+    let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+
+    let paragraph = Paragraph::new(lines.join("\n"))
         .style(
             Style::default()
                 .bg(palette.prompt_bg)

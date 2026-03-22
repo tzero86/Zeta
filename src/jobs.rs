@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 
-use crate::action::{FileOperation, RefreshTarget};
+use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
-    copy_path, create_directory, create_file, delete_path, rename_path, scan_directory, EntryInfo,
+    copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
+    rename_path, scan_directory, EntryInfo, FileSystemError,
 };
 use crate::pane::PaneId;
 
@@ -15,6 +16,7 @@ pub enum JobRequest {
     FileOperation {
         operation: FileOperation,
         refresh: Vec<RefreshTarget>,
+        collision: CollisionPolicy,
     },
     ScanDirectory {
         pane: PaneId,
@@ -35,6 +37,15 @@ pub enum JobResult {
         refreshed: Vec<RefreshedPane>,
         elapsed_ms: u128,
     },
+    FileOperationCollision {
+        operation: FileOperation,
+        refresh: Vec<RefreshTarget>,
+        path: PathBuf,
+        elapsed_ms: u128,
+    },
+    FileOperationProgress {
+        status: FileOperationStatus,
+    },
     JobFailed {
         pane: PaneId,
         path: PathBuf,
@@ -50,9 +61,17 @@ pub struct RefreshedPane {
     pub entries: Vec<EntryInfo>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileOperationStatus {
+    pub operation: &'static str,
+    pub completed: u64,
+    pub total: u64,
+    pub current_path: PathBuf,
+}
+
 pub fn spawn_scan_worker() -> (Sender<JobRequest>, Receiver<JobResult>) {
     let (request_tx, request_rx) = bounded::<JobRequest>(16);
-    let (result_tx, result_rx) = bounded::<JobResult>(16);
+    let (result_tx, result_rx) = bounded::<JobResult>(32);
 
     thread::spawn(move || run_scan_worker(request_rx, result_tx));
 
@@ -62,15 +81,14 @@ pub fn spawn_scan_worker() -> (Sender<JobRequest>, Receiver<JobResult>) {
 fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult>) {
     while let Ok(request) = request_rx.recv() {
         match request {
-            JobRequest::FileOperation { operation, refresh } => {
-                let result = run_file_operation(operation, refresh);
+            JobRequest::FileOperation {
+                operation,
+                refresh,
+                collision,
+            } => {
+                let result = run_file_operation(operation, refresh, collision, &result_tx);
                 match result {
-                    Ok(job_result) => {
-                        if result_tx.send(job_result).is_err() {
-                            break;
-                        }
-                    }
-                    Err(job_result) => {
+                    Ok(job_result) | Err(job_result) => {
                         if result_tx.send(job_result).is_err() {
                             break;
                         }
@@ -116,39 +134,50 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
 fn run_file_operation(
     operation: FileOperation,
     refresh: Vec<RefreshTarget>,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
 ) -> Result<JobResult, JobResult> {
     let started_at = Instant::now();
     let operation_label = describe_operation(&operation);
     let primary_path = primary_path(&operation);
+    let failure_pane = refresh
+        .first()
+        .map(|target| target.pane)
+        .unwrap_or(PaneId::Left);
 
-    let op_result = match operation {
+    let op_result = match &operation {
         FileOperation::Copy {
             source,
             destination,
-        } => copy_path(&source, &destination),
-        FileOperation::CreateDirectory { path } => create_directory(&path),
-        FileOperation::CreateFile { path } => create_file(&path),
-        FileOperation::Delete { path } => delete_path(&path),
+        } => run_copy_with_progress(source, destination, collision, result_tx),
+        FileOperation::CreateDirectory { path } => create_directory(path, collision),
+        FileOperation::CreateFile { path } => create_file(path, collision),
+        FileOperation::Delete { path } => delete_path(path),
         FileOperation::Move {
             source,
             destination,
-        } => rename_path(&source, &destination),
+        } => run_move_with_progress(source, destination, collision, result_tx),
         FileOperation::Rename {
             source,
             destination,
-        } => rename_path(&source, &destination),
+        } => rename_path(source, destination, collision),
     };
 
     if let Err(error) = op_result {
-        return Err(JobResult::JobFailed {
-            pane: refresh
-                .first()
-                .map(|target| target.pane)
-                .unwrap_or(PaneId::Left),
-            path: primary_path,
-            message: error.to_string(),
-            elapsed_ms: started_at.elapsed().as_millis(),
-        });
+        return match error {
+            FileSystemError::PathExists { path } => Err(JobResult::FileOperationCollision {
+                operation,
+                refresh,
+                path: PathBuf::from(path),
+                elapsed_ms: started_at.elapsed().as_millis(),
+            }),
+            other => Err(JobResult::JobFailed {
+                pane: failure_pane,
+                path: primary_path,
+                message: other.to_string(),
+                elapsed_ms: started_at.elapsed().as_millis(),
+            }),
+        };
     }
 
     let mut refreshed = Vec::with_capacity(refresh.len());
@@ -176,6 +205,89 @@ fn run_file_operation(
         elapsed_ms: started_at.elapsed().as_millis(),
     })
 }
+
+fn run_copy_with_progress(
+    source: &Path,
+    destination: &Path,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    copy_path_with_progress(source, destination, collision, &mut |progress| {
+        let _ = send_progress_update(
+            result_tx,
+            "copy",
+            progress.completed,
+            progress.total,
+            progress.current_path,
+        );
+    })
+}
+
+fn run_move_with_progress(
+    source: &Path,
+    destination: &Path,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    match rename_path(source, destination, collision) {
+        Ok(()) => {
+            let _ = send_progress_update(result_tx, "move", 1, 1, destination.to_path_buf());
+            Ok(())
+        }
+        Err(error) if is_cross_device_error(&error) => {
+            let total = count_path_entries(source)?.saturating_add(1);
+            let _ = send_progress_update(result_tx, "move", 0, total, source.to_path_buf());
+
+            copy_path_with_progress(source, destination, collision, &mut |progress| {
+                let _ = send_progress_update(
+                    result_tx,
+                    "move",
+                    progress.completed,
+                    total,
+                    progress.current_path,
+                );
+            })?;
+
+            delete_path(source)?;
+            let _ =
+                send_progress_update(result_tx, "move", total, total, destination.to_path_buf());
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn send_progress_update(
+    result_tx: &Sender<JobResult>,
+    operation: &'static str,
+    completed: u64,
+    total: u64,
+    current_path: PathBuf,
+) -> Result<(), ()> {
+    result_tx
+        .send(JobResult::FileOperationProgress {
+            status: FileOperationStatus {
+                operation,
+                completed,
+                total,
+                current_path,
+            },
+        })
+        .map_err(|_| ())
+}
+
+fn is_cross_device_error(error: &FileSystemError) -> bool {
+    matches!(
+        error,
+        FileSystemError::RenamePath { source, .. } if source.raw_os_error() == Some(EXDEV_ERROR)
+    )
+}
+
+#[cfg(unix)]
+const EXDEV_ERROR: i32 = 18;
+
+#[cfg(not(unix))]
+const EXDEV_ERROR: i32 = -1;
 
 fn primary_path(operation: &FileOperation) -> PathBuf {
     match operation {

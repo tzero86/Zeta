@@ -17,6 +17,10 @@ pub enum MenuId {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    CollisionCancel,
+    CollisionOverwrite,
+    CollisionRename,
+    CollisionSkip,
     CloseDialog,
     CloseMenu,
     EnterSelection,
@@ -70,12 +74,19 @@ pub enum Command {
     RunFileOperation {
         operation: FileOperation,
         refresh: Vec<RefreshTarget>,
+        collision: CollisionPolicy,
     },
     ScanPane {
         pane: PaneId,
         path: PathBuf,
     },
     SaveEditor,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CollisionPolicy {
+    Fail,
+    Overwrite,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -240,6 +251,17 @@ impl Action {
     pub fn from_dialog_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
             KeyCode::Esc | KeyCode::Enter | KeyCode::F(1) => Some(Self::CloseDialog),
+            KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
+            _ => None,
+        }
+    }
+
+    pub fn from_collision_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CollisionCancel),
+            KeyCode::Char('o') | KeyCode::Char('O') => Some(Self::CollisionOverwrite),
+            KeyCode::Char('r') | KeyCode::Char('R') => Some(Self::CollisionRename),
+            KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::CollisionSkip),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             _ => None,
         }
@@ -446,6 +468,22 @@ mod tests {
         assert_eq!(
             Action::from_dialog_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             Some(Action::CloseDialog)
+        );
+    }
+
+    #[test]
+    fn collision_shortcuts_are_available() {
+        assert_eq!(
+            Action::from_collision_key_event(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::NONE)),
+            Some(Action::CollisionOverwrite)
+        );
+        assert_eq!(
+            Action::from_collision_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE)),
+            Some(Action::CollisionRename)
+        );
+        assert_eq!(
+            Action::from_collision_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
+            Some(Action::CollisionSkip)
         );
     }
 }

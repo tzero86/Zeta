@@ -105,7 +105,9 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
-                let action = if self.state.is_prompt_open() {
+                let action = if self.state.is_collision_open() {
+                    Action::from_collision_key_event(key_event)
+                } else if self.state.is_prompt_open() {
                     Action::from_prompt_key_event(key_event)
                 } else if self.state.is_dialog_open() {
                     Action::from_dialog_key_event(key_event)
@@ -148,9 +150,17 @@ impl App {
                     .state
                     .set_error_status(format!("failed to open editor buffer: {error}")),
             },
-            Command::RunFileOperation { operation, refresh } => self
+            Command::RunFileOperation {
+                operation,
+                refresh,
+                collision,
+            } => self
                 .job_requests
-                .send(JobRequest::FileOperation { operation, refresh })
+                .send(JobRequest::FileOperation {
+                    operation,
+                    refresh,
+                    collision,
+                })
                 .context("failed to queue background file operation")?,
             Command::ScanPane { pane, path } => self
                 .job_requests
