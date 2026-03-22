@@ -38,6 +38,7 @@ pub struct AppState {
     collision: Option<CollisionState>,
     pub preview: Option<(PathBuf, PreviewContent)>,
     pub preview_panel_open: bool,
+    preview_scroll: usize,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -77,6 +78,7 @@ impl AppState {
             collision: None,
             preview: None,
             preview_panel_open: false,
+            preview_scroll: 0,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "loading panes | config {} ({})",
@@ -324,7 +326,7 @@ impl AppState {
             }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
-                    PaneFocus::Left => PaneFocus::Right,
+                    PaneFocus::Left | PaneFocus::Preview => PaneFocus::Right,
                     PaneFocus::Right => PaneFocus::Left,
                 };
                 self.needs_redraw = true;
@@ -752,6 +754,7 @@ impl AppState {
         match action {
             Action::ClearPreview => {
                 self.preview = None;
+                self.preview_scroll = 0;
                 self.needs_redraw = true;
             }
             Action::TogglePreviewPanel => {
@@ -759,7 +762,34 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::PreviewFile { path } => {
+                self.preview_scroll = 0;
                 commands.push(Command::PreviewFile { path: path.clone() });
+            }
+            Action::FocusPreviewPanel => {
+                if self.preview_panel_open && self.editor.is_none() {
+                    if self.focus == PaneFocus::Preview {
+                        self.focus = PaneFocus::Left;
+                    } else {
+                        self.focus = PaneFocus::Preview;
+                    }
+                    self.needs_redraw = true;
+                }
+            }
+            Action::ScrollPreviewDown => {
+                self.preview_scroll = self.preview_scroll.saturating_add(1);
+                self.needs_redraw = true;
+            }
+            Action::ScrollPreviewUp => {
+                self.preview_scroll = self.preview_scroll.saturating_sub(1);
+                self.needs_redraw = true;
+            }
+            Action::ScrollPreviewPageDown => {
+                self.preview_scroll = self.preview_scroll.saturating_add(20);
+                self.needs_redraw = true;
+            }
+            Action::ScrollPreviewPageUp => {
+                self.preview_scroll = self.preview_scroll.saturating_sub(20);
+                self.needs_redraw = true;
             }
             // After navigation actions, request a preview for the newly selected file.
             Action::MoveSelectionDown
@@ -864,6 +894,7 @@ impl AppState {
             }
             JobResult::PreviewLoaded { path, content } => {
                 self.preview = Some((path, content));
+                self.preview_scroll = 0;
                 self.needs_redraw = true;
             }
         }
@@ -934,6 +965,14 @@ impl AppState {
 
     pub fn is_editor_focused(&self) -> bool {
         self.editor.is_some()
+    }
+
+    pub fn preview_scroll(&self) -> usize {
+        self.preview_scroll
+    }
+
+    pub fn is_preview_focused(&self) -> bool {
+        self.focus == PaneFocus::Preview
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -1011,6 +1050,9 @@ impl AppState {
             .as_ref()
             .map(|value| value.display().to_string())
             .unwrap_or_else(|| String::from("<unnamed>"));
+        if self.focus == PaneFocus::Preview {
+            self.focus = PaneFocus::Left;
+        }
         self.editor = Some(editor);
         self.status_message = format!("opened editor for {path}");
         self.needs_redraw = true;
@@ -1038,21 +1080,21 @@ impl AppState {
 
     fn active_pane(&self) -> &PaneState {
         match self.focus {
-            PaneFocus::Left => &self.left,
+            PaneFocus::Left | PaneFocus::Preview => &self.left,
             PaneFocus::Right => &self.right,
         }
     }
 
     fn active_pane_mut(&mut self) -> &mut PaneState {
         match self.focus {
-            PaneFocus::Left => &mut self.left,
+            PaneFocus::Left | PaneFocus::Preview => &mut self.left,
             PaneFocus::Right => &mut self.right,
         }
     }
 
     fn inactive_pane(&self) -> &PaneState {
         match self.focus {
-            PaneFocus::Left => &self.right,
+            PaneFocus::Left | PaneFocus::Preview => &self.right,
             PaneFocus::Right => &self.left,
         }
     }
@@ -1078,7 +1120,7 @@ impl AppState {
         if target_dir != self.active_pane().cwd && target_dir == self.inactive_pane().cwd {
             refresh.push(RefreshTarget {
                 pane: match self.focus {
-                    PaneFocus::Left => PaneId::Right,
+                    PaneFocus::Left | PaneFocus::Preview => PaneId::Right,
                     PaneFocus::Right => PaneId::Left,
                 },
                 path: target_dir,
@@ -1097,7 +1139,7 @@ impl AppState {
 
     fn focused_pane_id(&self) -> PaneId {
         match self.focus {
-            PaneFocus::Left => PaneId::Left,
+            PaneFocus::Left | PaneFocus::Preview => PaneId::Left,
             PaneFocus::Right => PaneId::Right,
         }
     }
@@ -1175,6 +1217,7 @@ mod tests {
             collision: None,
             preview: None,
             preview_panel_open: false,
+            preview_scroll: 0,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,

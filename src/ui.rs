@@ -111,7 +111,15 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         } else if is_preview_open {
             let preview_content = state.preview().map(|(_, c)| c);
             let filename = state.active_pane_title().to_string();
-            render_preview_panel(frame, tools_area, preview_content, &filename, palette);
+            render_preview_panel(
+                frame,
+                tools_area,
+                preview_content,
+                &filename,
+                state.preview_scroll(),
+                state.is_preview_focused(),
+                palette,
+            );
         }
     }
 
@@ -505,26 +513,44 @@ fn render_preview_panel(
     area: Rect,
     content: Option<&PreviewContent>,
     filename: &str,
+    scroll: usize,
+    is_focused: bool,
     palette: ThemePalette,
 ) {
+    let border_style = if is_focused {
+        Style::default()
+            .fg(palette.border_focus)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(palette.text_muted)
+    };
+
     let title = format!(" Preview  {} ", filename);
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette.text_muted));
+        .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let body = match content {
-        Some(PreviewContent::Text(t)) => t.clone(),
+        Some(PreviewContent::Text(t)) => {
+            let lines: Vec<&str> = t.lines().collect();
+            let visible_height = inner.height as usize;
+            let start = scroll.min(lines.len().saturating_sub(1));
+            lines[start..]
+                .iter()
+                .take(visible_height)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
         Some(PreviewContent::Binary { size_bytes }) => format!("[binary — {size_bytes} bytes]"),
         Some(PreviewContent::Empty) => String::from("[empty file]"),
         None => String::from("[directory — select a file to preview]"),
     };
 
-    let paragraph = Paragraph::new(body)
-        .style(Style::default().fg(palette.text_primary))
-        .wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(body).style(Style::default().fg(palette.text_primary));
     frame.render_widget(paragraph, inner);
 }
 

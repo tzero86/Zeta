@@ -4,6 +4,7 @@ use crate::action::Action;
 pub enum PaneFocus {
     Left,
     Right,
+    Preview,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

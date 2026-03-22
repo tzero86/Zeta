@@ -116,7 +116,12 @@ impl App {
                 } else if self.state.is_editor_focused() {
                     Action::from_editor_key_event(key_event)
                 } else {
-                    Action::from_key_event(key_event, &self.keymap)
+                    Action::from_key_event(
+                        key_event,
+                        &self.keymap,
+                        self.state.is_editor_focused(),
+                        self.state.is_preview_focused(),
+                    )
                 };
 
                 if let Some(action) = action {
