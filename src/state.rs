@@ -209,6 +209,26 @@ impl AppState {
                 self.status_message = String::from("opened about");
                 self.needs_redraw = true;
             }
+            Action::OpenCopyPrompt => {
+                self.dialog = None;
+                self.active_menu = None;
+                self.menu_selection = 0;
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    let target_dir = self.inactive_pane().cwd.clone();
+                    let suggested = target_dir.join(&entry.name);
+                    self.prompt = Some(PromptState::with_value(
+                        PromptKind::Copy,
+                        "Copy",
+                        target_dir,
+                        Some(entry.path.clone()),
+                        suggested.display().to_string(),
+                    ));
+                    self.status_message = String::from("enter copy destination");
+                } else {
+                    self.status_message = String::from("no item selected to copy");
+                }
+                self.needs_redraw = true;
+            }
             Action::OpenDeletePrompt => {
                 self.dialog = None;
                 self.active_menu = None;
@@ -270,6 +290,26 @@ impl AppState {
                     self.status_message = String::from("edit the new name");
                 } else {
                     self.status_message = String::from("no item selected to rename");
+                }
+                self.needs_redraw = true;
+            }
+            Action::OpenMovePrompt => {
+                self.dialog = None;
+                self.active_menu = None;
+                self.menu_selection = 0;
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    let target_dir = self.inactive_pane().cwd.clone();
+                    let suggested = target_dir.join(&entry.name);
+                    self.prompt = Some(PromptState::with_value(
+                        PromptKind::Move,
+                        "Move",
+                        target_dir,
+                        Some(entry.path.clone()),
+                        suggested.display().to_string(),
+                    ));
+                    self.status_message = String::from("enter move destination");
+                } else {
+                    self.status_message = String::from("no item selected to move");
                 }
                 self.needs_redraw = true;
             }
@@ -400,10 +440,20 @@ impl AppState {
                         let kind = prompt.kind;
                         let base_path = prompt.base_path.clone();
                         let value = prompt.value.trim().to_string();
-                        let path = base_path.join(&value);
+                        let path = PathBuf::from(&value);
                         match kind {
+                            PromptKind::Copy => {
+                                if let Some(source_path) = prompt.source_path.as_ref() {
+                                    fs::copy_path(source_path, &path)?;
+                                }
+                            }
                             PromptKind::NewDirectory => fs::create_directory(&path)?,
                             PromptKind::NewFile => fs::create_file(&path)?,
+                            PromptKind::Move => {
+                                if let Some(source_path) = prompt.source_path.as_ref() {
+                                    fs::rename_path(source_path, &path)?;
+                                }
+                            }
                             PromptKind::Rename => {
                                 if let Some(source_path) = prompt.source_path.as_ref() {
                                     fs::rename_path(source_path, &path)?;
@@ -415,11 +465,30 @@ impl AppState {
                                 }
                             }
                         }
-                        let entries = fs::scan_directory(&base_path)?;
-                        self.active_pane_mut().set_entries(entries);
+                        let target_dir = match kind {
+                            PromptKind::Copy | PromptKind::Move => path
+                                .parent()
+                                .map(Path::to_path_buf)
+                                .unwrap_or_else(|| base_path.clone()),
+                            _ => base_path.clone(),
+                        };
+
+                        let active_cwd = self.active_pane().cwd.clone();
+                        let active_entries = fs::scan_directory(&active_cwd)?;
+                        self.active_pane_mut().set_entries(active_entries);
+
+                        if target_dir == active_cwd {
+                            // already refreshed via active pane update
+                        } else if self.inactive_pane().cwd == target_dir {
+                            let target_entries = fs::scan_directory(&target_dir)?;
+                            self.inactive_pane_mut().set_entries(target_entries);
+                        }
+
                         self.status_message = match kind {
+                            PromptKind::Copy => format!("copied to {}", path.display()),
                             PromptKind::Rename => format!("renamed to {}", path.display()),
                             PromptKind::Delete => String::from("deleted item"),
+                            PromptKind::Move => format!("moved to {}", path.display()),
                             _ => format!("created {}", path.display()),
                         };
                         self.prompt = None;
@@ -645,6 +714,20 @@ impl AppState {
         }
     }
 
+    fn inactive_pane(&self) -> &PaneState {
+        match self.focus {
+            PaneFocus::Left => &self.right,
+            PaneFocus::Right => &self.left,
+        }
+    }
+
+    fn inactive_pane_mut(&mut self) -> &mut PaneState {
+        match self.focus {
+            PaneFocus::Left => &mut self.right,
+            PaneFocus::Right => &mut self.left,
+        }
+    }
+
     fn pane_mut(&mut self, pane: PaneId) -> &mut PaneState {
         match pane {
             PaneId::Left => &mut self.left,
@@ -667,6 +750,18 @@ impl AppState {
                     shortcut: "F4",
                     mnemonic: 'o',
                     action: Action::OpenSelectedInEditor,
+                },
+                MenuItem {
+                    label: "Copy",
+                    shortcut: "F5",
+                    mnemonic: 'c',
+                    action: Action::OpenCopyPrompt,
+                },
+                MenuItem {
+                    label: "Move",
+                    shortcut: "Shift+F6",
+                    mnemonic: 'v',
+                    action: Action::OpenMovePrompt,
                 },
                 MenuItem {
                     label: "New File",
@@ -797,7 +892,9 @@ pub struct MenuItem {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptKind {
+    Copy,
     Delete,
+    Move,
     NewDirectory,
     NewFile,
     Rename,
@@ -1085,6 +1182,34 @@ mod tests {
             .expect("prompt should open");
 
         assert!(state.prompt.is_some());
+    }
+
+    #[test]
+    fn open_copy_prompt_prefills_inactive_pane_destination() {
+        let mut state = test_state();
+        state.right.cwd = PathBuf::from("/tmp/target");
+
+        state
+            .apply(Action::OpenCopyPrompt)
+            .expect("copy prompt should open");
+
+        let prompt = state.prompt.as_ref().expect("prompt should exist");
+        assert_eq!(prompt.title, "Copy");
+        assert_eq!(prompt.value, "/tmp/target/note.txt");
+    }
+
+    #[test]
+    fn open_move_prompt_prefills_inactive_pane_destination() {
+        let mut state = test_state();
+        state.right.cwd = PathBuf::from("/tmp/target");
+
+        state
+            .apply(Action::OpenMovePrompt)
+            .expect("move prompt should open");
+
+        let prompt = state.prompt.as_ref().expect("prompt should exist");
+        assert_eq!(prompt.title, "Move");
+        assert_eq!(prompt.value, "/tmp/target/note.txt");
     }
 
     #[test]

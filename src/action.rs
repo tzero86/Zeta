@@ -39,8 +39,10 @@ pub enum Action {
     MoveSelectionUp,
     NavigateToParent,
     OpenAboutDialog,
+    OpenCopyPrompt,
     OpenDeletePrompt,
     OpenHelpDialog,
+    OpenMovePrompt,
     OpenMenu(MenuId),
     OpenNewDirectoryPrompt,
     OpenNewFilePrompt,
@@ -96,6 +98,10 @@ impl Action {
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
+            KeyCode::F(5) => Some(Self::OpenCopyPrompt),
+            KeyCode::F(6) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::OpenMovePrompt)
+            }
             KeyCode::F(6) => Some(Self::OpenRenamePrompt),
             KeyCode::F(8) => Some(Self::OpenDeletePrompt),
             KeyCode::Insert => Some(Self::OpenNewFilePrompt),
@@ -292,8 +298,16 @@ mod tests {
             Some(Action::OpenSelectedInEditor)
         );
         assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE), &keymap),
+            Some(Action::OpenCopyPrompt)
+        );
+        assert_eq!(
             Action::from_key_event(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE), &keymap),
             Some(Action::OpenRenamePrompt)
+        );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(6), KeyModifiers::SHIFT), &keymap),
+            Some(Action::OpenMovePrompt)
         );
         assert_eq!(
             Action::from_key_event(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE), &keymap),

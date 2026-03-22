@@ -271,6 +271,15 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| String::from("<missing target>")),
         ),
+        crate::state::PromptKind::Copy | crate::state::PromptKind::Move => format!(
+            "Source: {}\nDestination: {}\nEnter submit | Esc cancel",
+            prompt
+                .source_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| String::from("<missing source>")),
+            prompt.value,
+        ),
         _ => format!(
             "Path: {}\nValue: {}\nEnter submit | Esc cancel",
             prompt.base_path.display(),

@@ -52,6 +52,12 @@ pub enum FileSystemError {
     CreateDir { path: String, source: io::Error },
     #[error("failed to create file {path}: {source}")]
     CreateFile { path: String, source: io::Error },
+    #[error("failed to copy {from} to {to}: {source}")]
+    CopyPath {
+        from: String,
+        to: String,
+        source: io::Error,
+    },
     #[error("failed to rename {from} to {to}: {source}")]
     RenamePath {
         from: String,
@@ -141,6 +147,46 @@ pub fn rename_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
         to: to.display().to_string(),
         source,
     })
+}
+
+pub fn copy_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
+    let metadata = std_fs::symlink_metadata(from).map_err(|source| FileSystemError::CopyPath {
+        from: from.display().to_string(),
+        to: to.display().to_string(),
+        source,
+    })?;
+
+    if metadata.is_dir() {
+        std_fs::create_dir_all(to).map_err(|source| FileSystemError::CopyPath {
+            from: from.display().to_string(),
+            to: to.display().to_string(),
+            source,
+        })?;
+
+        for entry in std_fs::read_dir(from).map_err(|source| FileSystemError::CopyPath {
+            from: from.display().to_string(),
+            to: to.display().to_string(),
+            source,
+        })? {
+            let entry = entry.map_err(|source| FileSystemError::CopyPath {
+                from: from.display().to_string(),
+                to: to.display().to_string(),
+                source,
+            })?;
+            let child_from = entry.path();
+            let child_to = to.join(entry.file_name());
+            copy_path(&child_from, &child_to)?;
+        }
+
+        Ok(())
+    } else {
+        std_fs::copy(from, to).map_err(|source| FileSystemError::CopyPath {
+            from: from.display().to_string(),
+            to: to.display().to_string(),
+            source,
+        })?;
+        Ok(())
+    }
 }
 
 pub fn delete_path(path: &Path) -> Result<(), FileSystemError> {
