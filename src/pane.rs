@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::fs::{scan_directory, EntryInfo, FileSystemError};
+use crate::fs::{scan_directory, EntryInfo, EntryKind, FileSystemError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaneId {
@@ -61,6 +61,15 @@ impl PaneState {
 
     pub fn selected_entry(&self) -> Option<&EntryInfo> {
         self.entries.get(self.selection)
+    }
+
+    pub fn selected_path(&self) -> Option<PathBuf> {
+        self.selected_entry().map(|entry| entry.path.clone())
+    }
+
+    pub fn can_enter_selected(&self) -> bool {
+        self.selected_entry()
+            .is_some_and(|entry| entry.kind == EntryKind::Directory)
     }
 }
 

@@ -7,6 +7,7 @@ use crate::pane::PaneId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    EnterSelection,
     CloseEditor,
     EditorBackspace,
     EditorInsert(char),
@@ -48,6 +49,7 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
+            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
             }
@@ -154,6 +156,10 @@ mod tests {
         assert_eq!(
             Action::from_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &keymap),
             Some(Action::MoveSelectionUp)
+        );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keymap),
+            Some(Action::EnterSelection)
         );
     }
 

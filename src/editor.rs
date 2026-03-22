@@ -107,6 +107,10 @@ impl EditorBuffer {
         self.text.to_string()
     }
 
+    pub fn visible_lines(&self) -> Vec<String> {
+        self.text.lines().map(|line| line.to_string()).collect()
+    }
+
     pub fn cursor_line_col(&self) -> (usize, usize) {
         let safe_idx = self.cursor_char_idx.min(self.text.len_chars());
         let line = self.text.char_to_line(safe_idx);

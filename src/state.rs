@@ -129,6 +129,19 @@ impl AppState {
                     self.needs_redraw = true;
                 }
             }
+            Action::EnterSelection => {
+                if self.active_pane().can_enter_selected() {
+                    if let Some(path) = self.active_pane().selected_path() {
+                        let pane = self.focused_pane_id();
+                        self.status_message = format!("opening directory {}", path.display());
+                        self.needs_redraw = true;
+                        commands.push(Command::ScanPane { pane, path });
+                    }
+                } else {
+                    self.status_message = String::from("selected item is not a directory");
+                    self.needs_redraw = true;
+                }
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
@@ -262,7 +275,7 @@ impl AppState {
         };
 
         format!(
-            "{} | {} | startup:{}ms | {} | draws:{} | cfg:{}",
+            "{} | {} | startup:{}ms | {} | draws:{} | q quit | enter open dir | F4 editor | Ctrl+S save | Esc close | cfg:{}",
             self.app_label,
             self.status_message,
             self.startup_time_ms,
@@ -349,7 +362,7 @@ mod tests {
     use crate::action::{Action, Command};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
-    use crate::pane::{PaneState, SortMode};
+    use crate::pane::{PaneId, PaneState, SortMode};
 
     use super::{AppState, PaneFocus};
 
@@ -442,5 +455,23 @@ mod tests {
 
         assert!(commands.is_empty());
         assert!(state.editor.is_some());
+    }
+
+    #[test]
+    fn enter_selection_enqueues_directory_scan() {
+        let mut state = test_state();
+        state.left.entries[0].kind = EntryKind::Directory;
+
+        let commands = state
+            .apply(Action::EnterSelection)
+            .expect("action should succeed");
+
+        assert_eq!(
+            commands,
+            vec![Command::ScanPane {
+                pane: PaneId::Left,
+                path: PathBuf::from("./note.txt"),
+            }]
+        );
     }
 }

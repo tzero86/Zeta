@@ -127,10 +127,21 @@ fn render_editor(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let line_number_width = 4usize;
     let preview = editor
-        .contents()
-        .lines()
+        .visible_lines()
+        .into_iter()
+        .enumerate()
         .take(inner.height.saturating_sub(1) as usize)
+        .map(|(index, line)| {
+            let trimmed = line.strip_suffix('\n').unwrap_or(&line);
+            format!(
+                "{:>width$} {}",
+                index + 1,
+                trimmed,
+                width = line_number_width
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
     let paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
@@ -139,7 +150,8 @@ fn render_editor(
     if is_active {
         let (line, column) = editor.cursor_line_col();
         let cursor_y = inner.y + (line as u16).min(inner.height.saturating_sub(1));
-        let cursor_x = inner.x + (column as u16).min(inner.width.saturating_sub(1));
+        let cursor_x =
+            inner.x + ((column + line_number_width + 1) as u16).min(inner.width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
