@@ -25,10 +25,11 @@ impl Default for EditorBuffer {
 
 impl EditorBuffer {
     pub fn open(path: &Path) -> Result<Self, EditorError> {
-        let contents = std_fs::read_to_string(path).map_err(|source| EditorError::ReadFile {
+        let bytes = std_fs::read(path).map_err(|source| EditorError::ReadFile {
             path: path.display().to_string(),
             source,
         })?;
+        let contents = String::from_utf8_lossy(&bytes);
 
         Ok(Self {
             path: Some(path.to_path_buf()),

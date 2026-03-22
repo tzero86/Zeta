@@ -8,8 +8,18 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
+use crate::fs::EntryKind;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
+
+fn get_entry_icon(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::Directory => "[D]",
+        EntryKind::Symlink => "[L]",
+        EntryKind::File => "[F]",
+        EntryKind::Other => "[?]",
+    }
+}
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let palette = state.theme().palette;
@@ -452,8 +462,8 @@ fn render_item(
     available_width: usize,
     palette: ThemePalette,
 ) -> ListItem<'static> {
-    let guide = if is_last { "  " } else { "│ " };
-    let branch = if is_last { "└─" } else { "├─" };
+    let guide = if is_last { " " } else { "| " };
+    let branch = if is_last { "\\" } else { "|" };
     let label_style = match entry.kind {
         crate::fs::EntryKind::Directory => Style::default()
             .fg(palette.directory_fg)
@@ -462,12 +472,7 @@ fn render_item(
         crate::fs::EntryKind::File => Style::default().fg(palette.file_fg),
         crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
     };
-    let icon = match entry.kind {
-        crate::fs::EntryKind::Directory => "▣",
-        crate::fs::EntryKind::Symlink => "↗",
-        crate::fs::EntryKind::File => "•",
-        crate::fs::EntryKind::Other => "◦",
-    };
+    let icon = get_entry_icon(entry.kind);
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),

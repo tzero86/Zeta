@@ -106,6 +106,26 @@ impl AppState {
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
 
+        // Delegate to focused reducers
+        commands.extend(self.reduce_collision(&action)?);
+        commands.extend(self.reduce_dialog(&action)?);
+        commands.extend(self.reduce_menu(&action)?);
+        commands.extend(self.reduce_pane(&action)?);
+        commands.extend(self.reduce_editor(&action)?);
+        commands.extend(self.reduce_file_op_prompts(&action)?);
+        commands.extend(self.reduce_prompt_input(&action)?);
+        commands.extend(self.reduce_view(&action)?);
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // Collision Reducer
+    // =========================================================================
+
+    fn reduce_collision(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
         match action {
             Action::CollisionCancel => {
                 self.collision = None;
@@ -139,16 +159,200 @@ impl AppState {
                 self.status_message = String::from("skipped collided destination");
                 self.needs_redraw = true;
             }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // Dialog Reducer
+    // =========================================================================
+
+    fn reduce_dialog(&mut self, action: &Action) -> Result<Vec<Command>> {
+        match action {
             Action::CloseDialog => {
                 self.dialog = None;
                 self.status_message = String::from("closed dialog");
                 self.needs_redraw = true;
             }
+            Action::OpenAboutDialog => {
+                self.collision = None;
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.dialog = Some(DialogState::about(
+                    self.theme.preset.clone(),
+                    self.config_path.clone(),
+                ));
+                self.status_message = String::from("opened about");
+                self.needs_redraw = true;
+            }
+            Action::OpenHelpDialog => {
+                self.collision = None;
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.dialog = Some(DialogState::help());
+                self.status_message = String::from("opened help");
+                self.needs_redraw = true;
+            }
+            _ => {}
+        }
+
+        Ok(Vec::new())
+    }
+
+    // =========================================================================
+    // Menu Reducer
+    // =========================================================================
+
+    fn reduce_menu(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
+        match action {
             Action::CloseMenu => {
                 self.active_menu = None;
                 self.menu_selection = 0;
                 self.needs_redraw = true;
             }
+            Action::OpenMenu(menu) => {
+                self.collision = None;
+                self.dialog = None;
+                self.active_menu = Some(*menu);
+                self.menu_selection = 0;
+                self.needs_redraw = true;
+            }
+            Action::MenuActivate => {
+                if let Some(menu) = self.active_menu {
+                    if let Some(item) = menu_items_for(menu).get(self.menu_selection).copied() {
+                        self.active_menu = None;
+                        self.menu_selection = 0;
+                        commands.extend(self.apply(item.action)?);
+                    }
+                }
+            }
+            Action::MenuMnemonic(ch) => {
+                if let Some(menu) = self.active_menu {
+                    if let Some(item) = menu_items_for(menu)
+                        .into_iter()
+                        .find(|item| item.mnemonic.eq_ignore_ascii_case(ch))
+                    {
+                        self.active_menu = None;
+                        self.menu_selection = 0;
+                        commands.extend(self.apply(item.action)?);
+                    }
+                }
+            }
+            Action::MenuMoveDown => {
+                if let Some(menu) = self.active_menu {
+                    let len = menu_items_for(menu).len();
+                    if len > 0 {
+                        self.menu_selection = (self.menu_selection + 1).min(len.saturating_sub(1));
+                        self.needs_redraw = true;
+                    }
+                }
+            }
+            Action::MenuMoveUp => {
+                self.menu_selection = self.menu_selection.saturating_sub(1);
+                self.needs_redraw = true;
+            }
+            Action::MenuNext => {
+                if let Some(menu) = self.active_menu {
+                    self.active_menu = Some(match menu {
+                        MenuId::File => MenuId::Navigate,
+                        MenuId::Navigate => MenuId::View,
+                        MenuId::View => MenuId::Help,
+                        MenuId::Help => MenuId::File,
+                    });
+                    self.menu_selection = 0;
+                    self.needs_redraw = true;
+                }
+            }
+            Action::MenuPrevious => {
+                if let Some(menu) = self.active_menu {
+                    self.active_menu = Some(match menu {
+                        MenuId::File => MenuId::Help,
+                        MenuId::Navigate => MenuId::File,
+                        MenuId::View => MenuId::Navigate,
+                        MenuId::Help => MenuId::View,
+                    });
+                    self.menu_selection = 0;
+                    self.needs_redraw = true;
+                }
+            }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // Pane Reducer
+    // =========================================================================
+
+    fn reduce_pane(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
+        match action {
+            Action::EnterSelection => {
+                if self.active_pane().can_enter_selected() {
+                    if let Some(path) = self.active_pane().selected_path() {
+                        let pane = self.focused_pane_id();
+                        self.status_message = format!("opening directory {}", path.display());
+                        self.needs_redraw = true;
+                        commands.push(Command::ScanPane { pane, path });
+                    }
+                } else {
+                    self.status_message = String::from("selected item is not a directory");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::NavigateToParent => {
+                if let Some(path) = self.active_pane().parent_path() {
+                    let pane = self.focused_pane_id();
+                    self.status_message = format!("opening parent {}", path.display());
+                    self.needs_redraw = true;
+                    commands.push(Command::ScanPane { pane, path });
+                } else {
+                    self.status_message = String::from("already at filesystem root");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::FocusNextPane => {
+                self.focus = match self.focus {
+                    PaneFocus::Left => PaneFocus::Right,
+                    PaneFocus::Right => PaneFocus::Left,
+                };
+                self.needs_redraw = true;
+            }
+            Action::MoveSelectionDown => {
+                self.active_pane_mut().move_selection_down();
+                self.needs_redraw = true;
+            }
+            Action::MoveSelectionUp => {
+                self.active_pane_mut().move_selection_up();
+                self.needs_redraw = true;
+            }
+            Action::Refresh => {
+                let pane = self.focused_pane_id();
+                let path = self.active_pane().cwd.clone();
+                self.status_message = format!("refreshing {}", path.display());
+                self.needs_redraw = true;
+                commands.push(Command::ScanPane { pane, path });
+            }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // Editor Reducer
+    // =========================================================================
+
+    fn reduce_editor(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
+        match action {
             Action::CloseEditor => {
                 if let Some(editor) = &self.editor {
                     if editor.is_dirty {
@@ -187,7 +391,7 @@ impl AppState {
             }
             Action::EditorInsert(ch) => {
                 if let Some(editor) = self.editor.as_mut() {
-                    editor.insert_char(ch);
+                    editor.insert_char(*ch);
                     self.status_message = String::from("edited buffer");
                     self.needs_redraw = true;
                 }
@@ -223,48 +427,47 @@ impl AppState {
                     self.needs_redraw = true;
                 }
             }
-            Action::EnterSelection => {
-                if self.active_pane().can_enter_selected() {
-                    if let Some(path) = self.active_pane().selected_path() {
-                        let pane = self.focused_pane_id();
-                        self.status_message = format!("opening directory {}", path.display());
-                        self.needs_redraw = true;
-                        commands.push(Command::ScanPane { pane, path });
+            Action::OpenSelectedInEditor => {
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    if entry.kind == EntryKind::File {
+                        commands.push(Command::OpenEditor {
+                            path: entry.path.clone(),
+                        });
+                        self.status_message = format!("opening {}", entry.path.display());
+                    } else {
+                        self.status_message =
+                            String::from("only files can be opened in the editor");
                     }
                 } else {
-                    self.status_message = String::from("selected item is not a directory");
-                    self.needs_redraw = true;
+                    self.status_message = String::from("no file selected for editor");
                 }
+                self.needs_redraw = true;
             }
-            Action::NavigateToParent => {
-                if let Some(path) = self.active_pane().parent_path() {
-                    let pane = self.focused_pane_id();
-                    self.status_message = format!("opening parent {}", path.display());
-                    self.needs_redraw = true;
-                    commands.push(Command::ScanPane { pane, path });
+            Action::SaveEditor => {
+                if let Some(editor) = &self.editor {
+                    if editor.is_dirty {
+                        commands.push(Command::SaveEditor);
+                        self.status_message = String::from("saving editor buffer");
+                    } else {
+                        self.status_message = String::from("editor buffer is already saved");
+                    }
                 } else {
-                    self.status_message = String::from("already at filesystem root");
-                    self.needs_redraw = true;
+                    self.status_message = String::from("no editor buffer is open");
                 }
-            }
-            Action::OpenMenu(menu) => {
-                self.collision = None;
-                self.dialog = None;
-                self.active_menu = Some(menu);
-                self.menu_selection = 0;
                 self.needs_redraw = true;
             }
-            Action::OpenAboutDialog => {
-                self.collision = None;
-                self.active_menu = None;
-                self.menu_selection = 0;
-                self.dialog = Some(DialogState::about(
-                    self.theme.preset.clone(),
-                    self.config_path.clone(),
-                ));
-                self.status_message = String::from("opened about");
-                self.needs_redraw = true;
-            }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // File Operation Prompts Reducer
+    // =========================================================================
+
+    fn reduce_file_op_prompts(&mut self, action: &Action) -> Result<Vec<Command>> {
+        match action {
             Action::OpenCopyPrompt => {
                 self.collision = None;
                 self.dialog = None;
@@ -375,103 +578,20 @@ impl AppState {
                 }
                 self.needs_redraw = true;
             }
-            Action::FocusNextPane => {
-                self.focus = match self.focus {
-                    PaneFocus::Left => PaneFocus::Right,
-                    PaneFocus::Right => PaneFocus::Left,
-                };
-                self.needs_redraw = true;
-            }
-            Action::MenuActivate => {
-                if let Some(menu) = self.active_menu {
-                    if let Some(item) = menu_items_for(menu).get(self.menu_selection).copied() {
-                        self.active_menu = None;
-                        self.menu_selection = 0;
-                        commands.extend(self.apply(item.action)?);
-                    }
-                }
-            }
-            Action::MenuMnemonic(ch) => {
-                if let Some(menu) = self.active_menu {
-                    if let Some(item) = menu_items_for(menu)
-                        .into_iter()
-                        .find(|item| item.mnemonic.eq_ignore_ascii_case(&ch))
-                    {
-                        self.active_menu = None;
-                        self.menu_selection = 0;
-                        commands.extend(self.apply(item.action)?);
-                    }
-                }
-            }
-            Action::MenuMoveDown => {
-                if let Some(menu) = self.active_menu {
-                    let len = menu_items_for(menu).len();
-                    if len > 0 {
-                        self.menu_selection = (self.menu_selection + 1).min(len.saturating_sub(1));
-                        self.needs_redraw = true;
-                    }
-                }
-            }
-            Action::MenuMoveUp => {
-                self.menu_selection = self.menu_selection.saturating_sub(1);
-                self.needs_redraw = true;
-            }
-            Action::MenuNext => {
-                if let Some(menu) = self.active_menu {
-                    self.active_menu = Some(match menu {
-                        MenuId::File => MenuId::Navigate,
-                        MenuId::Navigate => MenuId::View,
-                        MenuId::View => MenuId::Help,
-                        MenuId::Help => MenuId::File,
-                    });
-                    self.menu_selection = 0;
-                    self.needs_redraw = true;
-                }
-            }
-            Action::MenuPrevious => {
-                if let Some(menu) = self.active_menu {
-                    self.active_menu = Some(match menu {
-                        MenuId::File => MenuId::Help,
-                        MenuId::Navigate => MenuId::File,
-                        MenuId::View => MenuId::Navigate,
-                        MenuId::Help => MenuId::View,
-                    });
-                    self.menu_selection = 0;
-                    self.needs_redraw = true;
-                }
-            }
-            Action::MoveSelectionDown => {
-                self.active_pane_mut().move_selection_down();
-                self.needs_redraw = true;
-            }
-            Action::MoveSelectionUp => {
-                self.active_pane_mut().move_selection_up();
-                self.needs_redraw = true;
-            }
-            Action::OpenSelectedInEditor => {
-                if let Some(entry) = self.active_pane().selected_entry() {
-                    if entry.kind == EntryKind::File {
-                        commands.push(Command::OpenEditor {
-                            path: entry.path.clone(),
-                        });
-                        self.status_message = format!("opening {}", entry.path.display());
-                    } else {
-                        self.status_message =
-                            String::from("only files can be opened in the editor");
-                    }
-                } else {
-                    self.status_message = String::from("no file selected for editor");
-                }
-                self.needs_redraw = true;
-            }
-            Action::OpenHelpDialog => {
-                self.collision = None;
-                self.active_menu = None;
-                self.menu_selection = 0;
-                self.dialog = Some(DialogState::help());
-                self.status_message = String::from("opened help");
-                self.needs_redraw = true;
-            }
+            _ => {}
+        }
+
+        Ok(Vec::new())
+    }
+
+    // =========================================================================
+    // Prompt Input Reducer
+    // =========================================================================
+
+    fn reduce_prompt_input(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
+        match action {
             Action::PromptBackspace => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     if prompt.kind != PromptKind::Delete {
@@ -488,7 +608,7 @@ impl AppState {
             Action::PromptInput(ch) => {
                 if let Some(prompt) = self.prompt.as_mut() {
                     if prompt.kind != PromptKind::Delete {
-                        prompt.value.push(ch);
+                        prompt.value.push(*ch);
                     }
                     self.needs_redraw = true;
                 }
@@ -562,28 +682,20 @@ impl AppState {
                     self.needs_redraw = true;
                 }
             }
-            Action::Refresh => {
-                let pane = self.focused_pane_id();
-                let path = self.active_pane().cwd.clone();
-                self.status_message = format!("refreshing {}", path.display());
-                self.needs_redraw = true;
-                commands.push(Command::ScanPane { pane, path });
-            }
-            Action::SaveEditor => {
-                if let Some(editor) = &self.editor {
-                    if editor.is_dirty {
-                        commands.push(Command::SaveEditor);
-                        self.status_message = String::from("saving editor buffer");
-                    } else {
-                        self.status_message = String::from("editor buffer is already saved");
-                    }
-                } else {
-                    self.status_message = String::from("no editor buffer is open");
-                }
-                self.needs_redraw = true;
-            }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
+    // View/Settings Reducer
+    // =========================================================================
+
+    fn reduce_view(&mut self, action: &Action) -> Result<Vec<Command>> {
+        match action {
             Action::SetPaneLayout(layout) => {
-                self.pane_layout = layout;
+                self.pane_layout = *layout;
                 self.status_message = match layout {
                     PaneLayout::SideBySide => String::from("layout set to side-by-side"),
                     PaneLayout::Stacked => String::from("layout set to stacked"),
@@ -591,7 +703,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::SetTheme(preset) => {
-                self.theme = ThemePalette::from_preset(preset);
+                self.theme = ThemePalette::from_preset(*preset);
                 self.status_message = format!("theme set to {}", preset.as_str());
                 self.needs_redraw = true;
             }
@@ -615,16 +727,25 @@ impl AppState {
                 }
             }
             Action::Resize { width, height } => {
-                self.last_size = Some((width, height));
+                self.last_size = Some((*width, *height));
                 self.status_message = format!("resized to {width}x{height}");
                 self.needs_redraw = true;
             }
+            _ => {}
         }
 
-        Ok(commands)
+        Ok(Vec::new())
     }
 
+    // =========================================================================
+    // Job Result Handler
+    // =========================================================================
+
     pub fn apply_job_result(&mut self, result: JobResult) {
+        self.reduce_job_result(result);
+    }
+
+    fn reduce_job_result(&mut self, result: JobResult) {
         match result {
             JobResult::DirectoryScanned {
                 pane,
@@ -694,6 +815,10 @@ impl AppState {
             }
         }
     }
+
+    // =========================================================================
+    // Public Accessors
+    // =========================================================================
 
     pub fn left_pane(&self) -> &PaneState {
         &self.left
@@ -795,7 +920,7 @@ impl AppState {
             self.startup_time_ms,
             scan,
             progress,
-            self.redraw_count,
+            self.redraw_count
         )
     }
 
@@ -839,6 +964,10 @@ impl AppState {
         self.status_message = message.into();
         self.needs_redraw = true;
     }
+
+    // =========================================================================
+    // Private Helpers
+    // =========================================================================
 
     fn active_pane(&self) -> &PaneState {
         match self.focus {
