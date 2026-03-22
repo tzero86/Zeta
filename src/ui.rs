@@ -51,6 +51,16 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         );
     }
 
+    if let Some(menu) = state.active_menu() {
+        render_menu_popup(
+            frame,
+            areas[1],
+            menu,
+            &state.menu_items(),
+            state.menu_selection(),
+        );
+    }
+
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
             .fg(Color::Black)
@@ -62,10 +72,15 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
     let menu = Paragraph::new(Line::from(vec![
-        menu_span(" Zeta ", false),
-        menu_span(" F-File ", state.active_menu() == Some(MenuId::File)),
+        menu_span(" Zeta ", None, false),
         menu_span(
-            " N-Navigate ",
+            " File ",
+            Some('F'),
+            state.active_menu() == Some(MenuId::File),
+        ),
+        menu_span(
+            " Navigate ",
+            Some('N'),
             state.active_menu() == Some(MenuId::Navigate),
         ),
     ]))
@@ -76,19 +91,9 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
-
-    if let Some(menu) = state.active_menu() {
-        render_menu_popup(
-            frame,
-            area,
-            menu,
-            &state.menu_items(),
-            state.menu_selection(),
-        );
-    }
 }
 
-fn menu_span(label: &'static str, active: bool) -> Span<'static> {
+fn menu_span(label: &'static str, mnemonic: Option<char>, active: bool) -> Span<'static> {
     let style = if active {
         Style::default()
             .fg(Color::Black)
@@ -100,7 +105,20 @@ fn menu_span(label: &'static str, active: bool) -> Span<'static> {
             .bg(Color::Rgb(212, 196, 168))
     };
 
-    Span::styled(label, style)
+    let highlighted = mnemonic.map(|value| value.to_ascii_uppercase());
+    let mut rendered = String::new();
+    let mut used_highlight = false;
+
+    for ch in label.chars() {
+        if !used_highlight && Some(ch.to_ascii_uppercase()) == highlighted {
+            rendered.push(ch);
+            used_highlight = true;
+        } else {
+            rendered.push(ch);
+        }
+    }
+
+    Span::styled(rendered, style)
 }
 
 fn render_menu_popup(
@@ -111,14 +129,14 @@ fn render_menu_popup(
     selection: usize,
 ) {
     let x = match menu {
-        MenuId::File => area.x + 7,
-        MenuId::Navigate => area.x + 16,
+        MenuId::File => area.x + 1,
+        MenuId::Navigate => area.x + 8,
     };
     let width = 28;
     let height = items.len() as u16 + 2;
     let popup_area = Rect {
         x,
-        y: area.y + 1,
+        y: area.y,
         width,
         height,
     };
