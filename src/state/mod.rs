@@ -3,7 +3,7 @@ mod menu;
 mod prompt;
 mod types;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Result;
@@ -13,7 +13,7 @@ use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette};
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
-use crate::jobs::{FileOperationStatus, JobResult};
+use crate::jobs::{FileOperationStatus, JobResult, PreviewContent};
 use crate::pane::{PaneId, PaneState};
 
 pub use dialog::{CollisionState, DialogState};
@@ -36,6 +36,7 @@ pub struct AppState {
     prompt: Option<PromptState>,
     dialog: Option<DialogState>,
     collision: Option<CollisionState>,
+    pub preview: Option<(PathBuf, PreviewContent)>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -73,6 +74,7 @@ impl AppState {
             prompt: None,
             dialog: None,
             collision: None,
+            preview: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "loading panes | config {} ({})",
@@ -115,6 +117,7 @@ impl AppState {
         commands.extend(self.reduce_file_op_prompts(&action)?);
         commands.extend(self.reduce_prompt_input(&action)?);
         commands.extend(self.reduce_view(&action)?);
+        commands.extend(self.reduce_preview(&action)?);
 
         Ok(commands)
     }
@@ -223,7 +226,7 @@ impl AppState {
             }
             Action::MenuActivate => {
                 if let Some(menu) = self.active_menu {
-                    if let Some(item) = menu_items_for(menu).get(self.menu_selection).copied() {
+                    if let Some(item) = menu_items_for(menu).get(self.menu_selection).cloned() {
                         self.active_menu = None;
                         self.menu_selection = 0;
                         commands.extend(self.apply(item.action)?);
@@ -738,6 +741,46 @@ impl AppState {
     }
 
     // =========================================================================
+    // Preview Reducer
+    // =========================================================================
+
+    fn reduce_preview(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+
+        match action {
+            Action::ClearPreview => {
+                self.preview = None;
+                self.needs_redraw = true;
+            }
+            Action::PreviewFile { path } => {
+                commands.push(Command::PreviewFile { path: path.clone() });
+            }
+            // After navigation actions, request a preview for the newly selected file.
+            Action::MoveSelectionDown
+            | Action::MoveSelectionUp
+            | Action::FocusNextPane
+            | Action::EnterSelection => {
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    if entry.kind == EntryKind::File {
+                        commands.push(Command::PreviewFile {
+                            path: entry.path.clone(),
+                        });
+                    } else {
+                        self.preview = None;
+                        self.needs_redraw = true;
+                    }
+                } else {
+                    self.preview = None;
+                    self.needs_redraw = true;
+                }
+            }
+            _ => {}
+        }
+
+        Ok(commands)
+    }
+
+    // =========================================================================
     // Job Result Handler
     // =========================================================================
 
@@ -813,6 +856,10 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
                 self.needs_redraw = true;
             }
+            JobResult::PreviewLoaded { path, content } => {
+                self.preview = Some((path, content));
+                self.needs_redraw = true;
+            }
         }
     }
 
@@ -822,6 +869,10 @@ impl AppState {
 
     pub fn left_pane(&self) -> &PaneState {
         &self.left
+    }
+
+    pub fn preview(&self) -> Option<&(PathBuf, PreviewContent)> {
+        self.preview.as_ref()
     }
 
     pub fn active_menu(&self) -> Option<MenuId> {
@@ -1106,6 +1157,7 @@ mod tests {
             prompt: None,
             dialog: None,
             collision: None,
+            preview: None,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,

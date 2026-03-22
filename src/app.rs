@@ -150,6 +150,10 @@ impl App {
                     .state
                     .set_error_status(format!("failed to open editor buffer: {error}")),
             },
+            Command::PreviewFile { path } => self
+                .job_requests
+                .send(JobRequest::PreviewFile { path })
+                .context("failed to queue background preview job")?,
             Command::RunFileOperation {
                 operation,
                 refresh,

@@ -10,6 +10,7 @@ use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::fs::EntryKind;
+use crate::jobs::PreviewContent;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
@@ -56,31 +57,66 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(areas[1]);
 
+    let left_focused = state.focus() == PaneId::Left;
+    let right_focused = state.focus() == PaneId::Right;
+    let is_editor_focused = state.is_editor_focused();
+    let has_editor = state.editor().is_some();
+
+    // Compute preview content by cloning it out to avoid borrow conflicts.
+    let left_preview_content: Option<PreviewContent> = if left_focused {
+        state
+            .preview()
+            .filter(|(path, _)| {
+                state
+                    .left_pane()
+                    .selected_path()
+                    .is_some_and(|sel| sel == *path)
+            })
+            .map(|(_, content)| content.clone())
+    } else {
+        None
+    };
+    let right_preview_content: Option<PreviewContent> = if right_focused && !has_editor {
+        state
+            .preview()
+            .filter(|(path, _)| {
+                state
+                    .right_pane()
+                    .selected_path()
+                    .is_some_and(|sel| sel == *path)
+            })
+            .map(|(_, content)| content.clone())
+    } else {
+        None
+    };
+
     render_pane(
         frame,
         panes[0],
         state.left_pane(),
-        state.focus() == PaneId::Left,
+        left_focused,
+        left_preview_content.as_ref(),
         palette,
     );
 
-    let right_is_focused = state.focus() == PaneId::Right;
-    let editor_is_active = state.is_editor_focused();
-    if let Some(editor) = state.editor_mut() {
-        render_editor(
-            frame,
-            panes[1],
-            editor,
-            right_is_focused,
-            editor_is_active,
-            palette,
-        );
+    if has_editor {
+        if let Some(editor) = state.editor_mut() {
+            render_editor(
+                frame,
+                panes[1],
+                editor,
+                right_focused,
+                is_editor_focused,
+                palette,
+            );
+        }
     } else {
         render_pane(
             frame,
             panes[1],
             state.right_pane(),
-            right_is_focused,
+            right_focused,
+            right_preview_content.as_ref(),
             palette,
         );
     }
@@ -416,6 +452,7 @@ fn render_pane(
     area: Rect,
     pane: &PaneState,
     is_focused: bool,
+    preview: Option<&PreviewContent>,
     palette: ThemePalette,
 ) {
     let border_style = if is_focused {
@@ -440,7 +477,18 @@ fn render_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let visible_height = inner.height as usize;
+    // Split inner area: 60% file list, 40% preview (only when preview is available).
+    let (list_area, preview_area) = if preview.is_some() && inner.width >= 20 {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(inner);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (inner, None)
+    };
+
+    let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
@@ -452,7 +500,7 @@ fn render_pane(
                 render_item(
                     entry,
                     index + 1 == visible_entries.len(),
-                    inner.width as usize,
+                    list_area.width as usize,
                     palette,
                 )
             })
@@ -473,7 +521,43 @@ fn render_pane(
         list_state.select(pane.visible_selection(visible_height));
     }
 
-    frame.render_stateful_widget(list, inner, &mut list_state);
+    frame.render_stateful_widget(list, list_area, &mut list_state);
+
+    if let (Some(content), Some(area)) = (preview, preview_area) {
+        render_preview_panel(frame, area, content, palette);
+    }
+}
+
+fn render_preview_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    content: &PreviewContent,
+    palette: ThemePalette,
+) {
+    let block = Block::default()
+        .title("preview")
+        .borders(Borders::ALL)
+        .border_set(ASCII_BORDERS)
+        .border_style(Style::default().fg(palette.text_muted));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let body = match content {
+        PreviewContent::Text(text) => text.clone(),
+        PreviewContent::Binary { size_bytes } => {
+            format!("[binary file — {size_bytes} bytes]")
+        }
+        PreviewContent::Empty => String::from("[empty file]"),
+    };
+
+    let paragraph = Paragraph::new(body)
+        .style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
 }
 
 fn render_item(

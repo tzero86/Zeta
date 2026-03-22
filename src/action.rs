@@ -15,7 +15,7 @@ pub enum MenuId {
     Help,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Action {
     CollisionCancel,
     CollisionOverwrite,
@@ -25,6 +25,7 @@ pub enum Action {
     CloseMenu,
     EnterSelection,
     CloseEditor,
+    ClearPreview,
     DiscardEditorChanges,
     EditorBackspace,
     EditorInsert(char),
@@ -53,6 +54,7 @@ pub enum Action {
     OpenNewFilePrompt,
     OpenRenamePrompt,
     OpenSelectedInEditor,
+    PreviewFile { path: PathBuf },
     PromptBackspace,
     PromptCancel,
     PromptInput(char),
@@ -69,6 +71,9 @@ pub enum Action {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
     OpenEditor {
+        path: PathBuf,
+    },
+    PreviewFile {
         path: PathBuf,
     },
     RunFileOperation {

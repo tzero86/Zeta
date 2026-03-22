@@ -7,9 +7,20 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
     copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
-    rename_path, scan_directory, EntryInfo, FileSystemError,
+    looks_like_binary, rename_path, scan_directory, EntryInfo, FileSystemError,
 };
 use crate::pane::PaneId;
+
+/// Content produced by a non-blocking file preview read.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewContent {
+    /// First up to 200 lines of a text file, truncated to 4 KB.
+    Text(String),
+    /// File that looks binary — only the byte size is stored.
+    Binary { size_bytes: u64 },
+    /// File was empty or unreadable.
+    Empty,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum JobRequest {
@@ -20,6 +31,9 @@ pub enum JobRequest {
     },
     ScanDirectory {
         pane: PaneId,
+        path: PathBuf,
+    },
+    PreviewFile {
         path: PathBuf,
     },
 }
@@ -51,6 +65,10 @@ pub enum JobResult {
         path: PathBuf,
         message: String,
         elapsed_ms: u128,
+    },
+    PreviewLoaded {
+        path: PathBuf,
+        content: PreviewContent,
     },
 }
 
@@ -127,8 +145,50 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
                     }
                 }
             }
+            JobRequest::PreviewFile { path } => {
+                let content = load_preview_content(&path);
+                if result_tx
+                    .send(JobResult::PreviewLoaded { path, content })
+                    .is_err()
+                {
+                    break;
+                }
+            }
         }
     }
+}
+
+fn load_preview_content(path: &Path) -> PreviewContent {
+    // Read up to 8 KB to determine file type and content.
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(_) => return PreviewContent::Empty,
+    };
+
+    if bytes.is_empty() {
+        return PreviewContent::Empty;
+    }
+
+    if looks_like_binary(&bytes) {
+        // Try to get the full file size from metadata; fall back to bytes read.
+        let size_bytes = std::fs::metadata(path)
+            .map(|m| m.len())
+            .unwrap_or(bytes.len() as u64);
+        return PreviewContent::Binary { size_bytes };
+    }
+
+    // Decode lossily and take at most 200 lines, capped at 4 KB total.
+    let text = String::from_utf8_lossy(&bytes);
+    let truncated: String = text
+        .lines()
+        .take(200)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .chars()
+        .take(4096)
+        .collect();
+
+    PreviewContent::Text(truncated)
 }
 
 fn run_file_operation(

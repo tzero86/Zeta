@@ -331,6 +331,11 @@ pub fn suggest_non_conflicting_path(path: &Path) -> PathBuf {
     unreachable!("rename suggestion loop should always terminate")
 }
 
+/// Returns `true` if the first 8 KB of bytes contain a null byte (binary heuristic).
+pub fn looks_like_binary(bytes: &[u8]) -> bool {
+    bytes.iter().take(8192).any(|&b| b == 0)
+}
+
 pub fn delete_path(path: &Path) -> Result<(), FileSystemError> {
     let metadata =
         std_fs::symlink_metadata(path).map_err(|source| FileSystemError::DeletePath {

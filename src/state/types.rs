@@ -12,7 +12,7 @@ pub enum PaneLayout {
     Stacked,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MenuItem {
     pub label: &'static str,
     pub shortcut: &'static str,
