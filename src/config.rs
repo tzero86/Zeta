@@ -191,6 +191,8 @@ pub struct ThemePalette {
     pub file_fg: Color,
     pub status_bg: Color,
     pub status_fg: Color,
+    pub logo_accent: Color,
+    pub key_hint_fg: Color,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -255,6 +257,8 @@ impl ThemePalette {
             file_fg: Color::Gray,
             status_bg: Color::Cyan,
             status_fg: Color::Black,
+            logo_accent: Color::Rgb(180, 60, 30),
+            key_hint_fg: Color::Rgb(118, 196, 182),
         }
     }
 
@@ -278,6 +282,8 @@ impl ThemePalette {
             file_fg: Color::Rgb(222, 218, 210),
             status_bg: Color::Rgb(114, 164, 199),
             status_fg: Color::Black,
+            logo_accent: Color::Rgb(190, 80, 20),
+            key_hint_fg: Color::Rgb(83, 148, 117),
         }
     }
 
@@ -301,6 +307,8 @@ impl ThemePalette {
             file_fg: Color::Rgb(203, 210, 217),
             status_bg: Color::Rgb(116, 181, 201),
             status_fg: Color::Black,
+            logo_accent: Color::Rgb(170, 70, 50),
+            key_hint_fg: Color::Rgb(102, 174, 197),
         }
     }
 }

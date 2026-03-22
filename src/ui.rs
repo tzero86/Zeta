@@ -194,27 +194,30 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette:
 }
 
 fn logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'static>> {
-    let style = if active {
-        Style::default()
-            .fg(palette.menu_mnemonic_fg)
-            .bg(palette.menu_active_bg)
-            .add_modifier(Modifier::BOLD)
+    let bg = if active {
+        palette.menu_active_bg
     } else {
-        Style::default()
-            .fg(palette.menu_mnemonic_fg)
-            .bg(palette.menu_bg)
-            .add_modifier(Modifier::BOLD)
+        palette.menu_bg
     };
+    let bracket_style = Style::default()
+        .fg(palette.logo_accent)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+    let letter_style = Style::default()
+        .fg(palette.logo_accent)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+    let name_style = Style::default()
+        .fg(palette.menu_fg)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
 
     vec![
-        Span::styled(" [Z] ", style),
-        Span::styled(
-            "Zeta ",
-            Style::default()
-                .fg(palette.menu_fg)
-                .bg(style.bg.unwrap_or(palette.menu_bg))
-                .add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(" ", Style::default().bg(bg)),
+        Span::styled("[", bracket_style),
+        Span::styled("Z", letter_style),
+        Span::styled("]", bracket_style),
+        Span::styled("eta ", name_style),
     ]
 }
 
@@ -373,8 +376,8 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
 }
 
 fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palette: ThemePalette) {
-    let width = area.width.min(58);
-    let height = (dialog.lines.len() as u16 + 2).min(area.height.saturating_sub(2).max(3));
+    let width = area.width.min(68);
+    let height = ((dialog.lines.len() as u16) + 2).min(area.height.saturating_sub(2).max(6));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {
@@ -393,14 +396,41 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
-    let body = dialog.lines.join("\n");
-    let paragraph = Paragraph::new(body)
-        .style(
-            Style::default()
-                .bg(palette.prompt_bg)
-                .fg(palette.text_primary),
-        )
-        .wrap(Wrap { trim: false });
+    let styled_lines: Vec<Line> = dialog
+        .lines
+        .iter()
+        .map(|raw| {
+            if raw.is_empty() {
+                Line::raw("")
+            } else if let Some((key, desc)) = raw.split_once('\t') {
+                // Entry line: "  KEY\tdescription"
+                let key_part = key.trim_start();
+                let indent_len = raw.len() - raw.trim_start().len();
+                let indent = " ".repeat(indent_len);
+                Line::from(vec![
+                    Span::raw(indent),
+                    Span::styled(
+                        key_part.to_string(),
+                        Style::default()
+                            .fg(palette.key_hint_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
+                ])
+            } else {
+                // Section header
+                Line::from(Span::styled(
+                    raw.clone(),
+                    Style::default()
+                        .fg(palette.menu_mnemonic_fg)
+                        .add_modifier(Modifier::BOLD),
+                ))
+            }
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(styled_lines).style(Style::default().bg(palette.prompt_bg));
     frame.render_widget(paragraph, inner);
 }
 
@@ -435,13 +465,36 @@ fn render_collision_dialog(
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
-    let paragraph = Paragraph::new(lines.join("\n"))
-        .style(
-            Style::default()
-                .bg(palette.prompt_bg)
-                .fg(palette.text_primary),
-        )
-        .wrap(Wrap { trim: false });
+    let styled_lines: Vec<Line> = lines
+        .iter()
+        .map(|raw| {
+            if raw.is_empty() {
+                Line::raw("")
+            } else if let Some((key, desc)) = raw.split_once('\t') {
+                let key_part = key.trim_start();
+                let indent_len = raw.len() - raw.trim_start().len();
+                let indent = " ".repeat(indent_len);
+                Line::from(vec![
+                    Span::raw(indent),
+                    Span::styled(
+                        key_part.to_string(),
+                        Style::default()
+                            .fg(palette.key_hint_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  "),
+                    Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
+                ])
+            } else {
+                Line::from(Span::styled(
+                    raw.clone(),
+                    Style::default().fg(palette.text_primary),
+                ))
+            }
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(styled_lines).style(Style::default().bg(palette.prompt_bg));
     frame.render_widget(paragraph, inner);
 }
 

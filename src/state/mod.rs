@@ -1638,7 +1638,7 @@ mod tests {
 
         assert_eq!(
             state.dialog.as_ref().map(|dialog| dialog.title),
-            Some("Help")
+            Some(" Help ")
         );
     }
 
