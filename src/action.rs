@@ -9,6 +9,7 @@ use crate::pane::PaneId;
 pub enum Action {
     EnterSelection,
     CloseEditor,
+    DiscardEditorChanges,
     EditorBackspace,
     EditorInsert(char),
     EditorMoveDown,
@@ -68,6 +69,9 @@ impl Action {
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
+            KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::DiscardEditorChanges)
+            }
             KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
             KeyCode::Backspace => Some(Self::EditorBackspace),
             KeyCode::Enter => Some(Self::EditorNewline),
@@ -200,6 +204,10 @@ mod tests {
         assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             Some(Action::CloseEditor)
+        );
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)),
+            Some(Action::DiscardEditorChanges)
         );
         assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),

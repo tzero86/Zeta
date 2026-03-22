@@ -73,12 +73,27 @@ impl AppState {
             Action::CloseEditor => {
                 if let Some(editor) = &self.editor {
                     if editor.is_dirty {
-                        self.status_message =
-                            String::from("editor has unsaved changes; press Ctrl+S before closing");
+                        self.status_message = String::from(
+                            "unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel",
+                        );
                     } else {
                         self.editor = None;
                         self.status_message = String::from("closed editor");
                     }
+                } else {
+                    self.status_message = String::from("no editor buffer is open");
+                }
+                self.needs_redraw = true;
+            }
+            Action::DiscardEditorChanges => {
+                if let Some(editor) = &self.editor {
+                    let path = editor
+                        .path
+                        .as_ref()
+                        .map(|value| value.display().to_string())
+                        .unwrap_or_else(|| String::from("<unnamed>"));
+                    self.editor = None;
+                    self.status_message = format!("discarded unsaved changes for {path}");
                 } else {
                     self.status_message = String::from("no editor buffer is open");
                 }
@@ -206,9 +221,8 @@ impl AppState {
             }
             Action::Quit => {
                 if self.editor.as_ref().is_some_and(|editor| editor.is_dirty) {
-                    self.status_message = String::from(
-                        "editor has unsaved changes; save or close it before quitting",
-                    );
+                    self.status_message =
+                        String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
                     self.needs_redraw = true;
                 } else {
                     self.should_quit = true;
@@ -286,7 +300,7 @@ impl AppState {
         };
 
         format!(
-            "{} | {} | startup:{}ms | {} | draws:{} | Ctrl+Q quit | Enter open dir | Backspace parent | F4 editor | Ctrl+S save | Esc close | cfg:{}",
+            "{} | {} | startup:{}ms | {} | draws:{} | cfg:{}",
             self.app_label,
             self.status_message,
             self.startup_time_ms,
@@ -468,6 +482,24 @@ mod tests {
 
         assert!(commands.is_empty());
         assert!(state.editor.is_some());
+    }
+
+    #[test]
+    fn discard_editor_changes_closes_dirty_buffer() {
+        let mut state = test_state();
+        let mut editor = EditorBuffer {
+            path: Some(PathBuf::from("./note.txt")),
+            ..EditorBuffer::default()
+        };
+        editor.insert_char('x');
+        state.editor = Some(editor);
+
+        let commands = state
+            .apply(Action::DiscardEditorChanges)
+            .expect("action should succeed");
+
+        assert!(commands.is_empty());
+        assert!(state.editor.is_none());
     }
 
     #[test]

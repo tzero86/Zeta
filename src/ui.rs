@@ -12,13 +12,19 @@ use crate::state::AppState;
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let areas = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
         .split(frame.area());
+
+    render_menu_bar(frame, areas[0], state);
 
     let panes = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(areas[0]);
+        .split(areas[1]);
 
     render_pane(
         frame,
@@ -50,7 +56,23 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             .bg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     );
-    frame.render_widget(status, areas[1]);
+    frame.render_widget(status, areas[2]);
+}
+
+fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
+    let menu_text = if state.is_editor_focused() {
+        " Zeta | File  Open:F4  Save:Ctrl+S  Discard:Ctrl+D  Close:Esc  Quit:Ctrl+Q "
+    } else {
+        " Zeta | File  Open Dir:Enter  Parent:Backspace  Open Editor:F4  Quit:Ctrl+Q "
+    };
+
+    let menu = Paragraph::new(Line::raw(menu_text)).style(
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(212, 196, 168))
+            .add_modifier(Modifier::BOLD),
+    );
+    frame.render_widget(menu, area);
 }
 
 fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {
@@ -96,15 +118,17 @@ fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: 
 
     frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
 
-    let legend = Paragraph::new(Line::raw("+- dir  [D] folder  [F] file  [L] link"))
-        .style(Style::default().fg(Color::DarkGray));
+    let legend = Paragraph::new(Line::raw(
+        "+- branch  |- leaf  [D] folder  [F] file  [L] link",
+    ))
+    .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(legend, pane_chunks[1]);
 }
 
 fn render_item(entry: &EntryInfo) -> ListItem<'static> {
     let branch = match entry.kind {
-        crate::fs::EntryKind::Directory => "+-",
-        _ => "|-",
+        crate::fs::EntryKind::Directory => "+-o",
+        _ => "|-o",
     };
     let line = format!("{} {} {}", branch, entry.kind.ascii_label(), entry.name);
     ListItem::new(line)
