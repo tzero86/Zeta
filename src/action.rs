@@ -9,6 +9,7 @@ use crate::pane::PaneId;
 pub enum MenuId {
     File,
     Navigate,
+    View,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +39,7 @@ pub enum Action {
     OpenSelectedInEditor,
     Refresh,
     SaveEditor,
+    ToggleHiddenFiles,
     Quit,
     Resize { width: u16, height: u16 },
 }
@@ -55,6 +57,7 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 _ => None,
             };
         }
@@ -93,6 +96,7 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 _ => None,
             };
         }
@@ -127,6 +131,7 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 _ => None,
             };
         }
@@ -277,6 +282,13 @@ mod tests {
                 &keymap
             ),
             Some(Action::OpenMenu(MenuId::File))
+        );
+        assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT),
+                &keymap
+            ),
+            Some(Action::OpenMenu(MenuId::View))
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),

@@ -229,7 +229,8 @@ impl AppState {
                 if let Some(menu) = self.active_menu {
                     self.active_menu = Some(match menu {
                         MenuId::File => MenuId::Navigate,
-                        MenuId::Navigate => MenuId::File,
+                        MenuId::Navigate => MenuId::View,
+                        MenuId::View => MenuId::File,
                     });
                     self.menu_selection = 0;
                     self.needs_redraw = true;
@@ -238,8 +239,9 @@ impl AppState {
             Action::MenuPrevious => {
                 if let Some(menu) = self.active_menu {
                     self.active_menu = Some(match menu {
-                        MenuId::File => MenuId::Navigate,
+                        MenuId::File => MenuId::View,
                         MenuId::Navigate => MenuId::File,
+                        MenuId::View => MenuId::Navigate,
                     });
                     self.menu_selection = 0;
                     self.needs_redraw = true;
@@ -287,6 +289,16 @@ impl AppState {
                 } else {
                     self.status_message = String::from("no editor buffer is open");
                 }
+                self.needs_redraw = true;
+            }
+            Action::ToggleHiddenFiles => {
+                let new_value = !self.active_pane().show_hidden;
+                self.active_pane_mut().set_show_hidden(new_value)?;
+                self.status_message = if new_value {
+                    String::from("showing hidden files")
+                } else {
+                    String::from("hiding hidden files")
+                };
                 self.needs_redraw = true;
             }
             Action::Quit => {
@@ -527,6 +539,12 @@ impl AppState {
                     action: Action::FocusNextPane,
                 },
             ],
+            MenuId::View => vec![MenuItem {
+                label: "Toggle Hidden Files",
+                shortcut: ".",
+                mnemonic: 'h',
+                action: Action::ToggleHiddenFiles,
+            }],
         }
     }
 }
@@ -716,5 +734,16 @@ mod tests {
                 path: PathBuf::new(),
             }]
         );
+    }
+
+    #[test]
+    fn toggle_hidden_files_flips_active_pane_flag() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::ToggleHiddenFiles)
+            .expect("toggle hidden should succeed");
+
+        assert!(state.left.show_hidden);
     }
 }

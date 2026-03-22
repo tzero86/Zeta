@@ -83,6 +83,11 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
             Some('N'),
             state.active_menu() == Some(MenuId::Navigate),
         ),
+        menu_span(
+            " View ",
+            Some('V'),
+            state.active_menu() == Some(MenuId::View),
+        ),
     ]))
     .style(
         Style::default()
@@ -106,19 +111,19 @@ fn menu_span(label: &'static str, mnemonic: Option<char>, active: bool) -> Span<
     };
 
     let highlighted = mnemonic.map(|value| value.to_ascii_uppercase());
-    let mut rendered = String::new();
+    let mut line = Line::default();
     let mut used_highlight = false;
 
     for ch in label.chars() {
+        let mut char_style = style;
         if !used_highlight && Some(ch.to_ascii_uppercase()) == highlighted {
-            rendered.push(ch);
+            char_style = char_style.fg(Color::Rgb(120, 34, 17));
             used_highlight = true;
-        } else {
-            rendered.push(ch);
         }
+        line.spans.push(Span::styled(ch.to_string(), char_style));
     }
 
-    Span::styled(rendered, style)
+    Span::from(line.to_string())
 }
 
 fn render_menu_popup(
@@ -131,6 +136,7 @@ fn render_menu_popup(
     let x = match menu {
         MenuId::File => area.x + 1,
         MenuId::Navigate => area.x + 8,
+        MenuId::View => area.x + 19,
     };
     let width = 28;
     let height = items.len() as u16 + 2;

@@ -55,6 +55,13 @@ impl PaneState {
         }
     }
 
+    pub fn set_show_hidden(&mut self, show_hidden: bool) -> Result<(), FileSystemError> {
+        self.show_hidden = show_hidden;
+        let entries = scan_directory(&self.cwd)?;
+        self.set_entries(entries);
+        Ok(())
+    }
+
     pub fn move_selection_down(&mut self) {
         if self.selection + 1 < self.entries.len() {
             self.selection += 1;
