@@ -70,6 +70,65 @@ impl AppState {
         let mut commands = Vec::new();
 
         match action {
+            Action::CloseEditor => {
+                if let Some(editor) = &self.editor {
+                    if editor.is_dirty {
+                        self.status_message =
+                            String::from("editor has unsaved changes; press Ctrl+S before closing");
+                    } else {
+                        self.editor = None;
+                        self.status_message = String::from("closed editor");
+                    }
+                } else {
+                    self.status_message = String::from("no editor buffer is open");
+                }
+                self.needs_redraw = true;
+            }
+            Action::EditorBackspace => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.backspace();
+                    self.status_message = String::from("edited buffer");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorInsert(ch) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.insert_char(ch);
+                    self.status_message = String::from("edited buffer");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorMoveDown => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.move_down();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorMoveLeft => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.move_left();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorMoveRight => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.move_right();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorMoveUp => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.move_up();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorNewline => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.insert_newline();
+                    self.status_message = String::from("edited buffer");
+                    self.needs_redraw = true;
+                }
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
@@ -122,7 +181,14 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::Quit => {
-                self.should_quit = true;
+                if self.editor.as_ref().is_some_and(|editor| editor.is_dirty) {
+                    self.status_message = String::from(
+                        "editor has unsaved changes; save or close it before quitting",
+                    );
+                    self.needs_redraw = true;
+                } else {
+                    self.should_quit = true;
+                }
             }
             Action::Resize { width, height } => {
                 self.last_size = Some((width, height));
@@ -185,6 +251,10 @@ impl AppState {
         self.focused_pane_id()
     }
 
+    pub fn is_editor_focused(&self) -> bool {
+        self.editor.is_some() && self.focused_pane_id() == PaneId::Right
+    }
+
     pub fn status_line(&self) -> String {
         let scan_segment = match self.last_scan_time_ms {
             Some(scan_time) => format!("scan:{scan_time}ms"),
@@ -222,6 +292,7 @@ impl AppState {
             .map(|value| value.display().to_string())
             .unwrap_or_else(|| String::from("<unnamed>"));
         self.editor = Some(editor);
+        self.focus = PaneFocus::Right;
         self.status_message = format!("opened editor for {path}");
         self.needs_redraw = true;
     }
@@ -353,5 +424,23 @@ mod tests {
             .expect("action should succeed");
 
         assert_eq!(commands, vec![Command::SaveEditor]);
+    }
+
+    #[test]
+    fn close_editor_is_guarded_when_dirty() {
+        let mut state = test_state();
+        let mut editor = EditorBuffer {
+            path: Some(PathBuf::from("./note.txt")),
+            ..EditorBuffer::default()
+        };
+        editor.insert_char('x');
+        state.editor = Some(editor);
+
+        let commands = state
+            .apply(Action::CloseEditor)
+            .expect("action should succeed");
+
+        assert!(commands.is_empty());
+        assert!(state.editor.is_some());
     }
 }

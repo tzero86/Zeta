@@ -7,6 +7,7 @@ use thiserror::Error;
 #[derive(Clone, Debug)]
 pub struct EditorBuffer {
     pub path: Option<PathBuf>,
+    pub cursor_char_idx: usize,
     pub text: Rope,
     pub is_dirty: bool,
 }
@@ -15,6 +16,7 @@ impl Default for EditorBuffer {
     fn default() -> Self {
         Self {
             path: None,
+            cursor_char_idx: 0,
             text: Rope::new(),
             is_dirty: false,
         }
@@ -30,6 +32,7 @@ impl EditorBuffer {
 
         Ok(Self {
             path: Some(path.to_path_buf()),
+            cursor_char_idx: 0,
             text: Rope::from_str(&contents),
             is_dirty: false,
         })
@@ -38,6 +41,56 @@ impl EditorBuffer {
     pub fn insert(&mut self, char_idx: usize, text: &str) {
         self.text.insert(char_idx, text);
         self.is_dirty = true;
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        self.text.insert_char(self.cursor_char_idx, ch);
+        self.cursor_char_idx += 1;
+        self.is_dirty = true;
+    }
+
+    pub fn insert_newline(&mut self) {
+        self.insert_char('\n');
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor_char_idx == 0 {
+            return;
+        }
+
+        let start = self.cursor_char_idx - 1;
+        self.text.remove(start..self.cursor_char_idx);
+        self.cursor_char_idx = start;
+        self.is_dirty = true;
+    }
+
+    pub fn move_left(&mut self) {
+        self.cursor_char_idx = self.cursor_char_idx.saturating_sub(1);
+    }
+
+    pub fn move_right(&mut self) {
+        self.cursor_char_idx = (self.cursor_char_idx + 1).min(self.text.len_chars());
+    }
+
+    pub fn move_up(&mut self) {
+        let (line, column) = self.cursor_line_col();
+        if line == 0 {
+            return;
+        }
+
+        let target_line = line - 1;
+        self.cursor_char_idx = self.line_to_char_with_column(target_line, column);
+    }
+
+    pub fn move_down(&mut self) {
+        let (line, column) = self.cursor_line_col();
+        let total_lines = self.text.len_lines();
+        if line + 1 >= total_lines {
+            return;
+        }
+
+        let target_line = line + 1;
+        self.cursor_char_idx = self.line_to_char_with_column(target_line, column);
     }
 
     pub fn save(&mut self) -> Result<(), EditorError> {
@@ -52,6 +105,29 @@ impl EditorBuffer {
 
     pub fn contents(&self) -> String {
         self.text.to_string()
+    }
+
+    pub fn cursor_line_col(&self) -> (usize, usize) {
+        let safe_idx = self.cursor_char_idx.min(self.text.len_chars());
+        let line = self.text.char_to_line(safe_idx);
+        let line_start = self.text.line_to_char(line);
+        (line, safe_idx.saturating_sub(line_start))
+    }
+
+    fn line_to_char_with_column(&self, line: usize, column: usize) -> usize {
+        let line_start = self.text.line_to_char(line);
+        let line_len = self.visible_line_len(line);
+        line_start + column.min(line_len)
+    }
+
+    fn visible_line_len(&self, line: usize) -> usize {
+        let line_slice = self.text.line(line);
+        let len = line_slice.len_chars();
+        if len > 0 && line_slice.char(len - 1) == '\n' {
+            len - 1
+        } else {
+            len
+        }
     }
 }
 
@@ -121,5 +197,32 @@ mod tests {
 
         let error = buffer.save().expect_err("save should fail without path");
         assert!(matches!(error, EditorError::MissingPath));
+    }
+
+    #[test]
+    fn typing_and_backspace_update_cursor() {
+        let mut buffer = EditorBuffer::default();
+
+        buffer.insert_char('a');
+        buffer.insert_char('b');
+        buffer.backspace();
+
+        assert_eq!(buffer.contents(), "a");
+        assert_eq!(buffer.cursor_line_col(), (0, 1));
+        assert!(buffer.is_dirty);
+    }
+
+    #[test]
+    fn cursor_moves_between_lines() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert_char('a');
+        buffer.insert_newline();
+        buffer.insert_char('b');
+        buffer.move_up();
+
+        assert_eq!(buffer.cursor_line_col(), (0, 1));
+
+        buffer.move_down();
+        assert_eq!(buffer.cursor_line_col(), (1, 1));
     }
 }

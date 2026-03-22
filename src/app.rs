@@ -99,7 +99,13 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
-                if let Some(action) = Action::from_key_event(key_event, &self.keymap) {
+                let action = if self.state.is_editor_focused() {
+                    Action::from_editor_key_event(key_event)
+                } else {
+                    Action::from_key_event(key_event, &self.keymap)
+                };
+
+                if let Some(action) = action {
                     self.dispatch(action)?;
                 }
             }

@@ -7,6 +7,14 @@ use crate::pane::PaneId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    CloseEditor,
+    EditorBackspace,
+    EditorInsert(char),
+    EditorMoveDown,
+    EditorMoveLeft,
+    EditorMoveRight,
+    EditorMoveUp,
+    EditorNewline,
     FocusNextPane,
     MoveSelectionDown,
     MoveSelectionUp,
@@ -45,6 +53,28 @@ impl Action {
             }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
+            _ => None,
+        }
+    }
+
+    pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
+            KeyCode::Backspace => Some(Self::EditorBackspace),
+            KeyCode::Enter => Some(Self::EditorNewline),
+            KeyCode::Left => Some(Self::EditorMoveLeft),
+            KeyCode::Right => Some(Self::EditorMoveRight),
+            KeyCode::Up => Some(Self::EditorMoveUp),
+            KeyCode::Down => Some(Self::EditorMoveDown),
+            KeyCode::Tab => Some(Self::FocusNextPane),
+            KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::SaveEditor)
+            }
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::EditorInsert(ch))
+            }
             _ => None,
         }
     }
@@ -141,6 +171,18 @@ mod tests {
                 &keymap,
             ),
             Some(Action::SaveEditor)
+        );
+    }
+
+    #[test]
+    fn editor_mode_prefers_text_entry() {
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Some(Action::EditorInsert('q'))
+        );
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(Action::CloseEditor)
         );
     }
 }

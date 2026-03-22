@@ -28,7 +28,13 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     );
 
     if let Some(editor) = state.editor() {
-        render_editor(frame, panes[1], editor, state.focus() == PaneId::Right);
+        render_editor(
+            frame,
+            panes[1],
+            editor,
+            state.focus() == PaneId::Right,
+            state.is_editor_focused(),
+        );
     } else {
         render_pane(
             frame,
@@ -97,6 +103,7 @@ fn render_editor(
     area: ratatui::layout::Rect,
     editor: &EditorBuffer,
     is_focused: bool,
+    is_active: bool,
 ) {
     let border_style = if is_focused {
         Style::default()
@@ -128,4 +135,11 @@ fn render_editor(
         .join("\n");
     let paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
+
+    if is_active {
+        let (line, column) = editor.cursor_line_col();
+        let cursor_y = inner.y + (line as u16).min(inner.height.saturating_sub(1));
+        let cursor_x = inner.x + (column as u16).min(inner.width.saturating_sub(1));
+        frame.set_cursor_position((cursor_x, cursor_y));
+    }
 }
