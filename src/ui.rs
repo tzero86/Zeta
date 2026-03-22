@@ -402,6 +402,14 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
         .map(|raw| {
             if raw.is_empty() {
                 Line::raw("")
+            } else if let Some(header) = raw.strip_prefix("##") {
+                // Explicit section header marker — styled accent, no "##" shown.
+                Line::from(Span::styled(
+                    header.to_string(),
+                    Style::default()
+                        .fg(palette.menu_mnemonic_fg)
+                        .add_modifier(Modifier::BOLD),
+                ))
             } else if let Some((key, desc)) = raw.split_once('\t') {
                 // Entry line: "  KEY\tdescription"
                 let key_part = key.trim_start();
@@ -419,12 +427,10 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
                     Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
                 ])
             } else {
-                // Section header
+                // Plain line (About text, ASCII art, etc.) — no accent.
                 Line::from(Span::styled(
                     raw.clone(),
-                    Style::default()
-                        .fg(palette.menu_mnemonic_fg)
-                        .add_modifier(Modifier::BOLD),
+                    Style::default().fg(palette.text_primary),
                 ))
             }
         })
