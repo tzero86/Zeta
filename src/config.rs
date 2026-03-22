@@ -115,15 +115,19 @@ impl ConfigSource {
 pub fn resolve_config_path() -> Result<PathBuf, ConfigError> {
     let env_override = env::var_os("ZETA_CONFIG").map(PathBuf::from);
     let xdg_home = env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let appdata = env::var_os("APPDATA").map(PathBuf::from);
     let home = env::var_os("HOME").map(PathBuf::from);
+    let user_profile = env::var_os("USERPROFILE").map(PathBuf::from);
 
-    resolve_config_path_from_env(env_override, xdg_home, home)
+    resolve_config_path_from_env(env_override, xdg_home, appdata, home, user_profile)
 }
 
 fn resolve_config_path_from_env(
     env_override: Option<PathBuf>,
     xdg_home: Option<PathBuf>,
+    appdata: Option<PathBuf>,
     home: Option<PathBuf>,
+    user_profile: Option<PathBuf>,
 ) -> Result<PathBuf, ConfigError> {
     if let Some(path) = env_override {
         return Ok(path);
@@ -133,8 +137,20 @@ fn resolve_config_path_from_env(
         return Ok(path.join("zeta").join("config.toml"));
     }
 
+    if let Some(path) = appdata {
+        return Ok(path.join("zeta").join("config.toml"));
+    }
+
     if let Some(path) = home {
         return Ok(path.join(".config").join("zeta").join("config.toml"));
+    }
+
+    if let Some(path) = user_profile {
+        return Ok(path
+            .join("AppData")
+            .join("Roaming")
+            .join("zeta")
+            .join("config.toml"));
     }
 
     Err(ConfigError::NoConfigHome)
@@ -379,7 +395,7 @@ fn parse_key_binding(field: &'static str, raw: &str) -> Result<KeyBinding, Confi
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("could not determine config directory from ZETA_CONFIG, XDG_CONFIG_HOME, or HOME")]
+    #[error("could not determine config directory from ZETA_CONFIG, XDG_CONFIG_HOME, APPDATA, HOME, or USERPROFILE")]
     NoConfigHome,
     #[error("invalid key binding for {field}: {value}")]
     InvalidKeyBinding { field: &'static str, value: String },
@@ -423,7 +439,9 @@ mod tests {
         let resolved = resolve_config_path_from_env(
             Some(PathBuf::from("/tmp/custom.toml")),
             Some(PathBuf::from("/tmp/xdg")),
+            Some(PathBuf::from("/tmp/appdata")),
             Some(PathBuf::from("/tmp/home")),
+            Some(PathBuf::from("/tmp/userprofile")),
         )
         .expect("config path should resolve");
 
@@ -435,11 +453,53 @@ mod tests {
         let resolved = resolve_config_path_from_env(
             None,
             Some(PathBuf::from("/tmp/xdg")),
+            Some(PathBuf::from("/tmp/appdata")),
             Some(PathBuf::from("/tmp/home")),
+            Some(PathBuf::from("/tmp/userprofile")),
         )
         .expect("config path should resolve");
 
         assert_eq!(resolved, PathBuf::from("/tmp/xdg/zeta/config.toml"));
+    }
+
+    #[test]
+    fn falls_back_to_appdata_location() {
+        let resolved = resolve_config_path_from_env(
+            None,
+            None,
+            Some(PathBuf::from(r"C:\Users\Test\AppData\Roaming")),
+            Some(PathBuf::from("/tmp/home")),
+            Some(PathBuf::from(r"C:\Users\Test")),
+        )
+        .expect("config path should resolve");
+
+        assert_eq!(
+            resolved,
+            PathBuf::from(r"C:\Users\Test\AppData\Roaming")
+                .join("zeta")
+                .join("config.toml")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_user_profile_location_when_appdata_missing() {
+        let resolved = resolve_config_path_from_env(
+            None,
+            None,
+            None,
+            None,
+            Some(PathBuf::from(r"C:\Users\Test")),
+        )
+        .expect("config path should resolve");
+
+        assert_eq!(
+            resolved,
+            PathBuf::from(r"C:\Users\Test")
+                .join("AppData")
+                .join("Roaming")
+                .join("zeta")
+                .join("config.toml")
+        );
     }
 
     #[test]
