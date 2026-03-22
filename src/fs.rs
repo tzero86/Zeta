@@ -57,6 +57,8 @@ pub enum FileSystemError {
         to: String,
         source: io::Error,
     },
+    #[error("failed to delete {path}: {source}")]
+    DeletePath { path: String, source: io::Error },
 }
 
 pub fn current_dir() -> Result<PathBuf, FileSystemError> {
@@ -130,6 +132,25 @@ pub fn rename_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
     std_fs::rename(from, to).map_err(|source| FileSystemError::RenamePath {
         from: from.display().to_string(),
         to: to.display().to_string(),
+        source,
+    })
+}
+
+pub fn delete_path(path: &Path) -> Result<(), FileSystemError> {
+    let metadata =
+        std_fs::symlink_metadata(path).map_err(|source| FileSystemError::DeletePath {
+            path: path.display().to_string(),
+            source,
+        })?;
+
+    let result = if metadata.is_dir() {
+        std_fs::remove_dir_all(path)
+    } else {
+        std_fs::remove_file(path)
+    };
+
+    result.map_err(|source| FileSystemError::DeletePath {
+        path: path.display().to_string(),
         source,
     })
 }

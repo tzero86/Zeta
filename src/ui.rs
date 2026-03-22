@@ -210,7 +210,7 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
     frame.render_widget(block, popup_area);
 
     let body = format!(
-        "Path: {}\nName: {}\nEnter submit | Esc cancel",
+        "Path: {}\nValue: {}\nEnter submit | Esc cancel",
         prompt.base_path.display(),
         prompt.value
     );

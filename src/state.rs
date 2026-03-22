@@ -185,6 +185,27 @@ impl AppState {
                 self.menu_selection = 0;
                 self.needs_redraw = true;
             }
+            Action::OpenDeletePrompt => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                if let Some((entry_path, entry_name)) = self
+                    .active_pane()
+                    .selected_entry()
+                    .map(|entry| (entry.path.clone(), entry.name.clone()))
+                {
+                    self.prompt = Some(PromptState::with_value(
+                        PromptKind::Delete,
+                        "Delete",
+                        self.active_pane().cwd.clone(),
+                        Some(entry_path),
+                        String::from("type DELETE to confirm"),
+                    ));
+                    self.status_message = format!("confirm delete for {entry_name}");
+                } else {
+                    self.status_message = String::from("no item selected to delete");
+                }
+                self.needs_redraw = true;
+            }
             Action::OpenNewDirectoryPrompt => {
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -347,11 +368,23 @@ impl AppState {
                                     fs::rename_path(source_path, &path)?;
                                 }
                             }
+                            PromptKind::Delete => {
+                                if value != "DELETE" {
+                                    self.status_message =
+                                        String::from("type DELETE exactly to confirm removal");
+                                    self.needs_redraw = true;
+                                    return Ok(commands);
+                                }
+                                if let Some(source_path) = prompt.source_path.as_ref() {
+                                    fs::delete_path(source_path)?;
+                                }
+                            }
                         }
                         let entries = fs::scan_directory(&base_path)?;
                         self.active_pane_mut().set_entries(entries);
                         self.status_message = match kind {
                             PromptKind::Rename => format!("renamed to {}", path.display()),
+                            PromptKind::Delete => String::from("deleted item"),
                             _ => format!("created {}", path.display()),
                         };
                         self.prompt = None;
@@ -603,6 +636,12 @@ impl AppState {
                     action: Action::OpenRenamePrompt,
                 },
                 MenuItem {
+                    label: "Delete",
+                    shortcut: "F8",
+                    mnemonic: 'd',
+                    action: Action::OpenDeletePrompt,
+                },
+                MenuItem {
                     label: "Save",
                     shortcut: "Ctrl+S",
                     mnemonic: 's',
@@ -673,6 +712,7 @@ pub struct MenuItem {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptKind {
+    Delete,
     NewDirectory,
     NewFile,
     Rename,
@@ -909,5 +949,20 @@ mod tests {
             .expect("prompt should open");
 
         assert!(state.prompt.is_some());
+    }
+
+    #[test]
+    fn open_delete_prompt_sets_confirmation_message() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("delete prompt should open");
+
+        assert!(state.prompt.is_some());
+        assert_eq!(
+            state.prompt.as_ref().map(|prompt| prompt.title),
+            Some("Delete")
+        );
     }
 }
