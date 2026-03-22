@@ -5,7 +5,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::action::{Action, Command, MenuId};
-use crate::config::{LoadedConfig, ResolvedTheme};
+use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
@@ -416,6 +416,11 @@ impl AppState {
                 }
                 self.needs_redraw = true;
             }
+            Action::SetTheme(preset) => {
+                self.theme = ThemePalette::from_preset(preset);
+                self.status_message = format!("theme set to {}", preset.as_str());
+                self.needs_redraw = true;
+            }
             Action::ToggleHiddenFiles => {
                 let new_value = !self.active_pane().show_hidden;
                 self.active_pane_mut().set_show_hidden(new_value)?;
@@ -700,12 +705,32 @@ impl AppState {
                     action: Action::FocusNextPane,
                 },
             ],
-            MenuId::View => vec![MenuItem {
-                label: "Toggle Hidden Files",
-                shortcut: ".",
-                mnemonic: 'h',
-                action: Action::ToggleHiddenFiles,
-            }],
+            MenuId::View => vec![
+                MenuItem {
+                    label: "Toggle Hidden Files",
+                    shortcut: ".",
+                    mnemonic: 'h',
+                    action: Action::ToggleHiddenFiles,
+                },
+                MenuItem {
+                    label: "Theme: Fjord",
+                    shortcut: "1",
+                    mnemonic: 'f',
+                    action: Action::SetTheme(ThemePreset::Fjord),
+                },
+                MenuItem {
+                    label: "Theme: Sandbar",
+                    shortcut: "2",
+                    mnemonic: 's',
+                    action: Action::SetTheme(ThemePreset::Sandbar),
+                },
+                MenuItem {
+                    label: "Theme: Oxide",
+                    shortcut: "3",
+                    mnemonic: 'o',
+                    action: Action::SetTheme(ThemePreset::Oxide),
+                },
+            ],
         }
     }
 }
@@ -766,7 +791,7 @@ mod tests {
     use crate::fs::{EntryInfo, EntryKind};
     use crate::pane::{PaneId, PaneState, SortMode};
 
-    use crate::config::{ResolvedTheme, ThemePalette};
+    use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
 
     use super::{AppState, PaneFocus};
 
@@ -979,5 +1004,16 @@ mod tests {
             state.prompt.as_ref().map(|prompt| prompt.title),
             Some("Delete")
         );
+    }
+
+    #[test]
+    fn set_theme_updates_runtime_palette() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::SetTheme(ThemePreset::Oxide))
+            .expect("theme change should succeed");
+
+        assert_eq!(state.theme.preset, "oxide");
     }
 }

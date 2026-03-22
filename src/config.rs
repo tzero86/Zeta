@@ -9,6 +9,23 @@ use thiserror::Error;
 
 use crate::action::KeyBinding;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThemePreset {
+    Fjord,
+    Sandbar,
+    Oxide,
+}
+
+impl ThemePreset {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fjord => "fjord",
+            Self::Sandbar => "sandbar",
+            Self::Oxide => "oxide",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AppConfig {
     pub theme: ThemeConfig,
@@ -169,26 +186,35 @@ pub struct ResolvedTheme {
 
 impl ThemePalette {
     pub fn resolve(config: &ThemeConfig) -> ResolvedTheme {
-        match config.preset.to_lowercase().as_str() {
-            "fjord" => ResolvedTheme {
+        match ThemePreset::from_name(&config.preset) {
+            Some(preset) => Self::from_preset(preset),
+            None => ResolvedTheme {
+                palette: Self::fjord(),
+                preset: String::from("fjord"),
+                warning: Some(format!(
+                    "unknown theme preset '{}', using fjord",
+                    config.preset
+                )),
+            },
+        }
+    }
+
+    pub fn from_preset(preset: ThemePreset) -> ResolvedTheme {
+        match preset {
+            ThemePreset::Fjord => ResolvedTheme {
                 palette: Self::fjord(),
                 preset: String::from("fjord"),
                 warning: None,
             },
-            "sandbar" => ResolvedTheme {
+            ThemePreset::Sandbar => ResolvedTheme {
                 palette: Self::sandbar(),
                 preset: String::from("sandbar"),
                 warning: None,
             },
-            "oxide" => ResolvedTheme {
+            ThemePreset::Oxide => ResolvedTheme {
                 palette: Self::oxide(),
                 preset: String::from("oxide"),
                 warning: None,
-            },
-            other => ResolvedTheme {
-                palette: Self::fjord(),
-                preset: String::from("fjord"),
-                warning: Some(format!("unknown theme preset '{other}', using fjord")),
             },
         }
     }
@@ -259,6 +285,17 @@ impl ThemePalette {
             file_fg: Color::Rgb(203, 210, 217),
             status_bg: Color::Rgb(116, 181, 201),
             status_fg: Color::Black,
+        }
+    }
+}
+
+impl ThemePreset {
+    fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "fjord" => Some(Self::Fjord),
+            "sandbar" => Some(Self::Sandbar),
+            "oxide" => Some(Self::Oxide),
+            _ => None,
         }
     }
 }

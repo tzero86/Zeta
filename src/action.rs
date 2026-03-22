@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::config::RuntimeKeymap;
+use crate::config::ThemePreset;
 use crate::pane::PaneId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -47,6 +48,7 @@ pub enum Action {
     PromptSubmit,
     Refresh,
     SaveEditor,
+    SetTheme(ThemePreset),
     ToggleHiddenFiles,
     Quit,
     Resize { width: u16, height: u16 },
