@@ -4,12 +4,22 @@ use std::time::Instant;
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 
-use crate::fs::{scan_directory, EntryInfo};
+use crate::action::{FileOperation, RefreshTarget};
+use crate::fs::{
+    copy_path, create_directory, create_file, delete_path, rename_path, scan_directory, EntryInfo,
+};
 use crate::pane::PaneId;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum JobRequest {
-    ScanDirectory { pane: PaneId, path: PathBuf },
+    FileOperation {
+        operation: FileOperation,
+        refresh: Vec<RefreshTarget>,
+    },
+    ScanDirectory {
+        pane: PaneId,
+        path: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,12 +30,24 @@ pub enum JobResult {
         entries: Vec<EntryInfo>,
         elapsed_ms: u128,
     },
+    FileOperationCompleted {
+        message: String,
+        refreshed: Vec<RefreshedPane>,
+        elapsed_ms: u128,
+    },
     JobFailed {
         pane: PaneId,
         path: PathBuf,
         message: String,
         elapsed_ms: u128,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshedPane {
+    pub pane: PaneId,
+    pub path: PathBuf,
+    pub entries: Vec<EntryInfo>,
 }
 
 pub fn spawn_scan_worker() -> (Sender<JobRequest>, Receiver<JobResult>) {
@@ -40,6 +62,21 @@ pub fn spawn_scan_worker() -> (Sender<JobRequest>, Receiver<JobResult>) {
 fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult>) {
     while let Ok(request) = request_rx.recv() {
         match request {
+            JobRequest::FileOperation { operation, refresh } => {
+                let result = run_file_operation(operation, refresh);
+                match result {
+                    Ok(job_result) => {
+                        if result_tx.send(job_result).is_err() {
+                            break;
+                        }
+                    }
+                    Err(job_result) => {
+                        if result_tx.send(job_result).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
             JobRequest::ScanDirectory { pane, path } => {
                 let started_at = Instant::now();
 
@@ -72,6 +109,94 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
                     }
                 }
             }
+        }
+    }
+}
+
+fn run_file_operation(
+    operation: FileOperation,
+    refresh: Vec<RefreshTarget>,
+) -> Result<JobResult, JobResult> {
+    let started_at = Instant::now();
+    let operation_label = describe_operation(&operation);
+    let primary_path = primary_path(&operation);
+
+    let op_result = match operation {
+        FileOperation::Copy {
+            source,
+            destination,
+        } => copy_path(&source, &destination),
+        FileOperation::CreateDirectory { path } => create_directory(&path),
+        FileOperation::CreateFile { path } => create_file(&path),
+        FileOperation::Delete { path } => delete_path(&path),
+        FileOperation::Move {
+            source,
+            destination,
+        } => rename_path(&source, &destination),
+        FileOperation::Rename {
+            source,
+            destination,
+        } => rename_path(&source, &destination),
+    };
+
+    if let Err(error) = op_result {
+        return Err(JobResult::JobFailed {
+            pane: refresh
+                .first()
+                .map(|target| target.pane)
+                .unwrap_or(PaneId::Left),
+            path: primary_path,
+            message: error.to_string(),
+            elapsed_ms: started_at.elapsed().as_millis(),
+        });
+    }
+
+    let mut refreshed = Vec::with_capacity(refresh.len());
+    for target in refresh {
+        match scan_directory(&target.path) {
+            Ok(entries) => refreshed.push(RefreshedPane {
+                pane: target.pane,
+                path: target.path,
+                entries,
+            }),
+            Err(error) => {
+                return Err(JobResult::JobFailed {
+                    pane: target.pane,
+                    path: target.path,
+                    message: error.to_string(),
+                    elapsed_ms: started_at.elapsed().as_millis(),
+                });
+            }
+        }
+    }
+
+    Ok(JobResult::FileOperationCompleted {
+        message: operation_label,
+        refreshed,
+        elapsed_ms: started_at.elapsed().as_millis(),
+    })
+}
+
+fn primary_path(operation: &FileOperation) -> PathBuf {
+    match operation {
+        FileOperation::Copy { source, .. } => source.clone(),
+        FileOperation::CreateDirectory { path } => path.clone(),
+        FileOperation::CreateFile { path } => path.clone(),
+        FileOperation::Delete { path } => path.clone(),
+        FileOperation::Move { source, .. } => source.clone(),
+        FileOperation::Rename { source, .. } => source.clone(),
+    }
+}
+
+fn describe_operation(operation: &FileOperation) -> String {
+    match operation {
+        FileOperation::Copy { destination, .. } => format!("copied to {}", destination.display()),
+        FileOperation::CreateDirectory { path } => format!("created {}", path.display()),
+        FileOperation::CreateFile { path } => format!("created {}", path.display()),
+        FileOperation::Delete { path } => format!("deleted {}", path.display()),
+        FileOperation::Move { destination, .. } => format!("moved to {}", destination.display()),
+        FileOperation::Rename { destination, .. } => {
+            format!("renamed to {}", destination.display())
         }
     }
 }

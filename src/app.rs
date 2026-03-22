@@ -78,7 +78,7 @@ impl App {
         match self.job_results.try_recv() {
             Ok(result) => return Ok(Some(AppEvent::Job(result))),
             Err(TryRecvError::Disconnected) => {
-                anyhow::bail!("background scan worker disconnected")
+                anyhow::bail!("background worker disconnected")
             }
             Err(TryRecvError::Empty) => {}
         }
@@ -142,6 +142,10 @@ impl App {
                     .state
                     .set_error_status(format!("failed to open editor buffer: {error}")),
             },
+            Command::RunFileOperation { operation, refresh } => self
+                .job_requests
+                .send(JobRequest::FileOperation { operation, refresh })
+                .context("failed to queue background file operation")?,
             Command::ScanPane { pane, path } => self
                 .job_requests
                 .send(JobRequest::ScanDirectory { pane, path })

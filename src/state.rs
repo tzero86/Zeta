@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::action::{Action, Command, MenuId};
+use crate::action::{Action, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
 use crate::fs;
@@ -446,59 +446,60 @@ impl AppState {
                         self.status_message = String::from("name cannot be empty");
                     } else {
                         let kind = prompt.kind;
-                        let base_path = prompt.base_path.clone();
                         let value = prompt.value.trim().to_string();
-                        let path = PathBuf::from(&value);
-                        match kind {
-                            PromptKind::Copy => {
-                                if let Some(source_path) = prompt.source_path.as_ref() {
-                                    fs::copy_path(source_path, &path)?;
+                        let target_path = resolve_prompt_target(prompt, &value);
+                        let refresh = self.refresh_targets_for_prompt(kind, &target_path);
+                        let operation =
+                            match kind {
+                                PromptKind::Copy => {
+                                    prompt
+                                        .source_path
+                                        .as_ref()
+                                        .map(|source| FileOperation::Copy {
+                                            source: source.clone(),
+                                            destination: target_path.clone(),
+                                        })
                                 }
-                            }
-                            PromptKind::NewDirectory => fs::create_directory(&path)?,
-                            PromptKind::NewFile => fs::create_file(&path)?,
-                            PromptKind::Move => {
-                                if let Some(source_path) = prompt.source_path.as_ref() {
-                                    fs::rename_path(source_path, &path)?;
+                                PromptKind::Delete => prompt
+                                    .source_path
+                                    .as_ref()
+                                    .map(|path| FileOperation::Delete { path: path.clone() }),
+                                PromptKind::Move => {
+                                    prompt
+                                        .source_path
+                                        .as_ref()
+                                        .map(|source| FileOperation::Move {
+                                            source: source.clone(),
+                                            destination: target_path.clone(),
+                                        })
                                 }
-                            }
-                            PromptKind::Rename => {
-                                if let Some(source_path) = prompt.source_path.as_ref() {
-                                    fs::rename_path(source_path, &path)?;
-                                }
-                            }
-                            PromptKind::Delete => {
-                                if let Some(source_path) = prompt.source_path.as_ref() {
-                                    fs::delete_path(source_path)?;
-                                }
-                            }
+                                PromptKind::NewDirectory => Some(FileOperation::CreateDirectory {
+                                    path: target_path.clone(),
+                                }),
+                                PromptKind::NewFile => Some(FileOperation::CreateFile {
+                                    path: target_path.clone(),
+                                }),
+                                PromptKind::Rename => prompt.source_path.as_ref().map(|source| {
+                                    FileOperation::Rename {
+                                        source: source.clone(),
+                                        destination: target_path.clone(),
+                                    }
+                                }),
+                            };
+
+                        if let Some(operation) = operation {
+                            commands.push(Command::RunFileOperation { operation, refresh });
+                            self.status_message = match kind {
+                                PromptKind::Copy => String::from("copying item"),
+                                PromptKind::Delete => String::from("deleting item"),
+                                PromptKind::Move => String::from("moving item"),
+                                PromptKind::NewDirectory => String::from("creating directory"),
+                                PromptKind::NewFile => String::from("creating file"),
+                                PromptKind::Rename => String::from("renaming item"),
+                            };
+                        } else {
+                            self.status_message = String::from("missing source for operation");
                         }
-                        let target_dir = match kind {
-                            PromptKind::Copy | PromptKind::Move => path
-                                .parent()
-                                .map(Path::to_path_buf)
-                                .unwrap_or_else(|| base_path.clone()),
-                            _ => base_path.clone(),
-                        };
-
-                        let active_cwd = self.active_pane().cwd.clone();
-                        let active_entries = fs::scan_directory(&active_cwd)?;
-                        self.active_pane_mut().set_entries(active_entries);
-
-                        if target_dir == active_cwd {
-                            // already refreshed via active pane update
-                        } else if self.inactive_pane().cwd == target_dir {
-                            let target_entries = fs::scan_directory(&target_dir)?;
-                            self.inactive_pane_mut().set_entries(target_entries);
-                        }
-
-                        self.status_message = match kind {
-                            PromptKind::Copy => format!("copied to {}", path.display()),
-                            PromptKind::Rename => format!("renamed to {}", path.display()),
-                            PromptKind::Delete => String::from("deleted item"),
-                            PromptKind::Move => format!("moved to {}", path.display()),
-                            _ => format!("created {}", path.display()),
-                        };
                         self.prompt = None;
                     }
                     self.needs_redraw = true;
@@ -578,6 +579,20 @@ impl AppState {
                 target.cwd = path.clone();
                 target.set_entries(entries);
                 self.status_message = format!("refreshed {} in {elapsed_ms} ms", path.display());
+                self.last_scan_time_ms = Some(elapsed_ms);
+                self.needs_redraw = true;
+            }
+            JobResult::FileOperationCompleted {
+                message,
+                refreshed,
+                elapsed_ms,
+            } => {
+                for pane in refreshed {
+                    let target = self.pane_mut(pane.pane);
+                    target.cwd = pane.path;
+                    target.set_entries(pane.entries);
+                }
+                self.status_message = format!("{message} in {elapsed_ms} ms");
                 self.last_scan_time_ms = Some(elapsed_ms);
                 self.needs_redraw = true;
             }
@@ -741,11 +756,35 @@ impl AppState {
         }
     }
 
-    fn inactive_pane_mut(&mut self) -> &mut PaneState {
-        match self.focus {
-            PaneFocus::Left => &mut self.right,
-            PaneFocus::Right => &mut self.left,
+    fn refresh_targets_for_prompt(
+        &self,
+        kind: PromptKind,
+        target_path: &Path,
+    ) -> Vec<RefreshTarget> {
+        let mut refresh = vec![RefreshTarget {
+            pane: self.focused_pane_id(),
+            path: self.active_pane().cwd.clone(),
+        }];
+
+        let target_dir = match kind {
+            PromptKind::Copy | PromptKind::Move => target_path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.inactive_pane().cwd.clone()),
+            _ => self.active_pane().cwd.clone(),
+        };
+
+        if target_dir != self.active_pane().cwd && target_dir == self.inactive_pane().cwd {
+            refresh.push(RefreshTarget {
+                pane: match self.focus {
+                    PaneFocus::Left => PaneId::Right,
+                    PaneFocus::Right => PaneId::Left,
+                },
+                path: target_dir,
+            });
         }
+
+        refresh
     }
 
     fn pane_mut(&mut self, pane: PaneId) -> &mut PaneState {
@@ -914,6 +953,15 @@ impl AppState {
     }
 }
 
+fn resolve_prompt_target(prompt: &PromptState, value: &str) -> PathBuf {
+    let path = PathBuf::from(value);
+    if path.is_absolute() {
+        path
+    } else {
+        prompt.base_path.join(path)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MenuItem {
     pub label: &'static str,
@@ -1009,14 +1057,14 @@ impl PromptState {
 mod tests {
     use std::path::PathBuf;
 
-    use crate::action::{Action, Command, MenuId};
+    use crate::action::{Action, Command, FileOperation, MenuId, RefreshTarget};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::pane::{PaneId, PaneState, SortMode};
 
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
 
-    use super::{AppState, PaneFocus, PaneLayout};
+    use super::{resolve_prompt_target, AppState, PaneFocus, PaneLayout, PromptKind, PromptState};
 
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
@@ -1254,6 +1302,64 @@ mod tests {
             .expect("layout change should succeed");
 
         assert_eq!(state.pane_layout(), PaneLayout::Stacked);
+    }
+
+    #[test]
+    fn prompt_submit_enqueues_copy_job_instead_of_mutating_directly() {
+        let mut state = test_state();
+        state.right.cwd = PathBuf::from("/tmp/target");
+        state.prompt = Some(PromptState::with_value(
+            PromptKind::Copy,
+            "Copy",
+            PathBuf::from("/tmp/target"),
+            Some(PathBuf::from("./note.txt")),
+            String::from("/tmp/target/note.txt"),
+        ));
+
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
+
+        assert_eq!(
+            commands,
+            vec![Command::RunFileOperation {
+                operation: FileOperation::Copy {
+                    source: PathBuf::from("./note.txt"),
+                    destination: PathBuf::from("/tmp/target/note.txt"),
+                },
+                refresh: vec![
+                    RefreshTarget {
+                        pane: PaneId::Left,
+                        path: PathBuf::from("."),
+                    },
+                    RefreshTarget {
+                        pane: PaneId::Right,
+                        path: PathBuf::from("/tmp/target"),
+                    },
+                ],
+            }]
+        );
+        assert!(state.prompt.is_none());
+    }
+
+    #[test]
+    fn resolve_prompt_target_joins_relative_values_to_base_path() {
+        let prompt = PromptState::with_value(
+            PromptKind::Rename,
+            "Rename",
+            PathBuf::from("/tmp/base"),
+            Some(PathBuf::from("/tmp/base/old.txt")),
+            String::new(),
+        );
+
+        assert_eq!(
+            resolve_prompt_target(&prompt, "new.txt"),
+            PathBuf::from("/tmp/base/new.txt")
+        );
+        assert_eq!(
+            resolve_prompt_target(&prompt, "/tmp/elsewhere/new.txt"),
+            PathBuf::from("/tmp/elsewhere/new.txt")
+        );
     }
 
     #[test]

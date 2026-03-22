@@ -64,9 +64,49 @@ pub enum Action {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
-    OpenEditor { path: PathBuf },
-    ScanPane { pane: PaneId, path: PathBuf },
+    OpenEditor {
+        path: PathBuf,
+    },
+    RunFileOperation {
+        operation: FileOperation,
+        refresh: Vec<RefreshTarget>,
+    },
+    ScanPane {
+        pane: PaneId,
+        path: PathBuf,
+    },
     SaveEditor,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FileOperation {
+    Copy {
+        source: PathBuf,
+        destination: PathBuf,
+    },
+    CreateDirectory {
+        path: PathBuf,
+    },
+    CreateFile {
+        path: PathBuf,
+    },
+    Delete {
+        path: PathBuf,
+    },
+    Move {
+        source: PathBuf,
+        destination: PathBuf,
+    },
+    Rename {
+        source: PathBuf,
+        destination: PathBuf,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshTarget {
+    pub pane: PaneId,
+    pub path: PathBuf,
 }
 
 impl Action {
