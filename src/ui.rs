@@ -162,8 +162,10 @@ fn render_menu_popup(
                 Style::default().fg(Color::White).bg(Color::Rgb(30, 34, 38))
             };
 
-            let label = format!(" {}", item.label);
-            let shortcut = format!("{:>10}", item.shortcut);
+            let content_width = inner.width.saturating_sub(2) as usize;
+            let label_width = content_width.saturating_sub(item.shortcut.len() + 1);
+            let label = format!(" {:<width$}", item.label, width = label_width.max(1));
+            let shortcut = item.shortcut.to_string();
             ListItem::new(Line::from(vec![
                 Span::styled(label, base_style),
                 Span::styled(shortcut, base_style),
