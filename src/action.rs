@@ -38,6 +38,7 @@ pub enum Action {
     OpenMenu(MenuId),
     OpenNewDirectoryPrompt,
     OpenNewFilePrompt,
+    OpenRenamePrompt,
     OpenSelectedInEditor,
     PromptBackspace,
     PromptCancel,
@@ -86,6 +87,11 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
+            KeyCode::F(6) => Some(Self::OpenRenamePrompt),
+            KeyCode::Insert => Some(Self::OpenNewFilePrompt),
+            KeyCode::F(7) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::OpenNewDirectoryPrompt)
+            }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -263,6 +269,18 @@ mod tests {
         assert_eq!(
             Action::from_key_event(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE), &keymap),
             Some(Action::OpenSelectedInEditor)
+        );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE), &keymap),
+            Some(Action::OpenRenamePrompt)
+        );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE), &keymap),
+            Some(Action::OpenNewFilePrompt)
+        );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(7), KeyModifiers::SHIFT), &keymap),
+            Some(Action::OpenNewDirectoryPrompt)
         );
         assert_eq!(
             Action::from_key_event(

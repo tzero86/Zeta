@@ -207,6 +207,23 @@ impl AppState {
                 self.status_message = String::from("enter file name");
                 self.needs_redraw = true;
             }
+            Action::OpenRenamePrompt => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    self.prompt = Some(PromptState::with_value(
+                        PromptKind::Rename,
+                        "Rename",
+                        self.active_pane().cwd.clone(),
+                        Some(entry.path.clone()),
+                        entry.name.clone(),
+                    ));
+                    self.status_message = String::from("edit the new name");
+                } else {
+                    self.status_message = String::from("no item selected to rename");
+                }
+                self.needs_redraw = true;
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
@@ -325,10 +342,18 @@ impl AppState {
                         match kind {
                             PromptKind::NewDirectory => fs::create_directory(&path)?,
                             PromptKind::NewFile => fs::create_file(&path)?,
+                            PromptKind::Rename => {
+                                if let Some(source_path) = prompt.source_path.as_ref() {
+                                    fs::rename_path(source_path, &path)?;
+                                }
+                            }
                         }
                         let entries = fs::scan_directory(&base_path)?;
                         self.active_pane_mut().set_entries(entries);
-                        self.status_message = format!("created {}", path.display());
+                        self.status_message = match kind {
+                            PromptKind::Rename => format!("renamed to {}", path.display()),
+                            _ => format!("created {}", path.display()),
+                        };
                         self.prompt = None;
                     }
                     self.needs_redraw = true;
@@ -572,6 +597,12 @@ impl AppState {
                     action: Action::OpenNewDirectoryPrompt,
                 },
                 MenuItem {
+                    label: "Rename",
+                    shortcut: "F6",
+                    mnemonic: 'r',
+                    action: Action::OpenRenamePrompt,
+                },
+                MenuItem {
                     label: "Save",
                     shortcut: "Ctrl+S",
                     mnemonic: 's',
@@ -644,6 +675,7 @@ pub struct MenuItem {
 pub enum PromptKind {
     NewDirectory,
     NewFile,
+    Rename,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -651,16 +683,28 @@ pub struct PromptState {
     pub kind: PromptKind,
     pub title: &'static str,
     pub base_path: PathBuf,
+    pub source_path: Option<PathBuf>,
     pub value: String,
 }
 
 impl PromptState {
     fn new(kind: PromptKind, title: &'static str, base_path: PathBuf) -> Self {
+        Self::with_value(kind, title, base_path, None, String::new())
+    }
+
+    fn with_value(
+        kind: PromptKind,
+        title: &'static str,
+        base_path: PathBuf,
+        source_path: Option<PathBuf>,
+        value: String,
+    ) -> Self {
         Self {
             kind,
             title,
             base_path,
-            value: String::new(),
+            source_path,
+            value,
         }
     }
 }

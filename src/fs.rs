@@ -51,6 +51,12 @@ pub enum FileSystemError {
     CreateDir { path: String, source: io::Error },
     #[error("failed to create file {path}: {source}")]
     CreateFile { path: String, source: io::Error },
+    #[error("failed to rename {from} to {to}: {source}")]
+    RenamePath {
+        from: String,
+        to: String,
+        source: io::Error,
+    },
 }
 
 pub fn current_dir() -> Result<PathBuf, FileSystemError> {
@@ -118,6 +124,14 @@ pub fn create_file(path: &Path) -> Result<(), FileSystemError> {
         source,
     })?;
     Ok(())
+}
+
+pub fn rename_path(from: &Path, to: &Path) -> Result<(), FileSystemError> {
+    std_fs::rename(from, to).map_err(|source| FileSystemError::RenamePath {
+        from: from.display().to_string(),
+        to: to.display().to_string(),
+        source,
+    })
 }
 
 #[cfg(test)]
