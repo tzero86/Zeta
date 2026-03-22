@@ -9,7 +9,7 @@ use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
-use crate::state::{AppState, MenuItem, PromptState};
+use crate::state::{AppState, DialogState, MenuItem, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let palette = state.theme().palette;
@@ -71,6 +71,10 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         render_prompt(frame, areas[1], prompt, palette);
     }
 
+    if let Some(dialog) = state.dialog() {
+        render_dialog(frame, areas[1], dialog, palette);
+    }
+
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
             .fg(palette.status_fg)
@@ -83,7 +87,7 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
     let mut line = Line::default();
     line.spans
-        .extend(menu_spans(" Zeta ", None, false, palette));
+        .extend(logo_spans(state.active_menu().is_none(), palette));
     line.spans.extend(menu_spans(
         " File ",
         Some('F'),
@@ -102,6 +106,12 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette:
         state.active_menu() == Some(MenuId::View),
         palette,
     ));
+    line.spans.extend(menu_spans(
+        " Help ",
+        Some('H'),
+        state.active_menu() == Some(MenuId::Help),
+        palette,
+    ));
 
     let menu = Paragraph::new(line).style(
         Style::default()
@@ -110,6 +120,31 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette:
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
+}
+
+fn logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'static>> {
+    let style = if active {
+        Style::default()
+            .fg(palette.menu_mnemonic_fg)
+            .bg(palette.menu_active_bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(palette.menu_mnemonic_fg)
+            .bg(palette.menu_bg)
+            .add_modifier(Modifier::BOLD)
+    };
+
+    vec![
+        Span::styled(" [Z] ", style),
+        Span::styled(
+            "Zeta ",
+            Style::default()
+                .fg(palette.menu_fg)
+                .bg(style.bg.unwrap_or(palette.menu_bg))
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]
 }
 
 fn menu_spans(
@@ -155,6 +190,7 @@ fn render_menu_popup(
         MenuId::File => area.x + 1,
         MenuId::Navigate => area.x + 8,
         MenuId::View => area.x + 19,
+        MenuId::Help => area.x + 26,
     };
     let width = 28;
     let height = items.len() as u16 + 2;
@@ -241,6 +277,38 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
             prompt.value
         ),
     };
+    let paragraph = Paragraph::new(body)
+        .style(
+            Style::default()
+                .bg(palette.prompt_bg)
+                .fg(palette.text_primary),
+        )
+        .wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
+}
+
+fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palette: ThemePalette) {
+    let width = area.width.min(58);
+    let height = (dialog.lines.len() as u16 + 2).min(area.height.saturating_sub(2).max(3));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .title(dialog.title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.prompt_bg));
+    let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+
+    let body = dialog.lines.join("\n");
     let paragraph = Paragraph::new(body)
         .style(
             Style::default()

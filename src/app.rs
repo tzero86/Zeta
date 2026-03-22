@@ -101,6 +101,8 @@ impl App {
             AppEvent::Input(key_event) => {
                 let action = if self.state.is_prompt_open() {
                     Action::from_prompt_key_event(key_event)
+                } else if self.state.is_dialog_open() {
+                    Action::from_dialog_key_event(key_event)
                 } else if self.state.is_menu_open() {
                     Action::from_menu_key_event(key_event)
                 } else if self.state.is_editor_focused() {

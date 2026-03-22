@@ -11,10 +11,12 @@ pub enum MenuId {
     File,
     Navigate,
     View,
+    Help,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    CloseDialog,
     CloseMenu,
     EnterSelection,
     CloseEditor,
@@ -36,7 +38,9 @@ pub enum Action {
     MoveSelectionDown,
     MoveSelectionUp,
     NavigateToParent,
+    OpenAboutDialog,
     OpenDeletePrompt,
+    OpenHelpDialog,
     OpenMenu(MenuId),
     OpenNewDirectoryPrompt,
     OpenNewFilePrompt,
@@ -68,6 +72,7 @@ impl Action {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
+                KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
         }
@@ -89,6 +94,7 @@ impl Action {
         }
 
         match key_event.code {
+            KeyCode::F(1) => Some(Self::OpenHelpDialog),
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
             KeyCode::F(6) => Some(Self::OpenRenamePrompt),
             KeyCode::F(8) => Some(Self::OpenDeletePrompt),
@@ -113,11 +119,13 @@ impl Action {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
+                KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
         }
 
         match key_event.code {
+            KeyCode::F(1) => Some(Self::OpenHelpDialog),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiscardEditorChanges)
@@ -148,6 +156,7 @@ impl Action {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
+                KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
         }
@@ -176,6 +185,14 @@ impl Action {
             {
                 Some(Self::PromptInput(ch))
             }
+            _ => None,
+        }
+    }
+
+    pub fn from_dialog_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::F(1) => Some(Self::CloseDialog),
+            KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             _ => None,
         }
     }
@@ -338,6 +355,13 @@ mod tests {
             Some(Action::OpenMenu(MenuId::View))
         );
         assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
+                &keymap
+            ),
+            Some(Action::OpenMenu(MenuId::Help))
+        );
+        assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
             Some(Action::MenuNext)
         );
@@ -352,6 +376,20 @@ mod tests {
         assert_eq!(
             Action::from_prompt_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
             Some(Action::PromptSubmit)
+        );
+    }
+
+    #[test]
+    fn help_shortcuts_are_available() {
+        let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), &keymap),
+            Some(Action::OpenHelpDialog)
+        );
+        assert_eq!(
+            Action::from_dialog_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Some(Action::CloseDialog)
         );
     }
 }

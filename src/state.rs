@@ -30,6 +30,7 @@ pub struct AppState {
     editor: Option<EditorBuffer>,
     menu_selection: usize,
     prompt: Option<PromptState>,
+    dialog: Option<DialogState>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -63,6 +64,7 @@ impl AppState {
             editor: None,
             menu_selection: 0,
             prompt: None,
+            dialog: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "ready | config {} ({})",
@@ -83,6 +85,11 @@ impl AppState {
         let mut commands = Vec::new();
 
         match action {
+            Action::CloseDialog => {
+                self.dialog = None;
+                self.status_message = String::from("closed dialog");
+                self.needs_redraw = true;
+            }
             Action::CloseMenu => {
                 self.active_menu = None;
                 self.menu_selection = 0;
@@ -187,11 +194,23 @@ impl AppState {
                 }
             }
             Action::OpenMenu(menu) => {
+                self.dialog = None;
                 self.active_menu = Some(menu);
                 self.menu_selection = 0;
                 self.needs_redraw = true;
             }
+            Action::OpenAboutDialog => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.dialog = Some(DialogState::about(
+                    self.theme.preset.clone(),
+                    self.config_path.clone(),
+                ));
+                self.status_message = String::from("opened about");
+                self.needs_redraw = true;
+            }
             Action::OpenDeletePrompt => {
+                self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 if let Some((entry_path, entry_name)) = self
@@ -213,6 +232,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenNewDirectoryPrompt => {
+                self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 self.prompt = Some(PromptState::new(
@@ -224,6 +244,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenNewFilePrompt => {
+                self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 self.prompt = Some(PromptState::new(
@@ -235,6 +256,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::OpenRenamePrompt => {
+                self.dialog = None;
                 self.active_menu = None;
                 self.menu_selection = 0;
                 if let Some(entry) = self.active_pane().selected_entry() {
@@ -299,7 +321,8 @@ impl AppState {
                     self.active_menu = Some(match menu {
                         MenuId::File => MenuId::Navigate,
                         MenuId::Navigate => MenuId::View,
-                        MenuId::View => MenuId::File,
+                        MenuId::View => MenuId::Help,
+                        MenuId::Help => MenuId::File,
                     });
                     self.menu_selection = 0;
                     self.needs_redraw = true;
@@ -308,9 +331,10 @@ impl AppState {
             Action::MenuPrevious => {
                 if let Some(menu) = self.active_menu {
                     self.active_menu = Some(match menu {
-                        MenuId::File => MenuId::View,
+                        MenuId::File => MenuId::Help,
                         MenuId::Navigate => MenuId::File,
                         MenuId::View => MenuId::Navigate,
+                        MenuId::Help => MenuId::View,
                     });
                     self.menu_selection = 0;
                     self.needs_redraw = true;
@@ -338,6 +362,13 @@ impl AppState {
                 } else {
                     self.status_message = String::from("no file selected for editor");
                 }
+                self.needs_redraw = true;
+            }
+            Action::OpenHelpDialog => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.dialog = Some(DialogState::help());
+                self.status_message = String::from("opened help");
                 self.needs_redraw = true;
             }
             Action::PromptBackspace => {
@@ -505,6 +536,10 @@ impl AppState {
         self.prompt.as_ref()
     }
 
+    pub fn dialog(&self) -> Option<&DialogState> {
+        self.dialog.as_ref()
+    }
+
     pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
         self.editor.as_mut()
     }
@@ -523,6 +558,10 @@ impl AppState {
 
     pub fn is_prompt_open(&self) -> bool {
         self.prompt.is_some()
+    }
+
+    pub fn is_dialog_open(&self) -> bool {
+        self.dialog.is_some()
     }
 
     pub fn menu_items(&self) -> Vec<MenuItem> {
@@ -731,6 +770,20 @@ impl AppState {
                     action: Action::SetTheme(ThemePreset::Oxide),
                 },
             ],
+            MenuId::Help => vec![
+                MenuItem {
+                    label: "Help",
+                    shortcut: "F1",
+                    mnemonic: 'h',
+                    action: Action::OpenHelpDialog,
+                },
+                MenuItem {
+                    label: "About Zeta",
+                    shortcut: "Enter",
+                    mnemonic: 'a',
+                    action: Action::OpenAboutDialog,
+                },
+            ],
         }
     }
 }
@@ -749,6 +802,48 @@ pub enum PromptKind {
     NewDirectory,
     NewFile,
     Rename,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DialogState {
+    pub title: &'static str,
+    pub lines: Vec<String>,
+}
+
+impl DialogState {
+    fn about(theme_name: String, config_path: String) -> Self {
+        Self {
+            title: "About Zeta",
+            lines: vec![
+                String::from(" ____      _        "),
+                String::from("|_  / ___ | |_ __ _ "),
+                String::from(" / / / _ \\| __/ _` |"),
+                String::from("/___\\___/ \\__\\__,_|"),
+                String::new(),
+                String::from("Keyboard-first dual-pane file manager"),
+                String::from("Version: 0.1.0-dev"),
+                format!("Theme: {theme_name}"),
+                format!("Config: {config_path}"),
+                String::new(),
+                String::from("Esc or Enter closes this window"),
+            ],
+        }
+    }
+
+    fn help() -> Self {
+        Self {
+            title: "Help",
+            lines: vec![
+                String::from("F1 help  Alt+F file  Alt+N navigate  Alt+V view  Alt+H help"),
+                String::from("Enter open dir  Backspace parent  Tab switch pane  Ctrl+Q quit"),
+                String::from("F4 edit  Ins new file  Shift+F7 new dir  F6 rename  F8 delete"),
+                String::from("Ctrl+S save  Ctrl+D discard  arrows/jk move  Esc closes menus"),
+                String::new(),
+                String::from("Menus are keyboard-first and prompts use Enter/Esc."),
+                String::from("Esc or Enter closes this window"),
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -835,6 +930,7 @@ mod tests {
             editor: None,
             menu_selection: 0,
             prompt: None,
+            dialog: None,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
@@ -1004,6 +1100,34 @@ mod tests {
             state.prompt.as_ref().map(|prompt| prompt.title),
             Some("Delete")
         );
+    }
+
+    #[test]
+    fn open_help_dialog_sets_dialog_state() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::OpenHelpDialog)
+            .expect("help dialog should open");
+
+        assert_eq!(
+            state.dialog.as_ref().map(|dialog| dialog.title),
+            Some("Help")
+        );
+    }
+
+    #[test]
+    fn open_about_dialog_uses_runtime_details() {
+        let mut state = test_state();
+        state.theme = ThemePalette::from_preset(ThemePreset::Sandbar);
+
+        state
+            .apply(Action::OpenAboutDialog)
+            .expect("about dialog should open");
+
+        let dialog = state.dialog.as_ref().expect("dialog should exist");
+        assert_eq!(dialog.title, "About Zeta");
+        assert!(dialog.lines.iter().any(|line| line.contains("sandbar")));
     }
 
     #[test]
