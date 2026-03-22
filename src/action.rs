@@ -36,7 +36,13 @@ pub enum Action {
     MoveSelectionUp,
     NavigateToParent,
     OpenMenu(MenuId),
+    OpenNewDirectoryPrompt,
+    OpenNewFilePrompt,
     OpenSelectedInEditor,
+    PromptBackspace,
+    PromptCancel,
+    PromptInput(char),
+    PromptSubmit,
     Refresh,
     SaveEditor,
     ToggleHiddenFiles,
@@ -145,6 +151,21 @@ impl Action {
             KeyCode::Down => Some(Self::MenuMoveDown),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Char(ch) if key_event.modifiers.is_empty() => Some(Self::MenuMnemonic(ch)),
+            _ => None,
+        }
+    }
+
+    pub fn from_prompt_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::PromptCancel),
+            KeyCode::Enter => Some(Self::PromptSubmit),
+            KeyCode::Backspace => Some(Self::PromptBackspace),
+            KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::PromptInput(ch))
+            }
             _ => None,
         }
     }
@@ -293,6 +314,18 @@ mod tests {
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
             Some(Action::MenuNext)
+        );
+    }
+
+    #[test]
+    fn prompt_shortcuts_are_available() {
+        assert_eq!(
+            Action::from_prompt_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
+            Some(Action::PromptInput('a'))
+        );
+        assert_eq!(
+            Action::from_prompt_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+            Some(Action::PromptSubmit)
         );
     }
 }

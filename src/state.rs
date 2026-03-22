@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -27,6 +28,7 @@ pub struct AppState {
     active_menu: Option<MenuId>,
     editor: Option<EditorBuffer>,
     menu_selection: usize,
+    prompt: Option<PromptState>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -56,6 +58,7 @@ impl AppState {
             active_menu: None,
             editor: None,
             menu_selection: 0,
+            prompt: None,
             status_message: format!(
                 "ready | config {} ({})",
                 loaded_config.path.display(),
@@ -182,6 +185,28 @@ impl AppState {
                 self.menu_selection = 0;
                 self.needs_redraw = true;
             }
+            Action::OpenNewDirectoryPrompt => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.prompt = Some(PromptState::new(
+                    PromptKind::NewDirectory,
+                    "New Directory",
+                    self.active_pane().cwd.clone(),
+                ));
+                self.status_message = String::from("enter directory name");
+                self.needs_redraw = true;
+            }
+            Action::OpenNewFilePrompt => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.prompt = Some(PromptState::new(
+                    PromptKind::NewFile,
+                    "New File",
+                    self.active_pane().cwd.clone(),
+                ));
+                self.status_message = String::from("enter file name");
+                self.needs_redraw = true;
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
@@ -270,6 +295,44 @@ impl AppState {
                     self.status_message = String::from("no file selected for editor");
                 }
                 self.needs_redraw = true;
+            }
+            Action::PromptBackspace => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.value.pop();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PromptCancel => {
+                self.prompt = None;
+                self.status_message = String::from("cancelled prompt");
+                self.needs_redraw = true;
+            }
+            Action::PromptInput(ch) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.value.push(ch);
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PromptSubmit => {
+                if let Some(prompt) = self.prompt.as_ref() {
+                    if prompt.value.trim().is_empty() {
+                        self.status_message = String::from("name cannot be empty");
+                    } else {
+                        let kind = prompt.kind;
+                        let base_path = prompt.base_path.clone();
+                        let value = prompt.value.trim().to_string();
+                        let path = base_path.join(&value);
+                        match kind {
+                            PromptKind::NewDirectory => fs::create_directory(&path)?,
+                            PromptKind::NewFile => fs::create_file(&path)?,
+                        }
+                        let entries = fs::scan_directory(&base_path)?;
+                        self.active_pane_mut().set_entries(entries);
+                        self.status_message = format!("created {}", path.display());
+                        self.prompt = None;
+                    }
+                    self.needs_redraw = true;
+                }
             }
             Action::Refresh => {
                 let pane = self.focused_pane_id();
@@ -367,6 +430,10 @@ impl AppState {
         self.editor.as_ref()
     }
 
+    pub fn prompt(&self) -> Option<&PromptState> {
+        self.prompt.as_ref()
+    }
+
     pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
         self.editor.as_mut()
     }
@@ -381,6 +448,10 @@ impl AppState {
 
     pub fn is_menu_open(&self) -> bool {
         self.active_menu.is_some()
+    }
+
+    pub fn is_prompt_open(&self) -> bool {
+        self.prompt.is_some()
     }
 
     pub fn menu_items(&self) -> Vec<MenuItem> {
@@ -489,6 +560,18 @@ impl AppState {
                     action: Action::OpenSelectedInEditor,
                 },
                 MenuItem {
+                    label: "New File",
+                    shortcut: "Ins",
+                    mnemonic: 'n',
+                    action: Action::OpenNewFilePrompt,
+                },
+                MenuItem {
+                    label: "New Directory",
+                    shortcut: "Shift+F7",
+                    mnemonic: 'm',
+                    action: Action::OpenNewDirectoryPrompt,
+                },
+                MenuItem {
                     label: "Save",
                     shortcut: "Ctrl+S",
                     mnemonic: 's',
@@ -557,6 +640,31 @@ pub struct MenuItem {
     pub action: Action,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PromptKind {
+    NewDirectory,
+    NewFile,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PromptState {
+    pub kind: PromptKind,
+    pub title: &'static str,
+    pub base_path: PathBuf,
+    pub value: String,
+}
+
+impl PromptState {
+    fn new(kind: PromptKind, title: &'static str, base_path: PathBuf) -> Self {
+        Self {
+            kind,
+            title,
+            base_path,
+            value: String::new(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -602,6 +710,7 @@ mod tests {
             active_menu: None,
             editor: None,
             menu_selection: 0,
+            prompt: None,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
@@ -745,5 +854,16 @@ mod tests {
             .expect("toggle hidden should succeed");
 
         assert!(state.left.show_hidden);
+    }
+
+    #[test]
+    fn open_new_file_prompt_sets_prompt_state() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::OpenNewFilePrompt)
+            .expect("prompt should open");
+
+        assert!(state.prompt.is_some());
     }
 }

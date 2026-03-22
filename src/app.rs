@@ -99,7 +99,9 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
-                let action = if self.state.is_menu_open() {
+                let action = if self.state.is_prompt_open() {
+                    Action::from_prompt_key_event(key_event)
+                } else if self.state.is_menu_open() {
                     Action::from_menu_key_event(key_event)
                 } else if self.state.is_editor_focused() {
                     Action::from_editor_key_event(key_event)

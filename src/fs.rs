@@ -47,6 +47,10 @@ pub enum FileSystemError {
     ReadDir { path: String, source: io::Error },
     #[error("failed to inspect entry in {path}: {source}")]
     ReadEntryType { path: String, source: io::Error },
+    #[error("failed to create directory {path}: {source}")]
+    CreateDir { path: String, source: io::Error },
+    #[error("failed to create file {path}: {source}")]
+    CreateFile { path: String, source: io::Error },
 }
 
 pub fn current_dir() -> Result<PathBuf, FileSystemError> {
@@ -99,6 +103,21 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
     });
 
     Ok(results)
+}
+
+pub fn create_directory(path: &Path) -> Result<(), FileSystemError> {
+    std_fs::create_dir(path).map_err(|source| FileSystemError::CreateDir {
+        path: path.display().to_string(),
+        source,
+    })
+}
+
+pub fn create_file(path: &Path) -> Result<(), FileSystemError> {
+    std_fs::File::create(path).map_err(|source| FileSystemError::CreateFile {
+        path: path.display().to_string(),
+        source,
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]

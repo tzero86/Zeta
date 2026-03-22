@@ -8,7 +8,7 @@ use crate::action::MenuId;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
-use crate::state::{AppState, MenuItem};
+use crate::state::{AppState, MenuItem, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let areas = Layout::default()
@@ -59,6 +59,10 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
             &state.menu_items(),
             state.menu_selection(),
         );
+    }
+
+    if let Some(prompt) = state.prompt() {
+        render_prompt(frame, areas[1], prompt);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(
@@ -183,6 +187,35 @@ fn render_menu_popup(
     let mut state = ListState::default();
     state.select(Some(selection.min(items.len().saturating_sub(1))));
     frame.render_stateful_widget(list, inner, &mut state);
+}
+
+fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
+    let width = area.width.min(48);
+    let height = 5;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .title(prompt.title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Rgb(212, 196, 168)))
+        .style(Style::default().bg(Color::Rgb(24, 27, 30)));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let body = format!(
+        "Path: {}\nName: {}\nEnter submit | Esc cancel",
+        prompt.base_path.display(),
+        prompt.value
+    );
+    let paragraph = Paragraph::new(body).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
 }
 
 fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {
