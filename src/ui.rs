@@ -381,14 +381,15 @@ fn render_pane(
     frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
 
     let legend = Paragraph::new(Line::raw(
-        "|-- node  `-- last  [D] dir/  [F] file  [L] link",
+        "│ guide  ├─ branch  └─ last  ▣ dir  • file  ↗ link",
     ))
     .style(Style::default().fg(palette.text_muted));
     frame.render_widget(legend, pane_chunks[1]);
 }
 
 fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListItem<'static> {
-    let branch = if is_last { "`--" } else { "|--" };
+    let guide = if is_last { "  " } else { "│ " };
+    let branch = if is_last { "└─" } else { "├─" };
     let label_style = match entry.kind {
         crate::fs::EntryKind::Directory => Style::default()
             .fg(palette.directory_fg)
@@ -397,17 +398,24 @@ fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListI
         crate::fs::EntryKind::File => Style::default().fg(palette.file_fg),
         crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
     };
+    let icon = match entry.kind {
+        crate::fs::EntryKind::Directory => "▣",
+        crate::fs::EntryKind::Symlink => "↗",
+        crate::fs::EntryKind::File => "•",
+        crate::fs::EntryKind::Other => "◦",
+    };
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),
     };
 
     ListItem::new(Line::from(vec![
+        Span::styled(guide, Style::default().fg(palette.text_muted)),
         Span::styled(
             format!("{} ", branch),
             Style::default().fg(palette.text_muted),
         ),
-        Span::styled(format!("{} ", entry.kind.ascii_label()), label_style),
+        Span::styled(format!("{} ", icon), label_style),
         Span::styled(name, label_style),
     ]))
 }
