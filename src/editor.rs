@@ -111,6 +111,23 @@ impl EditorBuffer {
         self.text.lines().map(|line| line.to_string()).collect()
     }
 
+    pub fn visible_line_window(&self, height: usize) -> (usize, Vec<String>) {
+        if height == 0 {
+            return (0, Vec::new());
+        }
+
+        let lines = self.visible_lines();
+        let (cursor_line, _) = self.cursor_line_col();
+        let start = if cursor_line >= height {
+            cursor_line + 1 - height
+        } else {
+            0
+        };
+
+        let visible = lines.into_iter().skip(start).take(height).collect();
+        (start, visible)
+    }
+
     pub fn cursor_line_col(&self) -> (usize, usize) {
         let safe_idx = self.cursor_char_idx.min(self.text.len_chars());
         let line = self.text.char_to_line(safe_idx);
@@ -228,5 +245,22 @@ mod tests {
 
         buffer.move_down();
         assert_eq!(buffer.cursor_line_col(), (1, 1));
+    }
+
+    #[test]
+    fn visible_window_follows_cursor() {
+        let mut buffer = EditorBuffer::default();
+        for ch in ['a', '\n', 'b', '\n', 'c', '\n', 'd'] {
+            if ch == '\n' {
+                buffer.insert_newline();
+            } else {
+                buffer.insert_char(ch);
+            }
+        }
+
+        let (start, visible) = buffer.visible_line_window(2);
+
+        assert_eq!(start, 2);
+        assert_eq!(visible.len(), 2);
     }
 }

@@ -75,10 +75,14 @@ fn render_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let visible_height = inner.height as usize;
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
     } else {
-        pane.entries.iter().map(render_item).collect()
+        pane.visible_entries(visible_height)
+            .iter()
+            .map(render_item)
+            .collect()
     };
 
     let list = List::new(items)
@@ -87,7 +91,7 @@ fn render_pane(
 
     let mut list_state = ListState::default();
     if !pane.entries.is_empty() {
-        list_state.select(Some(pane.selection));
+        list_state.select(pane.visible_selection(visible_height));
     }
 
     frame.render_stateful_widget(list, inner, &mut list_state);
@@ -128,16 +132,15 @@ fn render_editor(
     frame.render_widget(block, area);
 
     let line_number_width = 4usize;
-    let preview = editor
-        .visible_lines()
+    let (visible_start, visible_lines) = editor.visible_line_window(inner.height as usize);
+    let preview = visible_lines
         .into_iter()
         .enumerate()
-        .take(inner.height.saturating_sub(1) as usize)
         .map(|(index, line)| {
             let trimmed = line.strip_suffix('\n').unwrap_or(&line);
             format!(
                 "{:>width$} {}",
-                index + 1,
+                visible_start + index + 1,
                 trimmed,
                 width = line_number_width
             )
@@ -149,7 +152,8 @@ fn render_editor(
 
     if is_active {
         let (line, column) = editor.cursor_line_col();
-        let cursor_y = inner.y + (line as u16).min(inner.height.saturating_sub(1));
+        let visible_line = line.saturating_sub(visible_start);
+        let cursor_y = inner.y + (visible_line as u16).min(inner.height.saturating_sub(1));
         let cursor_x =
             inner.x + ((column + line_number_width + 1) as u16).min(inner.width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, cursor_y));

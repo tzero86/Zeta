@@ -19,6 +19,7 @@ pub enum Action {
     FocusNextPane,
     MoveSelectionDown,
     MoveSelectionUp,
+    NavigateToParent,
     OpenSelectedInEditor,
     Refresh,
     SaveEditor,
@@ -35,6 +36,10 @@ pub enum Command {
 
 impl Action {
     pub fn from_key_event(key_event: KeyEvent, keymap: &RuntimeKeymap) -> Option<Self> {
+        if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::Quit);
+        }
+
         if keymap.switch_pane.matches(&key_event) {
             return Some(Self::FocusNextPane);
         }
@@ -50,6 +55,7 @@ impl Action {
         match key_event.code {
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
+            KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
             }
@@ -61,6 +67,7 @@ impl Action {
 
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
+            KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
             KeyCode::Backspace => Some(Self::EditorBackspace),
             KeyCode::Enter => Some(Self::EditorNewline),
@@ -161,6 +168,10 @@ mod tests {
             Action::from_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keymap),
             Some(Action::EnterSelection)
         );
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &keymap),
+            Some(Action::NavigateToParent)
+        );
     }
 
     #[test]
@@ -189,6 +200,10 @@ mod tests {
         assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
             Some(Action::CloseEditor)
+        );
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
+            Some(Action::Quit)
         );
     }
 }

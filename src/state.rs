@@ -142,6 +142,17 @@ impl AppState {
                     self.needs_redraw = true;
                 }
             }
+            Action::NavigateToParent => {
+                if let Some(path) = self.active_pane().parent_path() {
+                    let pane = self.focused_pane_id();
+                    self.status_message = format!("opening parent {}", path.display());
+                    self.needs_redraw = true;
+                    commands.push(Command::ScanPane { pane, path });
+                } else {
+                    self.status_message = String::from("already at filesystem root");
+                    self.needs_redraw = true;
+                }
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
@@ -275,7 +286,7 @@ impl AppState {
         };
 
         format!(
-            "{} | {} | startup:{}ms | {} | draws:{} | q quit | enter open dir | F4 editor | Ctrl+S save | Esc close | cfg:{}",
+            "{} | {} | startup:{}ms | {} | draws:{} | Ctrl+Q quit | Enter open dir | Backspace parent | F4 editor | Ctrl+S save | Esc close | cfg:{}",
             self.app_label,
             self.status_message,
             self.startup_time_ms,
@@ -376,6 +387,7 @@ mod tests {
                 kind: EntryKind::File,
             }],
             selection: 0,
+            scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
         }
@@ -389,6 +401,7 @@ mod tests {
                 cwd: PathBuf::from("."),
                 entries: Vec::new(),
                 selection: 0,
+                scroll_offset: 0,
                 show_hidden: false,
                 sort_mode: SortMode::Name,
             },
@@ -471,6 +484,24 @@ mod tests {
             vec![Command::ScanPane {
                 pane: PaneId::Left,
                 path: PathBuf::from("./note.txt"),
+            }]
+        );
+    }
+
+    #[test]
+    fn navigate_to_parent_enqueues_scan() {
+        let mut state = test_state();
+        state.left.cwd = PathBuf::from("/tmp/example");
+
+        let commands = state
+            .apply(Action::NavigateToParent)
+            .expect("action should succeed");
+
+        assert_eq!(
+            commands,
+            vec![Command::ScanPane {
+                pane: PaneId::Left,
+                path: PathBuf::from("/tmp"),
             }]
         );
     }
