@@ -57,8 +57,8 @@ impl AppState {
         let resolved_theme = loaded_config.config.resolve_theme();
         let status_bar_label = loaded_config.config.theme.status_bar_label.clone();
 
-        let left = PaneState::load("Left", cwd.clone())?;
-        let right = PaneState::load("Right", secondary)?;
+        let left = PaneState::empty("Left", cwd.clone());
+        let right = PaneState::empty("Right", secondary.clone());
 
         Ok(Self {
             left,
@@ -75,7 +75,7 @@ impl AppState {
             dialog: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
-                    "ready | config {} ({})",
+                    "loading panes | config {} ({})",
                     loaded_config.path.display(),
                     loaded_config.source.label()
                 )
@@ -87,6 +87,19 @@ impl AppState {
             needs_redraw: true,
             should_quit: false,
         })
+    }
+
+    pub fn initial_commands(&self) -> Vec<Command> {
+        vec![
+            Command::ScanPane {
+                pane: PaneId::Left,
+                path: self.left.cwd.clone(),
+            },
+            Command::ScanPane {
+                pane: PaneId::Right,
+                path: self.right.cwd.clone(),
+            },
+        ]
     }
 
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
@@ -1117,6 +1130,25 @@ mod tests {
             needs_redraw: false,
             should_quit: false,
         }
+    }
+
+    #[test]
+    fn bootstrap_initial_commands_queue_both_pane_scans() {
+        let state = test_state();
+
+        assert_eq!(
+            state.initial_commands(),
+            vec![
+                Command::ScanPane {
+                    pane: PaneId::Left,
+                    path: PathBuf::from("."),
+                },
+                Command::ScanPane {
+                    pane: PaneId::Right,
+                    path: PathBuf::from("."),
+                },
+            ]
+        );
     }
 
     #[test]

@@ -41,12 +41,18 @@ impl App {
         let (job_requests, job_results) = jobs::spawn_scan_worker();
         let state = AppState::bootstrap(loaded_config, started_at)
             .context("failed to bootstrap application state")?;
-        Ok(Self {
+        let mut app = Self {
             job_requests,
             job_results,
             keymap,
             state,
-        })
+        };
+
+        for command in app.state.initial_commands() {
+            app.execute_command(command)?;
+        }
+
+        Ok(app)
     }
 
     pub fn run(&mut self) -> Result<()> {

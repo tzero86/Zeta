@@ -25,8 +25,8 @@ pub struct PaneState {
 }
 
 impl PaneState {
-    pub fn load(title: impl Into<String>, cwd: PathBuf) -> Result<Self, FileSystemError> {
-        let mut pane = Self {
+    pub fn empty(title: impl Into<String>, cwd: PathBuf) -> Self {
+        Self {
             title: title.into(),
             cwd,
             entries: Vec::new(),
@@ -34,7 +34,11 @@ impl PaneState {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
-        };
+        }
+    }
+
+    pub fn load(title: impl Into<String>, cwd: PathBuf) -> Result<Self, FileSystemError> {
+        let mut pane = Self::empty(title, cwd);
         let entries = scan_directory(&pane.cwd)?;
         pane.set_entries(entries);
         Ok(pane)
