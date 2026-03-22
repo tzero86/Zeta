@@ -10,14 +10,18 @@ pub enum Action {
     FocusNextPane,
     MoveSelectionDown,
     MoveSelectionUp,
+    OpenSelectedInEditor,
     Refresh,
+    SaveEditor,
     Quit,
     Resize { width: u16, height: u16 },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
+    OpenEditor { path: PathBuf },
     ScanPane { pane: PaneId, path: PathBuf },
+    SaveEditor,
 }
 
 impl Action {
@@ -35,6 +39,10 @@ impl Action {
         }
 
         match key_event.code {
+            KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
+            KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::SaveEditor)
+            }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
             _ => None,
@@ -116,6 +124,23 @@ mod tests {
         assert_eq!(
             Action::from_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &keymap),
             Some(Action::MoveSelectionUp)
+        );
+    }
+
+    #[test]
+    fn editor_shortcuts_remain_available() {
+        let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_key_event(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE), &keymap),
+            Some(Action::OpenSelectedInEditor)
+        );
+        assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+                &keymap,
+            ),
+            Some(Action::SaveEditor)
         );
     }
 }

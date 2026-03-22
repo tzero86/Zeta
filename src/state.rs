@@ -5,7 +5,9 @@ use anyhow::Result;
 
 use crate::action::{Action, Command};
 use crate::config::LoadedConfig;
+use crate::editor::EditorBuffer;
 use crate::fs;
+use crate::fs::EntryKind;
 use crate::jobs::JobResult;
 use crate::pane::{PaneId, PaneState};
 
@@ -22,6 +24,7 @@ pub struct AppState {
     focus: PaneFocus,
     app_label: String,
     config_path: String,
+    editor: Option<EditorBuffer>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -48,6 +51,7 @@ impl AppState {
             focus: PaneFocus::Left,
             app_label: loaded_config.config.theme.status_bar_label,
             config_path: loaded_config.path.display().to_string(),
+            editor: None,
             status_message: format!(
                 "ready | config {} ({})",
                 loaded_config.path.display(),
@@ -81,12 +85,41 @@ impl AppState {
                 self.active_pane_mut().move_selection_up();
                 self.needs_redraw = true;
             }
+            Action::OpenSelectedInEditor => {
+                if let Some(entry) = self.active_pane().selected_entry() {
+                    if entry.kind == EntryKind::File {
+                        commands.push(Command::OpenEditor {
+                            path: entry.path.clone(),
+                        });
+                        self.status_message = format!("opening {}", entry.path.display());
+                    } else {
+                        self.status_message =
+                            String::from("only files can be opened in the editor");
+                    }
+                } else {
+                    self.status_message = String::from("no file selected for editor");
+                }
+                self.needs_redraw = true;
+            }
             Action::Refresh => {
                 let pane = self.focused_pane_id();
                 let path = self.active_pane().cwd.clone();
                 self.status_message = format!("refreshing {}", path.display());
                 self.needs_redraw = true;
                 commands.push(Command::ScanPane { pane, path });
+            }
+            Action::SaveEditor => {
+                if let Some(editor) = &self.editor {
+                    if editor.is_dirty {
+                        commands.push(Command::SaveEditor);
+                        self.status_message = String::from("saving editor buffer");
+                    } else {
+                        self.status_message = String::from("editor buffer is already saved");
+                    }
+                } else {
+                    self.status_message = String::from("no editor buffer is open");
+                }
+                self.needs_redraw = true;
             }
             Action::Quit => {
                 self.should_quit = true;
@@ -140,6 +173,14 @@ impl AppState {
         &self.right
     }
 
+    pub fn editor(&self) -> Option<&EditorBuffer> {
+        self.editor.as_ref()
+    }
+
+    pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
+        self.editor.as_mut()
+    }
+
     pub fn focus(&self) -> PaneId {
         self.focused_pane_id()
     }
@@ -174,6 +215,33 @@ impl AppState {
         self.needs_redraw = false;
     }
 
+    pub fn open_editor(&mut self, editor: EditorBuffer) {
+        let path = editor
+            .path
+            .as_ref()
+            .map(|value| value.display().to_string())
+            .unwrap_or_else(|| String::from("<unnamed>"));
+        self.editor = Some(editor);
+        self.status_message = format!("opened editor for {path}");
+        self.needs_redraw = true;
+    }
+
+    pub fn mark_editor_saved(&mut self) {
+        let message = self
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.path.as_ref())
+            .map(|path| format!("saved editor buffer {}", path.display()))
+            .unwrap_or_else(|| String::from("saved editor buffer"));
+        self.status_message = message;
+        self.needs_redraw = true;
+    }
+
+    pub fn set_error_status(&mut self, message: impl Into<String>) {
+        self.status_message = message.into();
+        self.needs_redraw = true;
+    }
+
     fn active_pane(&self) -> &PaneState {
         match self.focus {
             PaneFocus::Left => &self.left,
@@ -200,5 +268,90 @@ impl AppState {
             PaneFocus::Left => PaneId::Left,
             PaneFocus::Right => PaneId::Right,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use crate::action::{Action, Command};
+    use crate::editor::EditorBuffer;
+    use crate::fs::{EntryInfo, EntryKind};
+    use crate::pane::{PaneState, SortMode};
+
+    use super::{AppState, PaneFocus};
+
+    fn pane_with_file(path: &str) -> PaneState {
+        PaneState {
+            title: String::from("left"),
+            cwd: PathBuf::from("."),
+            entries: vec![EntryInfo {
+                name: String::from("note.txt"),
+                path: PathBuf::from(path),
+                kind: EntryKind::File,
+            }],
+            selection: 0,
+            show_hidden: false,
+            sort_mode: SortMode::Name,
+        }
+    }
+
+    fn test_state() -> AppState {
+        AppState {
+            left: pane_with_file("./note.txt"),
+            right: PaneState {
+                title: String::from("right"),
+                cwd: PathBuf::from("."),
+                entries: Vec::new(),
+                selection: 0,
+                show_hidden: false,
+                sort_mode: SortMode::Name,
+            },
+            focus: PaneFocus::Left,
+            app_label: String::from("Zeta"),
+            config_path: String::from("/tmp/zeta/config.toml"),
+            editor: None,
+            status_message: String::from("ready"),
+            last_size: None,
+            redraw_count: 0,
+            startup_time_ms: 0,
+            last_scan_time_ms: None,
+            needs_redraw: false,
+            should_quit: false,
+        }
+    }
+
+    #[test]
+    fn open_selected_file_enqueues_editor_command() {
+        let mut state = test_state();
+
+        let commands = state
+            .apply(Action::OpenSelectedInEditor)
+            .expect("action should succeed");
+
+        assert_eq!(
+            commands,
+            vec![Command::OpenEditor {
+                path: PathBuf::from("./note.txt")
+            }]
+        );
+    }
+
+    #[test]
+    fn save_editor_enqueues_save_when_dirty() {
+        let mut state = test_state();
+        let mut editor = EditorBuffer {
+            path: Some(PathBuf::from("./note.txt")),
+            ..EditorBuffer::default()
+        };
+        editor.insert(0, "hello");
+        state.editor = Some(editor);
+
+        let commands = state
+            .apply(Action::SaveEditor)
+            .expect("action should succeed");
+
+        assert_eq!(commands, vec![Command::SaveEditor]);
     }
 }

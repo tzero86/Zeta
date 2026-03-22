@@ -14,6 +14,7 @@ use ratatui::{Frame, Terminal};
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
+use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
 use crate::jobs::{self, JobRequest, JobResult};
 use crate::state::AppState;
@@ -123,10 +124,28 @@ impl App {
 
     fn execute_command(&mut self, command: Command) -> Result<()> {
         match command {
+            Command::OpenEditor { path } => match EditorBuffer::open(&path) {
+                Ok(editor) => self.state.open_editor(editor),
+                Err(error) => self
+                    .state
+                    .set_error_status(format!("failed to open editor buffer: {error}")),
+            },
             Command::ScanPane { pane, path } => self
                 .job_requests
                 .send(JobRequest::ScanDirectory { pane, path })
                 .context("failed to queue background scan job")?,
+            Command::SaveEditor => {
+                if let Some(editor) = self.state.editor_mut() {
+                    match editor.save() {
+                        Ok(()) => self.state.mark_editor_saved(),
+                        Err(error) => self
+                            .state
+                            .set_error_status(format!("failed to save editor buffer: {error}")),
+                    }
+                } else {
+                    self.state.set_error_status("no editor buffer is open");
+                }
+            }
         }
 
         Ok(())

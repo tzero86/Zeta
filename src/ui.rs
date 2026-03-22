@@ -1,9 +1,10 @@
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
 use crate::state::AppState;
@@ -25,12 +26,17 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
         state.left_pane(),
         state.focus() == PaneId::Left,
     );
-    render_pane(
-        frame,
-        panes[1],
-        state.right_pane(),
-        state.focus() == PaneId::Right,
-    );
+
+    if let Some(editor) = state.editor() {
+        render_editor(frame, panes[1], editor, state.focus() == PaneId::Right);
+    } else {
+        render_pane(
+            frame,
+            panes[1],
+            state.right_pane(),
+            state.focus() == PaneId::Right,
+        );
+    }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
@@ -84,4 +90,42 @@ fn render_pane(
 fn render_item(entry: &EntryInfo) -> ListItem<'static> {
     let line = format!("{} {}", entry.kind.symbol(), entry.name);
     ListItem::new(line)
+}
+
+fn render_editor(
+    frame: &mut Frame<'_>,
+    area: ratatui::layout::Rect,
+    editor: &EditorBuffer,
+    is_focused: bool,
+) {
+    let border_style = if is_focused {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let path = editor
+        .path
+        .as_ref()
+        .map(|value| value.display().to_string())
+        .unwrap_or_else(|| String::from("<unnamed>"));
+    let dirty_marker = if editor.is_dirty { "*" } else { "" };
+    let title = format!("Editor{}  {}", dirty_marker, path);
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(border_style);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let preview = editor
+        .contents()
+        .lines()
+        .take(inner.height.saturating_sub(1) as usize)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let paragraph = Paragraph::new(preview).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
 }
