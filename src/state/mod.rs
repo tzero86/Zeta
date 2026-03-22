@@ -1,29 +1,25 @@
+mod dialog;
+mod menu;
+mod prompt;
+mod types;
+
 use std::path::Path;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use anyhow::Result;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
-use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
+use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette};
 use crate::editor::EditorBuffer;
 use crate::fs;
-use crate::fs::suggest_non_conflicting_path;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PaneFocus {
-    Left,
-    Right,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PaneLayout {
-    SideBySide,
-    Stacked,
-}
+pub use dialog::{CollisionState, DialogState};
+use menu::menu_items_for;
+pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
+pub use types::{MenuItem, PaneFocus, PaneLayout};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -388,8 +384,7 @@ impl AppState {
             }
             Action::MenuActivate => {
                 if let Some(menu) = self.active_menu {
-                    if let Some(item) = self.menu_items_for(menu).get(self.menu_selection).copied()
-                    {
+                    if let Some(item) = menu_items_for(menu).get(self.menu_selection).copied() {
                         self.active_menu = None;
                         self.menu_selection = 0;
                         commands.extend(self.apply(item.action)?);
@@ -398,8 +393,7 @@ impl AppState {
             }
             Action::MenuMnemonic(ch) => {
                 if let Some(menu) = self.active_menu {
-                    if let Some(item) = self
-                        .menu_items_for(menu)
+                    if let Some(item) = menu_items_for(menu)
                         .into_iter()
                         .find(|item| item.mnemonic.eq_ignore_ascii_case(&ch))
                     {
@@ -411,7 +405,7 @@ impl AppState {
             }
             Action::MenuMoveDown => {
                 if let Some(menu) = self.active_menu {
-                    let len = self.menu_items_for(menu).len();
+                    let len = menu_items_for(menu).len();
                     if len > 0 {
                         self.menu_selection = (self.menu_selection + 1).min(len.saturating_sub(1));
                         self.needs_redraw = true;
@@ -766,9 +760,7 @@ impl AppState {
     }
 
     pub fn menu_items(&self) -> Vec<MenuItem> {
-        self.active_menu
-            .map(|menu| self.menu_items_for(menu))
-            .unwrap_or_default()
+        self.active_menu.map(menu_items_for).unwrap_or_default()
     }
 
     pub fn menu_selection(&self) -> usize {
@@ -913,351 +905,6 @@ impl AppState {
             PaneFocus::Right => PaneId::Right,
         }
     }
-
-    fn menu_items_for(&self, menu: MenuId) -> Vec<MenuItem> {
-        match menu {
-            MenuId::File => vec![
-                MenuItem {
-                    label: "Open in Editor",
-                    shortcut: "F4",
-                    mnemonic: 'o',
-                    action: Action::OpenSelectedInEditor,
-                },
-                MenuItem {
-                    label: "Copy",
-                    shortcut: "F5",
-                    mnemonic: 'c',
-                    action: Action::OpenCopyPrompt,
-                },
-                MenuItem {
-                    label: "Move",
-                    shortcut: "Shift+F6",
-                    mnemonic: 'v',
-                    action: Action::OpenMovePrompt,
-                },
-                MenuItem {
-                    label: "New File",
-                    shortcut: "Ins",
-                    mnemonic: 'n',
-                    action: Action::OpenNewFilePrompt,
-                },
-                MenuItem {
-                    label: "New Directory",
-                    shortcut: "Shift+F7",
-                    mnemonic: 'm',
-                    action: Action::OpenNewDirectoryPrompt,
-                },
-                MenuItem {
-                    label: "Rename",
-                    shortcut: "F6",
-                    mnemonic: 'r',
-                    action: Action::OpenRenamePrompt,
-                },
-                MenuItem {
-                    label: "Delete",
-                    shortcut: "F8",
-                    mnemonic: 'd',
-                    action: Action::OpenDeletePrompt,
-                },
-                MenuItem {
-                    label: "Save",
-                    shortcut: "Ctrl+S",
-                    mnemonic: 's',
-                    action: Action::SaveEditor,
-                },
-                MenuItem {
-                    label: "Discard Changes",
-                    shortcut: "Ctrl+D",
-                    mnemonic: 'd',
-                    action: Action::DiscardEditorChanges,
-                },
-                MenuItem {
-                    label: "Close Editor",
-                    shortcut: "Esc",
-                    mnemonic: 'c',
-                    action: Action::CloseEditor,
-                },
-                MenuItem {
-                    label: "Quit",
-                    shortcut: "Ctrl+Q",
-                    mnemonic: 'q',
-                    action: Action::Quit,
-                },
-            ],
-            MenuId::Navigate => vec![
-                MenuItem {
-                    label: "Open Directory",
-                    shortcut: "Enter",
-                    mnemonic: 'o',
-                    action: Action::EnterSelection,
-                },
-                MenuItem {
-                    label: "Parent Directory",
-                    shortcut: "Backspace",
-                    mnemonic: 'p',
-                    action: Action::NavigateToParent,
-                },
-                MenuItem {
-                    label: "Refresh",
-                    shortcut: "r",
-                    mnemonic: 'r',
-                    action: Action::Refresh,
-                },
-                MenuItem {
-                    label: "Switch Pane",
-                    shortcut: "Tab",
-                    mnemonic: 's',
-                    action: Action::FocusNextPane,
-                },
-            ],
-            MenuId::View => vec![
-                MenuItem {
-                    label: "Toggle Hidden Files",
-                    shortcut: ".",
-                    mnemonic: 'h',
-                    action: Action::ToggleHiddenFiles,
-                },
-                MenuItem {
-                    label: "Layout: Side by Side",
-                    shortcut: "4",
-                    mnemonic: 'l',
-                    action: Action::SetPaneLayout(PaneLayout::SideBySide),
-                },
-                MenuItem {
-                    label: "Layout: Stacked",
-                    shortcut: "5",
-                    mnemonic: 'k',
-                    action: Action::SetPaneLayout(PaneLayout::Stacked),
-                },
-                MenuItem {
-                    label: "Theme: Fjord",
-                    shortcut: "1",
-                    mnemonic: 'f',
-                    action: Action::SetTheme(ThemePreset::Fjord),
-                },
-                MenuItem {
-                    label: "Theme: Sandbar",
-                    shortcut: "2",
-                    mnemonic: 's',
-                    action: Action::SetTheme(ThemePreset::Sandbar),
-                },
-                MenuItem {
-                    label: "Theme: Oxide",
-                    shortcut: "3",
-                    mnemonic: 'o',
-                    action: Action::SetTheme(ThemePreset::Oxide),
-                },
-            ],
-            MenuId::Help => vec![
-                MenuItem {
-                    label: "Help",
-                    shortcut: "F1",
-                    mnemonic: 'h',
-                    action: Action::OpenHelpDialog,
-                },
-                MenuItem {
-                    label: "About Zeta",
-                    shortcut: "Enter",
-                    mnemonic: 'a',
-                    action: Action::OpenAboutDialog,
-                },
-            ],
-        }
-    }
-}
-
-fn resolve_prompt_target(prompt: &PromptState, value: &str) -> PathBuf {
-    let path = PathBuf::from(value);
-    if path.is_absolute() {
-        path
-    } else {
-        prompt.base_path.join(path)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MenuItem {
-    pub label: &'static str,
-    pub shortcut: &'static str,
-    pub mnemonic: char,
-    pub action: Action,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PromptKind {
-    Copy,
-    Delete,
-    Move,
-    NewDirectory,
-    NewFile,
-    Rename,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DialogState {
-    pub title: &'static str,
-    pub lines: Vec<String>,
-}
-
-impl DialogState {
-    fn about(theme_name: String, config_path: String) -> Self {
-        Self {
-            title: "About Zeta",
-            lines: vec![
-                String::from(" ____      _        "),
-                String::from("|_  / ___ | |_ __ _ "),
-                String::from(" / / / _ \\| __/ _` |"),
-                String::from("/___\\___/ \\__\\__,_|"),
-                String::new(),
-                String::from("Keyboard-first dual-pane file manager"),
-                String::from("Version: 0.1.0-dev"),
-                format!("Theme: {theme_name}"),
-                format!("Config: {config_path}"),
-                String::new(),
-                String::from("Esc or Enter closes this window"),
-            ],
-        }
-    }
-
-    fn help() -> Self {
-        Self {
-            title: "Help",
-            lines: vec![
-                String::from("F1 help  Alt+F file  Alt+N navigate  Alt+V view  Alt+H help"),
-                String::from("Enter open dir  Backspace parent  Tab switch pane  Ctrl+Q quit"),
-                String::from("F4 edit  Ins new file  Shift+F7 new dir  F6 rename  F8 delete"),
-                String::from("Ctrl+S save  Ctrl+D discard  arrows/jk move  Esc closes menus"),
-                String::new(),
-                String::from("Menus are keyboard-first and prompts use Enter/Esc."),
-                String::from("Esc or Enter closes this window"),
-            ],
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CollisionState {
-    pub operation: FileOperation,
-    pub refresh: Vec<RefreshTarget>,
-    pub path: PathBuf,
-}
-
-impl CollisionState {
-    pub fn lines(&self) -> Vec<String> {
-        vec![
-            format!("Destination exists: {}", self.path.display()),
-            format!("Pending: {}", self.operation_label()),
-            String::new(),
-            String::from("O overwrite  R rename  S skip  Esc cancel"),
-        ]
-    }
-
-    fn operation_label(&self) -> String {
-        match &self.operation {
-            FileOperation::Copy { source, .. } => format!("copy {}", source.display()),
-            FileOperation::CreateDirectory { .. } => String::from("create directory"),
-            FileOperation::CreateFile { .. } => String::from("create file"),
-            FileOperation::Delete { path } => format!("delete {}", path.display()),
-            FileOperation::Move { source, .. } => format!("move {}", source.display()),
-            FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
-        }
-    }
-
-    fn rename_prompt(self) -> PromptState {
-        let suggested = suggest_non_conflicting_path(self.destination_path());
-        let value = suggested.display().to_string();
-
-        match self.operation {
-            FileOperation::Copy { source, .. } => PromptState::with_value(
-                PromptKind::Copy,
-                "Copy",
-                prompt_base_path(&suggested),
-                Some(source),
-                value,
-            ),
-            FileOperation::CreateDirectory { .. } => PromptState::with_value(
-                PromptKind::NewDirectory,
-                "New Directory",
-                prompt_base_path(&suggested),
-                None,
-                value,
-            ),
-            FileOperation::CreateFile { .. } => PromptState::with_value(
-                PromptKind::NewFile,
-                "New File",
-                prompt_base_path(&suggested),
-                None,
-                value,
-            ),
-            FileOperation::Delete { path } => PromptState::with_value(
-                PromptKind::Delete,
-                "Delete",
-                prompt_base_path(&path),
-                Some(path),
-                String::new(),
-            ),
-            FileOperation::Move { source, .. } => PromptState::with_value(
-                PromptKind::Move,
-                "Move",
-                prompt_base_path(&suggested),
-                Some(source),
-                value,
-            ),
-            FileOperation::Rename { source, .. } => PromptState::with_value(
-                PromptKind::Rename,
-                "Rename",
-                prompt_base_path(&suggested),
-                Some(source),
-                value,
-            ),
-        }
-    }
-
-    fn destination_path(&self) -> &Path {
-        match &self.operation {
-            FileOperation::Copy { destination, .. } => destination,
-            FileOperation::CreateDirectory { path } => path,
-            FileOperation::CreateFile { path } => path,
-            FileOperation::Delete { path } => path,
-            FileOperation::Move { destination, .. } => destination,
-            FileOperation::Rename { destination, .. } => destination,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PromptState {
-    pub kind: PromptKind,
-    pub title: &'static str,
-    pub base_path: PathBuf,
-    pub source_path: Option<PathBuf>,
-    pub value: String,
-}
-
-impl PromptState {
-    fn new(kind: PromptKind, title: &'static str, base_path: PathBuf) -> Self {
-        Self::with_value(kind, title, base_path, None, String::new())
-    }
-
-    fn with_value(
-        kind: PromptKind,
-        title: &'static str,
-        base_path: PathBuf,
-        source_path: Option<PathBuf>,
-        value: String,
-    ) -> Self {
-        Self {
-            kind,
-            title,
-            base_path,
-            source_path,
-            value,
-        }
-    }
-}
-
-fn prompt_base_path(path: &Path) -> PathBuf {
-    path.parent().map(Path::to_path_buf).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1267,12 +914,11 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
+    use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationStatus, JobResult};
     use crate::pane::{PaneId, PaneState, SortMode};
-
-    use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
 
     use super::{
         resolve_prompt_target, AppState, CollisionState, PaneFocus, PaneLayout, PromptKind,
