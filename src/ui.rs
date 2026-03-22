@@ -9,7 +9,7 @@ use crate::config::ThemePalette;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
-use crate::state::{AppState, DialogState, MenuItem, PromptState};
+use crate::state::{AppState, DialogState, MenuItem, PaneLayout, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let palette = state.theme().palette;
@@ -24,8 +24,12 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 
     render_menu_bar(frame, areas[0], state, palette);
 
+    let pane_direction = match state.pane_layout() {
+        PaneLayout::SideBySide => Direction::Horizontal,
+        PaneLayout::Stacked => Direction::Vertical,
+    };
     let panes = Layout::default()
-        .direction(Direction::Horizontal)
+        .direction(pane_direction)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(areas[1]);
 

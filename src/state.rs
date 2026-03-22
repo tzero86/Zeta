@@ -18,11 +18,18 @@ pub enum PaneFocus {
     Right,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PaneLayout {
+    SideBySide,
+    Stacked,
+}
+
 #[derive(Clone, Debug)]
 pub struct AppState {
     left: PaneState,
     right: PaneState,
     focus: PaneFocus,
+    pane_layout: PaneLayout,
     app_label: String,
     config_path: String,
     theme: ResolvedTheme,
@@ -57,6 +64,7 @@ impl AppState {
             left,
             right,
             focus: PaneFocus::Left,
+            pane_layout: PaneLayout::SideBySide,
             app_label: status_bar_label,
             config_path: loaded_config.path.display().to_string(),
             theme: resolved_theme.clone(),
@@ -516,6 +524,14 @@ impl AppState {
                 }
                 self.needs_redraw = true;
             }
+            Action::SetPaneLayout(layout) => {
+                self.pane_layout = layout;
+                self.status_message = match layout {
+                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
+                    PaneLayout::Stacked => String::from("layout set to stacked"),
+                };
+                self.needs_redraw = true;
+            }
             Action::SetTheme(preset) => {
                 self.theme = ThemePalette::from_preset(preset);
                 self.status_message = format!("theme set to {}", preset.as_str());
@@ -591,6 +607,10 @@ impl AppState {
 
     pub fn theme(&self) -> &ResolvedTheme {
         &self.theme
+    }
+
+    pub fn pane_layout(&self) -> PaneLayout {
+        self.pane_layout
     }
 
     pub fn right_pane(&self) -> &PaneState {
@@ -846,6 +866,18 @@ impl AppState {
                     action: Action::ToggleHiddenFiles,
                 },
                 MenuItem {
+                    label: "Layout: Side by Side",
+                    shortcut: "4",
+                    mnemonic: 'l',
+                    action: Action::SetPaneLayout(PaneLayout::SideBySide),
+                },
+                MenuItem {
+                    label: "Layout: Stacked",
+                    shortcut: "5",
+                    mnemonic: 'k',
+                    action: Action::SetPaneLayout(PaneLayout::Stacked),
+                },
+                MenuItem {
                     label: "Theme: Fjord",
                     shortcut: "1",
                     mnemonic: 'f',
@@ -984,7 +1016,7 @@ mod tests {
 
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
 
-    use super::{AppState, PaneFocus};
+    use super::{AppState, PaneFocus, PaneLayout};
 
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
@@ -1016,6 +1048,7 @@ mod tests {
                 sort_mode: SortMode::Name,
             },
             focus: PaneFocus::Left,
+            pane_layout: PaneLayout::SideBySide,
             app_label: String::from("Zeta"),
             config_path: String::from("/tmp/zeta/config.toml"),
             theme: ResolvedTheme {
@@ -1210,6 +1243,17 @@ mod tests {
         let prompt = state.prompt.as_ref().expect("prompt should exist");
         assert_eq!(prompt.title, "Move");
         assert_eq!(prompt.value, "/tmp/target/note.txt");
+    }
+
+    #[test]
+    fn set_pane_layout_updates_runtime_layout() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::SetPaneLayout(PaneLayout::Stacked))
+            .expect("layout change should succeed");
+
+        assert_eq!(state.pane_layout(), PaneLayout::Stacked);
     }
 
     #[test]

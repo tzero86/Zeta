@@ -5,6 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::config::RuntimeKeymap;
 use crate::config::ThemePreset;
 use crate::pane::PaneId;
+use crate::state::PaneLayout;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MenuId {
@@ -54,6 +55,7 @@ pub enum Action {
     PromptSubmit,
     Refresh,
     SaveEditor,
+    SetPaneLayout(PaneLayout),
     SetTheme(ThemePreset),
     ToggleHiddenFiles,
     Quit,
