@@ -246,8 +246,13 @@ fn render_menu_popup(
 }
 
 fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palette: ThemePalette) {
-    let width = area.width.min(48);
-    let height = 6;
+    let (width, height) = match prompt.kind {
+        crate::state::PromptKind::Copy | crate::state::PromptKind::Move => {
+            (area.width.min(76), area.height.min(8))
+        }
+        crate::state::PromptKind::Delete => (area.width.min(64), area.height.min(6)),
+        _ => (area.width.min(56), area.height.min(6)),
+    };
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {
@@ -276,7 +281,7 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
                 .unwrap_or_else(|| String::from("<missing target>")),
         ),
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => format!(
-            "Source: {}\nDestination: {}\nEnter submit | Esc cancel",
+            "Source:\n{}\n\nDestination:\n{}\n\nEnter submit | Esc cancel",
             prompt
                 .source_path
                 .as_ref()
