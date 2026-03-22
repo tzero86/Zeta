@@ -1,6 +1,5 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::symbols::border as border_symbols;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
@@ -14,23 +13,14 @@ use crate::jobs::PreviewContent;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
-/// ASCII border set — renders correctly on any Windows terminal font.
-const ASCII_BORDERS: border_symbols::Set = border_symbols::Set {
-    top_left: "+",
-    top_right: "+",
-    bottom_left: "+",
-    bottom_right: "+",
-    vertical_left: "|",
-    vertical_right: "|",
-    horizontal_top: "-",
-    horizontal_bottom: "-",
-};
-
 fn get_entry_icon(kind: EntryKind) -> &'static str {
+    // Single-width chars that render on any UTF-8 terminal.
+    // Directories get a trailing "/" in the name already, so the icon
+    // here is just a subtle type hint.
     match kind {
-        EntryKind::Directory => "/",
-        EntryKind::Symlink => "@",
-        EntryKind::File => "-",
+        EntryKind::Directory => ">",
+        EntryKind::Symlink => "~",
+        EntryKind::File => " ",
         EntryKind::Other => "?",
     }
 }
@@ -90,12 +80,21 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         None
     };
 
+    let is_stacked = state.pane_layout() == PaneLayout::Stacked;
+    let (first_label, second_label) = if is_stacked {
+        ("Top", "Bottom")
+    } else {
+        ("Left", "Right")
+    };
+
     render_pane(
         frame,
         panes[0],
         state.left_pane(),
+        first_label,
         left_focused,
-        left_preview_content.as_ref(),
+        // Left pane: no right border so it shares one line with the right pane.
+        Borders::TOP | Borders::LEFT | Borders::BOTTOM,
         palette,
     );
 
@@ -115,10 +114,22 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
             frame,
             panes[1],
             state.right_pane(),
+            second_label,
             right_focused,
-            right_preview_content.as_ref(),
+            Borders::ALL,
             palette,
         );
+    }
+
+    // Preview overlay — rendered after panes so it floats on top.
+    let active_pane_area = if left_focused { panes[0] } else { panes[1] };
+    let active_preview = if left_focused {
+        left_preview_content.as_ref()
+    } else {
+        right_preview_content.as_ref()
+    };
+    if let Some(content) = active_preview {
+        render_preview_overlay(frame, active_pane_area, content, palette);
     }
 
     if let Some(menu) = state.active_menu() {
@@ -272,7 +283,6 @@ fn render_menu_popup(
 
     let block = Block::default()
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.surface_bg));
     let inner = block.inner(popup_area);
@@ -331,7 +341,6 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
     let block = Block::default()
         .title(prompt.title)
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
@@ -387,7 +396,6 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
     let block = Block::default()
         .title(dialog.title)
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
@@ -426,7 +434,6 @@ fn render_collision_dialog(
     let block = Block::default()
         .title("Resolve Collision")
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
         .border_style(
             Style::default()
                 .fg(palette.prompt_border)
@@ -451,8 +458,9 @@ fn render_pane(
     frame: &mut Frame<'_>,
     area: Rect,
     pane: &PaneState,
+    label: &str,
     is_focused: bool,
-    preview: Option<&PreviewContent>,
+    borders: Borders,
     palette: ThemePalette,
 ) {
     let border_style = if is_focused {
@@ -463,30 +471,15 @@ fn render_pane(
         Style::default().fg(palette.text_muted)
     };
 
-    let title = format!(
-        "{} [{}]  {}",
-        pane.title,
-        pane.entries.len(),
-        pane.cwd.display()
-    );
+    let title = format!("{} [{}]  {}", label, pane.entries.len(), pane.cwd.display());
     let block = Block::default()
         .title(title)
-        .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
+        .borders(borders)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Split inner area: 60% file list, 40% preview (only when preview is available).
-    let (list_area, preview_area) = if preview.is_some() && inner.width >= 20 {
-        let chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(inner);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (inner, None)
-    };
+    let list_area = inner;
 
     let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
@@ -522,40 +515,47 @@ fn render_pane(
     }
 
     frame.render_stateful_widget(list, list_area, &mut list_state);
-
-    if let (Some(content), Some(area)) = (preview, preview_area) {
-        render_preview_panel(frame, area, content, palette);
-    }
 }
 
-fn render_preview_panel(
+fn render_preview_overlay(
     frame: &mut Frame<'_>,
     area: Rect,
     content: &PreviewContent,
     palette: ThemePalette,
 ) {
+    // Centered floating overlay: 90% width, 80% height of the pane area.
+    let width = (area.width as f32 * 0.90) as u16;
+    let height = (area.height as f32 * 0.80) as u16;
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
     let block = Block::default()
-        .title("preview")
+        .title(" Preview ")
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
-        .border_style(Style::default().fg(palette.text_muted));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
+        .border_style(
+            Style::default()
+                .fg(palette.prompt_border)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(palette.surface_bg));
+    let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
 
     let body = match content {
         PreviewContent::Text(text) => text.clone(),
-        PreviewContent::Binary { size_bytes } => {
-            format!("[binary file — {size_bytes} bytes]")
-        }
+        PreviewContent::Binary { size_bytes } => format!("[binary — {size_bytes} bytes]"),
         PreviewContent::Empty => String::from("[empty file]"),
     };
 
     let paragraph = Paragraph::new(body)
-        .style(
-            Style::default()
-                .fg(palette.text_primary)
-                .bg(palette.surface_bg),
-        )
+        .style(Style::default().fg(palette.text_primary))
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }
@@ -566,8 +566,8 @@ fn render_item(
     available_width: usize,
     palette: ThemePalette,
 ) -> ListItem<'static> {
-    let guide = if is_last { "  " } else { "|  " };
-    let branch = if is_last { "`" } else { "+" };
+    let guide = if is_last { "  " } else { "│ " };
+    let branch = if is_last { "└" } else { "├" };
     let label_style = match entry.kind {
         crate::fs::EntryKind::Directory => Style::default()
             .fg(palette.directory_fg)
@@ -701,7 +701,6 @@ fn render_editor(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_set(ASCII_BORDERS)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
