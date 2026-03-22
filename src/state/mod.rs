@@ -933,7 +933,7 @@ impl AppState {
     }
 
     pub fn is_editor_focused(&self) -> bool {
-        self.editor.is_some() && self.focused_pane_id() == PaneId::Right
+        self.editor.is_some()
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -1012,7 +1012,6 @@ impl AppState {
             .map(|value| value.display().to_string())
             .unwrap_or_else(|| String::from("<unnamed>"));
         self.editor = Some(editor);
-        self.focus = PaneFocus::Right;
         self.status_message = format!("opened editor for {path}");
         self.needs_redraw = true;
     }

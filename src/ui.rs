@@ -44,22 +44,25 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     };
 
     let is_preview_open = state.is_preview_panel_open();
+    let has_editor = state.editor().is_some();
+    let show_tools = has_editor || is_preview_open;
 
-    let pane_area;
-    let preview_area_opt: Option<Rect>;
+    let tools_pct = if has_editor { 50u16 } else { 40u16 };
+    let panes_pct = 100 - tools_pct;
 
-    if is_preview_open {
-        // Split vertically: 60% panes, 40% preview.
+    let (pane_area, tools_area_opt) = if show_tools {
+        // Split vertically: panes on top, tools panel on bottom.
         let vertical = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .constraints([
+                Constraint::Percentage(panes_pct),
+                Constraint::Percentage(tools_pct),
+            ])
             .split(areas[1]);
-        pane_area = vertical[0];
-        preview_area_opt = Some(vertical[1]);
+        (vertical[0], Some(vertical[1]))
     } else {
-        pane_area = areas[1];
-        preview_area_opt = None;
-    }
+        (areas[1], None)
+    };
 
     // Horizontal split of pane_area into left/right (or top/bottom when stacked).
     let panes = Layout::default()
@@ -69,8 +72,6 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
 
     let left_focused = state.focus() == PaneId::Left;
     let right_focused = state.focus() == PaneId::Right;
-    let is_editor_focused = state.is_editor_focused();
-    let has_editor = state.editor().is_some();
 
     let is_stacked = state.pane_layout() == PaneLayout::Stacked;
     let (first_label, second_label) = if is_stacked {
@@ -90,39 +91,28 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         palette,
     );
 
-    if has_editor {
-        if let Some(editor) = state.editor_mut() {
-            render_editor(
-                frame,
-                panes[1],
-                editor,
-                right_focused,
-                is_editor_focused,
-                palette,
-            );
+    // Right pane is always rendered — editor now lives in the tools panel below.
+    render_pane(
+        frame,
+        panes[1],
+        state.right_pane(),
+        second_label,
+        right_focused,
+        Borders::ALL,
+        palette,
+    );
+
+    // Tools panel — editor takes priority over preview when both could be shown.
+    if let Some(tools_area) = tools_area_opt {
+        if has_editor {
+            if let Some(editor) = state.editor_mut() {
+                render_editor(frame, tools_area, editor, true, true, palette);
+            }
+        } else if is_preview_open {
+            let preview_content = state.preview().map(|(_, c)| c);
+            let filename = state.active_pane_title().to_string();
+            render_preview_panel(frame, tools_area, preview_content, &filename, palette);
         }
-    } else {
-        render_pane(
-            frame,
-            panes[1],
-            state.right_pane(),
-            second_label,
-            right_focused,
-            Borders::ALL,
-            palette,
-        );
-    }
-
-    // Dedicated preview panel — rendered below panes when open.
-    let preview_content: Option<&PreviewContent> = if is_preview_open {
-        state.preview().map(|(_, c)| c)
-    } else {
-        None
-    };
-
-    if let Some(area) = preview_area_opt {
-        let filename = state.active_pane_title().to_string();
-        render_preview_panel(frame, area, preview_content, &filename, palette);
     }
 
     if let Some(menu) = state.active_menu() {
