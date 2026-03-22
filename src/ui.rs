@@ -4,10 +4,11 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::Frame;
 
+use crate::action::MenuId;
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::pane::{PaneId, PaneState};
-use crate::state::AppState;
+use crate::state::{AppState, MenuItem};
 
 pub fn render(frame: &mut Frame<'_>, state: &AppState) {
     let areas = Layout::default()
@@ -60,19 +61,102 @@ pub fn render(frame: &mut Frame<'_>, state: &AppState) {
 }
 
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState) {
-    let menu_text = if state.is_editor_focused() {
-        " Zeta | File  Open:F4  Save:Ctrl+S  Discard:Ctrl+D  Close:Esc  Quit:Ctrl+Q | Editor "
-    } else {
-        " Zeta | Navigate  Open:Enter  Parent:Backspace  Editor:F4  Quit:Ctrl+Q | Browser "
-    };
-
-    let menu = Paragraph::new(Line::raw(menu_text)).style(
+    let menu = Paragraph::new(Line::from(vec![
+        menu_span(" Zeta ", false),
+        menu_span(" F-File ", state.active_menu() == Some(MenuId::File)),
+        menu_span(
+            " N-Navigate ",
+            state.active_menu() == Some(MenuId::Navigate),
+        ),
+    ]))
+    .style(
         Style::default()
             .fg(Color::Black)
             .bg(Color::Rgb(212, 196, 168))
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
+
+    if let Some(menu) = state.active_menu() {
+        render_menu_popup(
+            frame,
+            area,
+            menu,
+            &state.menu_items(),
+            state.menu_selection(),
+        );
+    }
+}
+
+fn menu_span(label: &'static str, active: bool) -> Span<'static> {
+    let style = if active {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(240, 223, 193))
+            .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+    } else {
+        Style::default()
+            .fg(Color::Black)
+            .bg(Color::Rgb(212, 196, 168))
+    };
+
+    Span::styled(label, style)
+}
+
+fn render_menu_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    menu: MenuId,
+    items: &[MenuItem],
+    selection: usize,
+) {
+    let x = match menu {
+        MenuId::File => area.x + 7,
+        MenuId::Navigate => area.x + 16,
+    };
+    let width = 28;
+    let height = items.len() as u16 + 2;
+    let popup_area = Rect {
+        x,
+        y: area.y + 1,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Rgb(212, 196, 168)))
+        .style(Style::default().bg(Color::Rgb(30, 34, 38)));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let rows = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let selected = index == selection;
+            let base_style = if selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Rgb(118, 196, 182))
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White).bg(Color::Rgb(30, 34, 38))
+            };
+
+            let label = format!(" {}", item.label);
+            let shortcut = format!("{:>10}", item.shortcut);
+            ListItem::new(Line::from(vec![
+                Span::styled(label, base_style),
+                Span::styled(shortcut, base_style),
+            ]))
+        })
+        .collect::<Vec<_>>();
+
+    let list = List::new(rows);
+    let mut state = ListState::default();
+    state.select(Some(selection.min(items.len().saturating_sub(1))));
+    frame.render_stateful_widget(list, inner, &mut state);
 }
 
 fn render_pane(frame: &mut Frame<'_>, area: Rect, pane: &PaneState, is_focused: bool) {

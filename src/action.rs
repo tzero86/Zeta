@@ -6,7 +6,14 @@ use crate::config::RuntimeKeymap;
 use crate::pane::PaneId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MenuId {
+    File,
+    Navigate,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
+    CloseMenu,
     EnterSelection,
     CloseEditor,
     DiscardEditorChanges,
@@ -18,9 +25,16 @@ pub enum Action {
     EditorMoveUp,
     EditorNewline,
     FocusNextPane,
+    MenuActivate,
+    MenuMnemonic(char),
+    MenuMoveDown,
+    MenuMoveUp,
+    MenuNext,
+    MenuPrevious,
     MoveSelectionDown,
     MoveSelectionUp,
     NavigateToParent,
+    OpenMenu(MenuId),
     OpenSelectedInEditor,
     Refresh,
     SaveEditor,
@@ -37,6 +51,14 @@ pub enum Command {
 
 impl Action {
     pub fn from_key_event(key_event: KeyEvent, keymap: &RuntimeKeymap) -> Option<Self> {
+        if key_event.modifiers == KeyModifiers::ALT {
+            return match key_event.code {
+                KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
+                KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                _ => None,
+            };
+        }
+
         if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::Quit);
         }
@@ -67,6 +89,14 @@ impl Action {
     }
 
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
+        if key_event.modifiers == KeyModifiers::ALT {
+            return match key_event.code {
+                KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
+                KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                _ => None,
+            };
+        }
+
         match key_event.code {
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
@@ -91,6 +121,28 @@ impl Action {
             _ => None,
         }
     }
+
+    pub fn from_menu_key_event(key_event: KeyEvent) -> Option<Self> {
+        if key_event.modifiers == KeyModifiers::ALT {
+            return match key_event.code {
+                KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
+                KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                _ => None,
+            };
+        }
+
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseMenu),
+            KeyCode::Enter => Some(Self::MenuActivate),
+            KeyCode::Left => Some(Self::MenuPrevious),
+            KeyCode::Right | KeyCode::Tab => Some(Self::MenuNext),
+            KeyCode::Up => Some(Self::MenuMoveUp),
+            KeyCode::Down => Some(Self::MenuMoveDown),
+            KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
+            KeyCode::Char(ch) if key_event.modifiers.is_empty() => Some(Self::MenuMnemonic(ch)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,7 +163,7 @@ mod tests {
 
     use crate::config::RuntimeKeymap;
 
-    use super::{Action, KeyBinding};
+    use super::{Action, KeyBinding, MenuId};
 
     #[test]
     fn configured_keymap_drives_actions() {
@@ -212,6 +264,23 @@ mod tests {
         assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
             Some(Action::Quit)
+        );
+    }
+
+    #[test]
+    fn alt_menu_shortcuts_are_available() {
+        let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+                &keymap
+            ),
+            Some(Action::OpenMenu(MenuId::File))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            Some(Action::MenuNext)
         );
     }
 }

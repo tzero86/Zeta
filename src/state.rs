@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::action::{Action, Command};
+use crate::action::{Action, Command, MenuId};
 use crate::config::LoadedConfig;
 use crate::editor::EditorBuffer;
 use crate::fs;
@@ -24,7 +24,9 @@ pub struct AppState {
     focus: PaneFocus,
     app_label: String,
     config_path: String,
+    active_menu: Option<MenuId>,
     editor: Option<EditorBuffer>,
+    menu_selection: usize,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -51,7 +53,9 @@ impl AppState {
             focus: PaneFocus::Left,
             app_label: loaded_config.config.theme.status_bar_label,
             config_path: loaded_config.path.display().to_string(),
+            active_menu: None,
             editor: None,
+            menu_selection: 0,
             status_message: format!(
                 "ready | config {} ({})",
                 loaded_config.path.display(),
@@ -70,6 +74,11 @@ impl AppState {
         let mut commands = Vec::new();
 
         match action {
+            Action::CloseMenu => {
+                self.active_menu = None;
+                self.menu_selection = 0;
+                self.needs_redraw = true;
+            }
             Action::CloseEditor => {
                 if let Some(editor) = &self.editor {
                     if editor.is_dirty {
@@ -168,12 +177,73 @@ impl AppState {
                     self.needs_redraw = true;
                 }
             }
+            Action::OpenMenu(menu) => {
+                self.active_menu = Some(menu);
+                self.menu_selection = 0;
+                self.needs_redraw = true;
+            }
             Action::FocusNextPane => {
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
                     PaneFocus::Right => PaneFocus::Left,
                 };
                 self.needs_redraw = true;
+            }
+            Action::MenuActivate => {
+                if let Some(menu) = self.active_menu {
+                    if let Some(item) = self.menu_items_for(menu).get(self.menu_selection).copied()
+                    {
+                        self.active_menu = None;
+                        self.menu_selection = 0;
+                        commands.extend(self.apply(item.action)?);
+                    }
+                }
+            }
+            Action::MenuMnemonic(ch) => {
+                if let Some(menu) = self.active_menu {
+                    if let Some(item) = self
+                        .menu_items_for(menu)
+                        .into_iter()
+                        .find(|item| item.mnemonic.eq_ignore_ascii_case(&ch))
+                    {
+                        self.active_menu = None;
+                        self.menu_selection = 0;
+                        commands.extend(self.apply(item.action)?);
+                    }
+                }
+            }
+            Action::MenuMoveDown => {
+                if let Some(menu) = self.active_menu {
+                    let len = self.menu_items_for(menu).len();
+                    if len > 0 {
+                        self.menu_selection = (self.menu_selection + 1).min(len.saturating_sub(1));
+                        self.needs_redraw = true;
+                    }
+                }
+            }
+            Action::MenuMoveUp => {
+                self.menu_selection = self.menu_selection.saturating_sub(1);
+                self.needs_redraw = true;
+            }
+            Action::MenuNext => {
+                if let Some(menu) = self.active_menu {
+                    self.active_menu = Some(match menu {
+                        MenuId::File => MenuId::Navigate,
+                        MenuId::Navigate => MenuId::File,
+                    });
+                    self.menu_selection = 0;
+                    self.needs_redraw = true;
+                }
+            }
+            Action::MenuPrevious => {
+                if let Some(menu) = self.active_menu {
+                    self.active_menu = Some(match menu {
+                        MenuId::File => MenuId::Navigate,
+                        MenuId::Navigate => MenuId::File,
+                    });
+                    self.menu_selection = 0;
+                    self.needs_redraw = true;
+                }
             }
             Action::MoveSelectionDown => {
                 self.active_pane_mut().move_selection_down();
@@ -273,6 +343,10 @@ impl AppState {
         &self.left
     }
 
+    pub fn active_menu(&self) -> Option<MenuId> {
+        self.active_menu
+    }
+
     pub fn right_pane(&self) -> &PaneState {
         &self.right
     }
@@ -291,6 +365,20 @@ impl AppState {
 
     pub fn is_editor_focused(&self) -> bool {
         self.editor.is_some() && self.focused_pane_id() == PaneId::Right
+    }
+
+    pub fn is_menu_open(&self) -> bool {
+        self.active_menu.is_some()
+    }
+
+    pub fn menu_items(&self) -> Vec<MenuItem> {
+        self.active_menu
+            .map(|menu| self.menu_items_for(menu))
+            .unwrap_or_default()
+    }
+
+    pub fn menu_selection(&self) -> usize {
+        self.menu_selection
     }
 
     pub fn status_line(&self) -> String {
@@ -378,13 +466,84 @@ impl AppState {
             PaneFocus::Right => PaneId::Right,
         }
     }
+
+    fn menu_items_for(&self, menu: MenuId) -> Vec<MenuItem> {
+        match menu {
+            MenuId::File => vec![
+                MenuItem {
+                    label: "Open in Editor",
+                    shortcut: "F4",
+                    mnemonic: 'o',
+                    action: Action::OpenSelectedInEditor,
+                },
+                MenuItem {
+                    label: "Save",
+                    shortcut: "Ctrl+S",
+                    mnemonic: 's',
+                    action: Action::SaveEditor,
+                },
+                MenuItem {
+                    label: "Discard Changes",
+                    shortcut: "Ctrl+D",
+                    mnemonic: 'd',
+                    action: Action::DiscardEditorChanges,
+                },
+                MenuItem {
+                    label: "Close Editor",
+                    shortcut: "Esc",
+                    mnemonic: 'c',
+                    action: Action::CloseEditor,
+                },
+                MenuItem {
+                    label: "Quit",
+                    shortcut: "Ctrl+Q",
+                    mnemonic: 'q',
+                    action: Action::Quit,
+                },
+            ],
+            MenuId::Navigate => vec![
+                MenuItem {
+                    label: "Open Directory",
+                    shortcut: "Enter",
+                    mnemonic: 'o',
+                    action: Action::EnterSelection,
+                },
+                MenuItem {
+                    label: "Parent Directory",
+                    shortcut: "Backspace",
+                    mnemonic: 'p',
+                    action: Action::NavigateToParent,
+                },
+                MenuItem {
+                    label: "Refresh",
+                    shortcut: "r",
+                    mnemonic: 'r',
+                    action: Action::Refresh,
+                },
+                MenuItem {
+                    label: "Switch Pane",
+                    shortcut: "Tab",
+                    mnemonic: 's',
+                    action: Action::FocusNextPane,
+                },
+            ],
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MenuItem {
+    pub label: &'static str,
+    pub shortcut: &'static str,
+    pub mnemonic: char,
+    pub action: Action,
 }
 
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
 
-    use crate::action::{Action, Command};
+    use crate::action::{Action, Command, MenuId};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::pane::{PaneId, PaneState, SortMode};
@@ -422,7 +581,9 @@ mod tests {
             focus: PaneFocus::Left,
             app_label: String::from("Zeta"),
             config_path: String::from("/tmp/zeta/config.toml"),
+            active_menu: None,
             editor: None,
+            menu_selection: 0,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
@@ -534,6 +695,25 @@ mod tests {
             vec![Command::ScanPane {
                 pane: PaneId::Left,
                 path: PathBuf::from("/tmp"),
+            }]
+        );
+    }
+
+    #[test]
+    fn menu_activation_dispatches_selected_action() {
+        let mut state = test_state();
+        state.active_menu = Some(MenuId::Navigate);
+        state.menu_selection = 1;
+
+        let commands = state
+            .apply(Action::MenuActivate)
+            .expect("action should succeed");
+
+        assert_eq!(
+            commands,
+            vec![Command::ScanPane {
+                pane: PaneId::Left,
+                path: PathBuf::new(),
             }]
         );
     }
