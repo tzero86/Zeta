@@ -575,19 +575,18 @@ impl AppState {
     }
 
     pub fn status_line(&self) -> String {
-        let scan_segment = match self.last_scan_time_ms {
-            Some(scan_time) => format!("scan:{scan_time}ms"),
-            None => String::from("scan:n/a"),
-        };
-
+        let scan = self
+            .last_scan_time_ms
+            .map(|value| format!("scan:{value}ms"))
+            .unwrap_or_else(|| String::from("scan:-"));
         format!(
-            "{} | {} | startup:{}ms | {} | draws:{} | cfg:{}",
+            "{} | {} | {} | up:{}ms {} | d:{}",
             self.app_label,
             self.status_message,
+            self.theme.preset,
             self.startup_time_ms,
-            scan_segment,
+            scan,
             self.redraw_count,
-            self.config_path,
         )
     }
 
@@ -898,6 +897,7 @@ mod tests {
                 name: String::from("note.txt"),
                 path: PathBuf::from(path),
                 kind: EntryKind::File,
+                size_bytes: Some(1024),
             }],
             selection: 0,
             scroll_offset: 0,

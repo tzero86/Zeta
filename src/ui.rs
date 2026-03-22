@@ -380,10 +380,8 @@ fn render_pane(
 
     frame.render_stateful_widget(list, pane_chunks[0], &mut list_state);
 
-    let legend = Paragraph::new(Line::raw(
-        "│ guide  ├─ branch  └─ last  ▣ dir  • file  ↗ link",
-    ))
-    .style(Style::default().fg(palette.text_muted));
+    let legend = Paragraph::new(Line::raw("▣ dir  • file  ↗ link  ≡ meta"))
+        .style(Style::default().fg(palette.text_muted));
     frame.render_widget(legend, pane_chunks[1]);
 }
 
@@ -408,6 +406,7 @@ fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListI
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),
     };
+    let meta = format_entry_meta(entry);
 
     ListItem::new(Line::from(vec![
         Span::styled(guide, Style::default().fg(palette.text_muted)),
@@ -417,7 +416,57 @@ fn render_item(entry: &EntryInfo, is_last: bool, palette: ThemePalette) -> ListI
         ),
         Span::styled(format!("{} ", icon), label_style),
         Span::styled(name, label_style),
+        Span::styled(
+            format!("  {}", meta),
+            Style::default().fg(palette.text_muted),
+        ),
     ]))
+}
+
+fn format_entry_meta(entry: &EntryInfo) -> String {
+    match entry.kind {
+        crate::fs::EntryKind::Directory => String::from("dir"),
+        crate::fs::EntryKind::Symlink => String::from("link"),
+        crate::fs::EntryKind::Other => String::from("other"),
+        crate::fs::EntryKind::File => {
+            let ext = entry
+                .path
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(|value| value.to_ascii_lowercase());
+            let kind = match ext.as_deref() {
+                Some("rs") => "rust",
+                Some("md") => "markdown",
+                Some("toml") => "config",
+                Some("json") | Some("jsonc") => "json",
+                Some("yml") | Some("yaml") => "yaml",
+                Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("webp") => "image",
+                Some("txt") => "text",
+                Some(_) | None => "file",
+            };
+            match entry.size_bytes {
+                Some(size) => format!("{} {}", kind, human_size(size)),
+                None => String::from(kind),
+            }
+        }
+    }
+}
+
+fn human_size(size: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+
+    let mut value = size as f64;
+    let mut unit = 0usize;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+
+    if unit == 0 {
+        format!("{}{}", size, UNITS[unit])
+    } else {
+        format!("{value:.1}{}", UNITS[unit])
+    }
 }
 
 fn render_editor(

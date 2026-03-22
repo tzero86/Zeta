@@ -9,6 +9,7 @@ pub struct EntryInfo {
     pub name: String,
     pub path: PathBuf,
     pub kind: EntryKind,
+    pub size_bytes: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -96,11 +97,17 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
         } else {
             EntryKind::Other
         };
+        let size_bytes = if file_type.is_file() {
+            entry.metadata().ok().map(|metadata| metadata.len())
+        } else {
+            None
+        };
 
         results.push(EntryInfo {
             name: entry.file_name().to_string_lossy().into_owned(),
             path: entry_path,
             kind,
+            size_bytes,
         });
     }
 

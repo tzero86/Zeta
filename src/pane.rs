@@ -153,6 +153,7 @@ mod tests {
                     name: format!("item-{index}"),
                     path: PathBuf::from(format!("./item-{index}")),
                     kind: EntryKind::File,
+                    size_bytes: Some(index as u64 * 16),
                 })
                 .collect(),
             selection: 7,
