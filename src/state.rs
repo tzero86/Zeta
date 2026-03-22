@@ -336,7 +336,9 @@ impl AppState {
             }
             Action::PromptBackspace => {
                 if let Some(prompt) = self.prompt.as_mut() {
-                    prompt.value.pop();
+                    if prompt.kind != PromptKind::Delete {
+                        prompt.value.pop();
+                    }
                     self.needs_redraw = true;
                 }
             }
@@ -347,13 +349,15 @@ impl AppState {
             }
             Action::PromptInput(ch) => {
                 if let Some(prompt) = self.prompt.as_mut() {
-                    prompt.value.push(ch);
+                    if prompt.kind != PromptKind::Delete {
+                        prompt.value.push(ch);
+                    }
                     self.needs_redraw = true;
                 }
             }
             Action::PromptSubmit => {
                 if let Some(prompt) = self.prompt.as_ref() {
-                    if prompt.value.trim().is_empty() {
+                    if prompt.kind != PromptKind::Delete && prompt.value.trim().is_empty() {
                         self.status_message = String::from("name cannot be empty");
                     } else {
                         let kind = prompt.kind;
@@ -369,12 +373,6 @@ impl AppState {
                                 }
                             }
                             PromptKind::Delete => {
-                                if value != "DELETE" {
-                                    self.status_message =
-                                        String::from("type DELETE exactly to confirm removal");
-                                    self.needs_redraw = true;
-                                    return Ok(commands);
-                                }
                                 if let Some(source_path) = prompt.source_path.as_ref() {
                                     fs::delete_path(source_path)?;
                                 }

@@ -212,13 +212,12 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState) {
 
     let body = match prompt.kind {
         crate::state::PromptKind::Delete => format!(
-            "Delete target:\n{}\n\nType DELETE: {}\nEnter submit | Esc cancel",
+            "Delete target:\n{}\n\nEnter confirm | Esc cancel",
             prompt
                 .source_path
                 .as_ref()
                 .map(|path| path.display().to_string())
                 .unwrap_or_else(|| String::from("<missing target>")),
-            prompt.value,
         ),
         _ => format!(
             "Path: {}\nValue: {}\nEnter submit | Esc cancel",
