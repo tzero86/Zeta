@@ -159,11 +159,28 @@ impl EditorBuffer {
         let query_lower = query.to_lowercase();
         let text_lower = text.to_lowercase();
         let mut matches = Vec::new();
-        let mut start = 0;
-        while let Some(pos) = text_lower[start..].find(&query_lower) {
-            let abs = start + pos;
-            matches.push((abs, abs + query.len()));
-            start = abs + 1;
+        let mut byte_start = 0;
+
+        while byte_start < text_lower.len() {
+            let slice = &text_lower[byte_start..];
+            let Some(byte_pos) = slice.find(&query_lower) else {
+                break;
+            };
+
+            let abs_byte = byte_start + byte_pos;
+            let end_byte = abs_byte + query_lower.len();
+
+            // Convert byte offsets from the lowered text into Ropey char indices.
+            let start_char = self.text.byte_to_char(abs_byte);
+            let end_char = self.text.byte_to_char(end_byte);
+            matches.push((start_char, end_char));
+
+            let next_char_len = text_lower[abs_byte..]
+                .chars()
+                .next()
+                .map(|ch| ch.len_utf8())
+                .unwrap_or(1);
+            byte_start = abs_byte + next_char_len;
         }
         matches
     }
@@ -171,8 +188,9 @@ impl EditorBuffer {
     /// Jump the cursor to the next match after the current cursor position,
     /// wrapping around to the first match when the end is reached.
     pub fn search_next(&mut self) {
-        let matches = self.find_matches(&self.search_query.clone());
+        let matches = self.find_matches(&self.search_query);
         if matches.is_empty() {
+            self.search_match_idx = 0;
             return;
         }
         let next = matches
@@ -186,8 +204,9 @@ impl EditorBuffer {
     /// Jump the cursor to the previous match before the current cursor position,
     /// wrapping around to the last match when the beginning is reached.
     pub fn search_prev(&mut self) {
-        let matches = self.find_matches(&self.search_query.clone());
+        let matches = self.find_matches(&self.search_query);
         if matches.is_empty() {
+            self.search_match_idx = 0;
             return;
         }
         let prev = matches
@@ -446,6 +465,39 @@ mod tests {
 
         // Wraps to the last match at index 8
         assert_eq!(buffer.cursor_char_idx, 8);
+    }
+
+    #[test]
+    fn find_matches_returns_char_spans_for_unicode_text() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "café café");
+
+        let matches = buffer.find_matches("café");
+
+        assert_eq!(matches, vec![(0, 4), (5, 9)]);
+    }
+
+    #[test]
+    fn search_next_jumps_to_unicode_match() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "ありがとう ありがとう");
+        buffer.search_query = String::from("ありがとう");
+        buffer.cursor_char_idx = 0;
+
+        buffer.search_next();
+
+        assert_eq!(buffer.cursor_char_idx, 6);
+        assert_eq!(buffer.search_match_idx, 1);
+    }
+
+    #[test]
+    fn find_matches_returns_char_spans_for_japanese_text() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "ありがとう ありがとう");
+
+        let matches = buffer.find_matches("ありがとう");
+
+        assert_eq!(matches, vec![(0, 5), (6, 11)]);
     }
 
     #[test]

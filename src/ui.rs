@@ -736,39 +736,6 @@ fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{format_icon_slot, get_entry_icon};
-    use crate::config::IconMode;
-    use crate::fs::EntryKind;
-
-    #[test]
-    fn unicode_icons_use_glyphs() {
-        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Unicode), "▣");
-        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Unicode), "•");
-        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Unicode), "↗");
-        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Unicode), "◦");
-    }
-
-    #[test]
-    fn ascii_icons_use_labels() {
-        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Ascii), "[D]");
-        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Ascii), "[F]");
-        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Ascii), "[L]");
-        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Ascii), "[?]");
-    }
-
-    #[test]
-    fn unicode_icon_slot_reserves_two_columns() {
-        assert_eq!(format_icon_slot("▣", IconMode::Unicode), "▣  ");
-    }
-
-    #[test]
-    fn ascii_icon_slot_uses_label_width() {
-        assert_eq!(format_icon_slot("[D]", IconMode::Ascii), "[D]");
-    }
-}
-
 fn display_width(value: &str) -> usize {
     value.chars().count()
 }
@@ -1080,8 +1047,11 @@ fn render_editor(
         let matches = editor.find_matches(&editor.search_query.clone());
         let count_str = if editor.search_query.is_empty() {
             String::new()
+        } else if matches.is_empty() {
+            String::from("  0/0")
         } else {
-            format!("  {}/{}", editor.search_match_idx + 1, matches.len())
+            let current = editor.search_match_idx.min(matches.len() - 1) + 1;
+            format!("  {current}/{count}", count = matches.len())
         };
         let bar_text = format!(
             " Find: {}{}  [Enter/F3 next  Shift+F3 prev  Esc close]",
@@ -1110,7 +1080,7 @@ fn render_editor(
 
 #[cfg(test)]
 mod tests {
-    use super::get_entry_icon;
+    use super::{format_icon_slot, get_entry_icon};
     use crate::config::IconMode;
     use crate::fs::EntryKind;
 
@@ -1128,5 +1098,15 @@ mod tests {
         assert_eq!(get_entry_icon(EntryKind::File, IconMode::Ascii), "[F]");
         assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Ascii), "[L]");
         assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Ascii), "[?]");
+    }
+
+    #[test]
+    fn unicode_icon_slot_reserves_two_columns() {
+        assert_eq!(format_icon_slot("▣", IconMode::Unicode), "▣  ");
+    }
+
+    #[test]
+    fn ascii_icon_slot_uses_label_width() {
+        assert_eq!(format_icon_slot("[D]", IconMode::Ascii), "[D]");
     }
 }
