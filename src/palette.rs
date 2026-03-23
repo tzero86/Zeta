@@ -48,6 +48,16 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::NavigateToParent,
         },
         PaletteEntry {
+            label: "Navigate back",
+            hint: "Alt+Left",
+            action: Action::NavigateBack,
+        },
+        PaletteEntry {
+            label: "Navigate forward",
+            hint: "Alt+Right",
+            action: Action::NavigateForward,
+        },
+        PaletteEntry {
             label: "Switch pane",
             hint: "Tab",
             action: Action::FocusNextPane,

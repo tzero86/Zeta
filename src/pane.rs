@@ -56,6 +56,9 @@ pub struct PaneState {
     pub scroll_offset: usize,
     pub show_hidden: bool,
     pub sort_mode: SortMode,
+    // Navigation history
+    pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
+    pub history_forward: Vec<PathBuf>, // dirs we can go forward to
 }
 
 impl PaneState {
@@ -68,7 +71,41 @@ impl PaneState {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         }
+    }
+
+    /// Push current cwd to back-stack and clear forward-stack before navigating.
+    pub fn push_history(&mut self) {
+        let current = self.cwd.clone();
+        self.history_back.push(current);
+        if self.history_back.len() > 50 {
+            self.history_back.remove(0);
+        }
+        self.history_forward.clear();
+    }
+
+    /// Returns the path to navigate back to, if any.
+    pub fn pop_back(&mut self) -> Option<PathBuf> {
+        let prev = self.history_back.pop()?;
+        self.history_forward.push(self.cwd.clone());
+        Some(prev)
+    }
+
+    /// Returns the path to navigate forward to, if any.
+    pub fn pop_forward(&mut self) -> Option<PathBuf> {
+        let next = self.history_forward.pop()?;
+        self.history_back.push(self.cwd.clone());
+        Some(next)
+    }
+
+    pub fn can_go_back(&self) -> bool {
+        !self.history_back.is_empty()
+    }
+
+    pub fn can_go_forward(&self) -> bool {
+        !self.history_forward.is_empty()
     }
 
     pub fn load(title: impl Into<String>, cwd: PathBuf) -> Result<Self, FileSystemError> {
@@ -245,6 +282,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         };
 
         pane.move_selection_up();
@@ -270,6 +309,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         };
 
         assert_eq!(pane.visible_selection(4), Some(3));
@@ -311,6 +352,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         };
 
         let sorted = pane.sorted_entries();
@@ -352,6 +395,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::SizeDesc,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         };
 
         let sorted = pane.sorted_entries();
@@ -392,6 +437,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Extension,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         };
 
         let sorted = pane.sorted_entries();
@@ -412,5 +459,72 @@ mod tests {
         mode = mode.next(); // Extension
         mode = mode.next(); // back to Name
         assert_eq!(mode, SortMode::Name);
+    }
+
+    fn empty_pane(cwd: &str) -> PaneState {
+        PaneState::empty("test", PathBuf::from(cwd))
+    }
+
+    #[test]
+    fn push_history_records_previous_dir() {
+        let mut pane = empty_pane("/home");
+        pane.push_history();
+        assert_eq!(pane.history_back, vec![PathBuf::from("/home")]);
+    }
+
+    #[test]
+    fn pop_back_returns_previous_and_moves_current_to_forward() {
+        let mut pane = empty_pane("/home");
+        pane.push_history();
+        // Simulate the scan completing: cwd is now /home/user
+        pane.cwd = PathBuf::from("/home/user");
+
+        let back = pane.pop_back();
+        assert_eq!(back, Some(PathBuf::from("/home")));
+        assert_eq!(pane.history_forward, vec![PathBuf::from("/home/user")]);
+        assert!(pane.history_back.is_empty());
+    }
+
+    #[test]
+    fn pop_forward_returns_next_and_moves_current_to_back() {
+        let mut pane = empty_pane("/home");
+        pane.push_history();
+        pane.cwd = PathBuf::from("/home/user");
+
+        // Go back first so there is something in forward.
+        let _back = pane.pop_back();
+        // pane.cwd is still /home/user (scan hasn't run yet in unit test)
+        // Simulate scan: cwd now set to what pop_back returned.
+        pane.cwd = PathBuf::from("/home");
+
+        let fwd = pane.pop_forward();
+        assert_eq!(fwd, Some(PathBuf::from("/home/user")));
+        assert_eq!(pane.history_back, vec![PathBuf::from("/home")]);
+        assert!(pane.history_forward.is_empty());
+    }
+
+    #[test]
+    fn push_history_clears_forward_stack() {
+        let mut pane = empty_pane("/home");
+        pane.push_history();
+        pane.cwd = PathBuf::from("/home/user");
+
+        // Build a forward stack via pop_back.
+        let _back = pane.pop_back();
+        pane.cwd = PathBuf::from("/home");
+
+        // Now navigate somewhere new — forward stack must be cleared.
+        pane.push_history();
+        assert!(pane.history_forward.is_empty());
+    }
+
+    #[test]
+    fn history_capped_at_50_entries() {
+        let mut pane = empty_pane("/start");
+        for i in 0..60 {
+            pane.cwd = PathBuf::from(format!("/dir/{i}"));
+            pane.push_history();
+        }
+        assert_eq!(pane.history_back.len(), 50);
     }
 }

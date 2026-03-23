@@ -381,6 +381,7 @@ impl AppState {
                     if let Some(path) = self.active_pane().selected_path() {
                         let pane = self.focused_pane_id();
                         self.status_message = format!("opening directory {}", path.display());
+                        self.active_pane_mut().push_history();
                         self.needs_redraw = true;
                         commands.push(Command::ScanPane { pane, path });
                     }
@@ -393,11 +394,32 @@ impl AppState {
                 if let Some(path) = self.active_pane().parent_path() {
                     let pane = self.focused_pane_id();
                     self.status_message = format!("opening parent {}", path.display());
+                    self.active_pane_mut().push_history();
                     self.needs_redraw = true;
                     commands.push(Command::ScanPane { pane, path });
                 } else {
                     self.status_message = String::from("already at filesystem root");
                     self.needs_redraw = true;
+                }
+            }
+            Action::NavigateBack => {
+                if let Some(path) = self.active_pane_mut().pop_back() {
+                    let pane_id = self.focused_pane_id();
+                    self.needs_redraw = true;
+                    return Ok(vec![Command::ScanPane {
+                        pane: pane_id,
+                        path,
+                    }]);
+                }
+            }
+            Action::NavigateForward => {
+                if let Some(path) = self.active_pane_mut().pop_forward() {
+                    let pane_id = self.focused_pane_id();
+                    self.needs_redraw = true;
+                    return Ok(vec![Command::ScanPane {
+                        pane: pane_id,
+                        path,
+                    }]);
                 }
             }
             Action::FocusNextPane => {
@@ -1269,6 +1291,8 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
         }
     }
 
@@ -1291,6 +1315,8 @@ mod tests {
                 scroll_offset: 0,
                 show_hidden: false,
                 sort_mode: SortMode::Name,
+                history_back: Vec::new(),
+                history_forward: Vec::new(),
             },
             focus: PaneFocus::Left,
             pane_layout: PaneLayout::SideBySide,

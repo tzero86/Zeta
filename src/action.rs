@@ -34,6 +34,11 @@ pub enum Action {
     EditorMoveRight,
     EditorMoveUp,
     EditorNewline,
+    EditorOpenSearch,
+    EditorCloseSearch,
+    EditorSearchBackspace,
+    EditorSearchNext,
+    EditorSearchPrev,
     FocusNextPane,
     FocusPreviewPanel,
     ScrollPreviewDown,
@@ -48,6 +53,8 @@ pub enum Action {
     MenuPrevious,
     MoveSelectionDown,
     MoveSelectionUp,
+    NavigateBack,
+    NavigateForward,
     NavigateToParent,
     OpenAboutDialog,
     OpenCopyPrompt,
@@ -171,6 +178,8 @@ impl Action {
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
+                KeyCode::Left => Some(Self::NavigateBack),
+                KeyCode::Right => Some(Self::NavigateForward),
                 _ => None,
             };
         }
@@ -261,6 +270,9 @@ impl Action {
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiscardEditorChanges)
             }
+            KeyCode::Char('f') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorOpenSearch)
+            }
             KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
             KeyCode::Backspace => Some(Self::EditorBackspace),
             KeyCode::Enter => Some(Self::EditorNewline),
@@ -269,6 +281,10 @@ impl Action {
             KeyCode::Up => Some(Self::EditorMoveUp),
             KeyCode::Down => Some(Self::EditorMoveDown),
             KeyCode::Tab => Some(Self::FocusNextPane),
+            KeyCode::F(3) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::EditorSearchPrev)
+            }
+            KeyCode::F(3) => Some(Self::EditorSearchNext),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
             }
