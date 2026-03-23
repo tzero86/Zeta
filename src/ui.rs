@@ -844,7 +844,8 @@ fn render_command_palette(
             let hint_style = Style::default().fg(palette.key_hint_fg);
 
             let hint = entry.hint;
-            let label_max = (width as usize).saturating_sub(hint.len() + 4);
+            // Use inner.width (excludes borders) so the row fits exactly.
+            let label_max = (inner.width as usize).saturating_sub(hint.len() + 4);
             let label_text: String = entry.label.chars().take(label_max).collect();
             let pad = label_max.saturating_sub(label_text.chars().count());
             let padding = " ".repeat(pad);
