@@ -105,25 +105,19 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
-                let action = if self.state.is_collision_open() {
-                    Action::from_collision_key_event(key_event)
-                } else if self.state.is_prompt_open() {
-                    Action::from_prompt_key_event(key_event)
-                } else if self.state.is_dialog_open() {
-                    Action::from_dialog_key_event(key_event)
-                } else if self.state.is_menu_open() {
-                    Action::from_menu_key_event(key_event)
-                } else if self.state.is_editor_focused() {
-                    Action::from_editor_key_event(key_event)
-                } else {
-                    Action::from_key_event(
-                        key_event,
-                        &self.keymap,
-                        self.state.is_editor_focused(),
-                        self.state.is_preview_focused(),
-                        self.state.is_palette_open(),
-                    )
-                };
+                let action = route_key_event(
+                    key_event,
+                    &self.keymap,
+                    RouteContext {
+                        is_collision_open: self.state.is_collision_open(),
+                        is_prompt_open: self.state.is_prompt_open(),
+                        is_dialog_open: self.state.is_dialog_open(),
+                        is_menu_open: self.state.is_menu_open(),
+                        is_editor_focused: self.state.is_editor_focused(),
+                        is_preview_focused: self.state.is_preview_focused(),
+                        is_palette_open: self.state.is_palette_open(),
+                    },
+                );
 
                 if let Some(action) = action {
                     self.dispatch(action)?;
@@ -197,6 +191,63 @@ impl App {
     }
 }
 
+#[derive(Clone, Copy)]
+struct RouteContext {
+    is_collision_open: bool,
+    is_prompt_open: bool,
+    is_dialog_open: bool,
+    is_menu_open: bool,
+    is_editor_focused: bool,
+    is_preview_focused: bool,
+    is_palette_open: bool,
+}
+
+fn route_key_event(
+    key_event: crossterm::event::KeyEvent,
+    keymap: &RuntimeKeymap,
+    context: RouteContext,
+) -> Option<Action> {
+    if context.is_palette_open {
+        return Action::from_key_event(
+            key_event,
+            keymap,
+            context.is_editor_focused,
+            context.is_preview_focused,
+            true,
+        );
+    }
+
+    if context.is_collision_open {
+        return Action::from_collision_key_event(key_event);
+    }
+
+    if context.is_prompt_open {
+        return Action::from_prompt_key_event(key_event);
+    }
+
+    if context.is_dialog_open {
+        return Action::from_dialog_key_event(key_event);
+    }
+
+    if context.is_menu_open {
+        return Action::from_menu_key_event(key_event);
+    }
+
+    if context.is_editor_focused {
+        return Action::from_editor_key_event(key_event).or_else(|| {
+            Action::from_key_event(key_event, keymap, false, context.is_preview_focused, false)
+        });
+    }
+
+    Action::from_key_event(
+        key_event,
+        keymap,
+        context.is_editor_focused,
+        context.is_preview_focused,
+        false,
+    )
+}
+
 struct TerminalSession {
     terminal: TuiTerminal,
 }
@@ -231,5 +282,78 @@ impl Drop for TerminalSession {
         let _ = disable_raw_mode();
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = self.terminal.show_cursor();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    use crate::action::Action;
+    use crate::config::RuntimeKeymap;
+
+    use super::{route_key_event, RouteContext};
+
+    #[test]
+    fn command_palette_remains_available_while_editor_is_open() {
+        let keymap = RuntimeKeymap::default();
+
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &keymap,
+            RouteContext {
+                is_collision_open: false,
+                is_prompt_open: false,
+                is_dialog_open: false,
+                is_menu_open: false,
+                is_editor_focused: true,
+                is_preview_focused: false,
+                is_palette_open: false,
+            },
+        );
+
+        assert_eq!(action, Some(Action::OpenCommandPalette));
+    }
+
+    #[test]
+    fn editor_shortcuts_still_take_priority_over_global_fallbacks() {
+        let keymap = RuntimeKeymap::default();
+
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            &keymap,
+            RouteContext {
+                is_collision_open: false,
+                is_prompt_open: false,
+                is_dialog_open: false,
+                is_menu_open: false,
+                is_editor_focused: true,
+                is_preview_focused: false,
+                is_palette_open: false,
+            },
+        );
+
+        assert_eq!(action, Some(Action::EditorOpenSearch));
+    }
+
+    #[test]
+    fn palette_open_state_blocks_lower_priority_input_paths() {
+        let keymap = RuntimeKeymap::default();
+
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &keymap,
+            RouteContext {
+                is_collision_open: false,
+                is_prompt_open: false,
+                is_dialog_open: false,
+                is_menu_open: false,
+                is_editor_focused: true,
+                is_preview_focused: false,
+                is_palette_open: true,
+            },
+        );
+
+        assert_eq!(action, None);
     }
 }
