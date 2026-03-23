@@ -157,7 +157,10 @@ impl App {
             },
             Command::PreviewFile { path } => self
                 .job_requests
-                .send(JobRequest::PreviewFile { path })
+                .send(JobRequest::PreviewFile {
+                    path,
+                    syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
+                })
                 .context("failed to queue background preview job")?,
             Command::RunFileOperation {
                 operation,

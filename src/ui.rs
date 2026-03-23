@@ -592,6 +592,34 @@ fn render_preview_panel(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // Handle the highlighted variant first — it renders a styled paragraph and
+    // returns early so the plain-text path below does not run.
+    if let Some(PreviewContent::Highlighted(lines)) = content {
+        let visible_height = inner.height as usize;
+        let start = scroll.min(lines.len().saturating_sub(1));
+        let styled_lines: Vec<Line> = lines[start..]
+            .iter()
+            .take(visible_height)
+            .map(|tokens| {
+                Line::from(
+                    tokens
+                        .iter()
+                        .map(|(color, modifier, text)| {
+                            Span::styled(
+                                text.clone(),
+                                Style::default().fg(*color).add_modifier(*modifier),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        let paragraph =
+            Paragraph::new(styled_lines).style(Style::default().fg(palette.text_primary));
+        frame.render_widget(paragraph, inner);
+        return;
+    }
+
     let body = match content {
         Some(PreviewContent::Text(t)) => {
             let lines: Vec<&str> = t.lines().collect();
@@ -606,6 +634,8 @@ fn render_preview_panel(
         }
         Some(PreviewContent::Binary { size_bytes }) => format!("[binary — {size_bytes} bytes]"),
         Some(PreviewContent::Empty) => String::from("[empty file]"),
+        // Highlighted is handled above; this arm is unreachable but kept for exhaustiveness.
+        Some(PreviewContent::Highlighted(_)) => String::new(),
         None => String::from("[directory — select a file to preview]"),
     };
 

@@ -16,6 +16,8 @@ use crate::pane::PaneId;
 pub enum PreviewContent {
     /// First up to 200 lines of a text file, truncated to 4 KB.
     Text(String),
+    /// Syntax-highlighted lines produced by the `highlight` module.
+    Highlighted(Vec<crate::highlight::HighlightedLine>),
     /// File that looks binary — only the byte size is stored.
     Binary { size_bytes: u64 },
     /// File was empty or unreadable.
@@ -35,6 +37,7 @@ pub enum JobRequest {
     },
     PreviewFile {
         path: PathBuf,
+        syntect_theme: String,
     },
 }
 
@@ -145,8 +148,11 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
                     }
                 }
             }
-            JobRequest::PreviewFile { path } => {
-                let content = load_preview_content(&path);
+            JobRequest::PreviewFile {
+                path,
+                syntect_theme,
+            } => {
+                let content = load_preview_content(&path, &syntect_theme);
                 if result_tx
                     .send(JobResult::PreviewLoaded { path, content })
                     .is_err()
@@ -158,8 +164,7 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
     }
 }
 
-fn load_preview_content(path: &Path) -> PreviewContent {
-    // Read up to 8 KB to determine file type and content.
+fn load_preview_content(path: &Path, syntect_theme: &str) -> PreviewContent {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(_) => return PreviewContent::Empty,
@@ -177,15 +182,22 @@ fn load_preview_content(path: &Path) -> PreviewContent {
         return PreviewContent::Binary { size_bytes };
     }
 
-    // Decode lossily and take at most 200 lines, capped at 4 KB total.
+    // Decode lossily and attempt syntax highlighting (safe — runs in worker thread).
     let text = String::from_utf8_lossy(&bytes);
+    let extension = path.extension().and_then(|e| e.to_str());
+
+    if let Some(lines) = crate::highlight::highlight_text(&text, extension, syntect_theme) {
+        return PreviewContent::Highlighted(lines);
+    }
+
+    // Fallback: truncate to 200 lines, capped at 200 × 80 chars.
     let truncated: String = text
         .lines()
         .take(200)
         .collect::<Vec<_>>()
         .join("\n")
         .chars()
-        .take(4096)
+        .take(200 * 80)
         .collect();
 
     PreviewContent::Text(truncated)

@@ -193,6 +193,8 @@ pub struct ThemePalette {
     pub status_fg: Color,
     pub logo_accent: Color,
     pub key_hint_fg: Color,
+    /// Syntect theme name used for preview-panel syntax highlighting.
+    pub syntect_theme: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -259,6 +261,7 @@ impl ThemePalette {
             status_fg: Color::Black,
             logo_accent: Color::Rgb(180, 60, 30),
             key_hint_fg: Color::Rgb(118, 196, 182),
+            syntect_theme: "base16-ocean.dark",
         }
     }
 
@@ -284,6 +287,7 @@ impl ThemePalette {
             status_fg: Color::Black,
             logo_accent: Color::Rgb(190, 80, 20),
             key_hint_fg: Color::Rgb(83, 148, 117),
+            syntect_theme: "base16-solarized.light",
         }
     }
 
@@ -309,6 +313,7 @@ impl ThemePalette {
             status_fg: Color::Black,
             logo_accent: Color::Rgb(170, 70, 50),
             key_hint_fg: Color::Rgb(102, 174, 197),
+            syntect_theme: "base16-mocha.dark",
         }
     }
 }
