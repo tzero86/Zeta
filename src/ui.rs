@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use ratatui::Frame;
 
 use crate::action::MenuId;
-use crate::config::ThemePalette;
+use crate::config::{IconMode, ThemePalette};
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::fs::EntryKind;
@@ -13,15 +13,24 @@ use crate::jobs::PreviewContent;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
-fn get_entry_icon(kind: EntryKind) -> &'static str {
-    // Single-width chars that render on any UTF-8 terminal.
-    // Directories get a trailing "/" in the name already, so the icon
-    // here is just a subtle type hint.
+fn get_entry_icon(kind: EntryKind, icon_mode: IconMode) -> &'static str {
     match kind {
-        EntryKind::Directory => ">",
-        EntryKind::Symlink => "~",
-        EntryKind::File => " ",
-        EntryKind::Other => "?",
+        EntryKind::Directory => match icon_mode {
+            IconMode::Unicode => "▣",
+            IconMode::Ascii => kind.ascii_label(),
+        },
+        EntryKind::File => match icon_mode {
+            IconMode::Unicode => "•",
+            IconMode::Ascii => kind.ascii_label(),
+        },
+        EntryKind::Symlink => match icon_mode {
+            IconMode::Unicode => "↗",
+            IconMode::Ascii => kind.ascii_label(),
+        },
+        EntryKind::Other => match icon_mode {
+            IconMode::Unicode => "◦",
+            IconMode::Ascii => kind.ascii_label(),
+        },
     }
 }
 
@@ -88,7 +97,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         left_focused,
         // Left pane: no right border so it shares one line with the right pane.
         Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-        palette,
+        state,
     );
 
     // Right pane is always rendered — editor now lives in the tools panel below.
@@ -99,7 +108,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         second_label,
         right_focused,
         Borders::ALL,
-        palette,
+        state,
     );
 
     // Tools panel — editor takes priority over preview when both could be shown.
@@ -515,8 +524,10 @@ fn render_pane(
     label: &str,
     is_focused: bool,
     borders: Borders,
-    palette: ThemePalette,
+    state: &AppState,
 ) {
+    let palette = state.theme().palette;
+    let icon_mode = state.icon_mode();
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_focus)
@@ -556,6 +567,7 @@ fn render_pane(
                     index + 1 == visible_entries.len(),
                     list_area.width as usize,
                     palette,
+                    icon_mode,
                 )
             })
             .collect()
@@ -660,6 +672,7 @@ fn render_item(
     is_last: bool,
     available_width: usize,
     palette: ThemePalette,
+    icon_mode: IconMode,
 ) -> ListItem<'static> {
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };
@@ -671,14 +684,15 @@ fn render_item(
         crate::fs::EntryKind::File => Style::default().fg(palette.file_fg),
         crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
     };
-    let icon = get_entry_icon(entry.kind);
+    let icon = get_entry_icon(entry.kind, icon_mode);
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),
     };
     let meta = format_entry_meta(entry);
-    let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon);
+    let icon_slot = format_icon_slot(icon, icon_mode);
+    let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);
     let prefix_width = display_width(&prefix);
     let meta_width = display_width(&meta);
     let content_width = available_width.saturating_sub(2);
@@ -708,11 +722,51 @@ fn render_item(
                 Style::default().fg(palette.text_muted)
             },
         ),
-        Span::styled(format!("{} ", icon), label_style),
+        Span::styled(format!("{} ", icon_slot), label_style),
         Span::styled(name, label_style),
         Span::styled(" ".repeat(spacer_width), Style::default()),
         Span::styled(meta, Style::default().fg(palette.text_muted)),
     ]))
+}
+
+fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
+    match icon_mode {
+        IconMode::Unicode => format!("{icon}  "),
+        IconMode::Ascii => icon.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_icon_slot, get_entry_icon};
+    use crate::config::IconMode;
+    use crate::fs::EntryKind;
+
+    #[test]
+    fn unicode_icons_use_glyphs() {
+        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Unicode), "▣");
+        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Unicode), "•");
+        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Unicode), "↗");
+        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Unicode), "◦");
+    }
+
+    #[test]
+    fn ascii_icons_use_labels() {
+        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Ascii), "[D]");
+        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Ascii), "[F]");
+        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Ascii), "[L]");
+        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Ascii), "[?]");
+    }
+
+    #[test]
+    fn unicode_icon_slot_reserves_two_columns() {
+        assert_eq!(format_icon_slot("▣", IconMode::Unicode), "▣  ");
+    }
+
+    #[test]
+    fn ascii_icon_slot_uses_label_width() {
+        assert_eq!(format_icon_slot("[D]", IconMode::Ascii), "[D]");
+    }
 }
 
 fn display_width(value: &str) -> usize {
@@ -1051,5 +1105,28 @@ fn render_editor(
         let cursor_x =
             editor_chunks[1].x + (visible_col as u16).min(editor_chunks[1].width.saturating_sub(1));
         frame.set_cursor_position((cursor_x, cursor_y));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::get_entry_icon;
+    use crate::config::IconMode;
+    use crate::fs::EntryKind;
+
+    #[test]
+    fn unicode_icons_use_glyphs() {
+        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Unicode), "▣");
+        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Unicode), "•");
+        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Unicode), "↗");
+        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Unicode), "◦");
+    }
+
+    #[test]
+    fn ascii_icons_use_labels() {
+        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Ascii), "[D]");
+        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Ascii), "[F]");
+        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Ascii), "[L]");
+        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Ascii), "[?]");
     }
 }

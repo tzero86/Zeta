@@ -14,6 +14,7 @@ Implemented so far:
 - embedded text editor with save/discard flow
 - top menu bar, prompts, and dialogs
 - theme switching
+- Unicode icons by default with ASCII fallback in config
 - create, rename, delete, copy, and move flows
 - background jobs for scans and file operations
 - GitHub Actions builds for Linux and Windows artifacts
@@ -50,6 +51,13 @@ cargo test --workspace
 - `src/jobs.rs` - background workers
 - `src/editor.rs` - embedded editor logic
 - `docs/adr-0001-architecture.md` - architecture decision record
+
+Config note:
+
+```toml
+# icon_mode = "unicode"  # default
+# icon_mode = "ascii"    # safe fallback for limited terminals
+```
 
 ## Direction
 

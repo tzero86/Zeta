@@ -30,6 +30,16 @@ impl ThemePreset {
 pub struct AppConfig {
     pub theme: ThemeConfig,
     pub keymap: KeymapConfig,
+    #[serde(default)]
+    pub icon_mode: IconMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IconMode {
+    #[default]
+    Unicode,
+    Ascii,
 }
 
 impl AppConfig {
@@ -427,7 +437,7 @@ mod tests {
 
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    use super::{resolve_config_path_from_env, AppConfig, ConfigSource, KeymapConfig};
+    use super::{resolve_config_path_from_env, AppConfig, ConfigSource, IconMode, KeymapConfig};
 
     #[test]
     fn parses_partial_config() {
@@ -445,6 +455,27 @@ mod tests {
         let config: AppConfig = toml::from_str(raw).expect("config should parse");
         assert_eq!(config.theme.preset, "sandbar");
         assert_eq!(config.keymap.quit, "x");
+        assert_eq!(config.icon_mode, IconMode::Unicode);
+    }
+
+    #[test]
+    fn parses_ascii_icon_mode() {
+        let raw = r#"
+            icon_mode = "ascii"
+
+            [theme]
+            preset = "fjord"
+            status_bar_label = "Zeta"
+
+            [keymap]
+            quit = "q"
+            switch_pane = "tab"
+            refresh = "r"
+        "#;
+
+        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+
+        assert_eq!(config.icon_mode, IconMode::Ascii);
     }
 
     #[test]

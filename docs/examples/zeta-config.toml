@@ -2,6 +2,9 @@
 preset = "sandbar"
 status_bar_label = "Zeta"
 
+# icon_mode = "unicode"  # default
+# icon_mode = "ascii"    # safe fallback for limited terminals
+
 [keymap]
 quit = "q"
 switch_pane = "tab"

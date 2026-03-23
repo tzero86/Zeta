@@ -9,7 +9,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
-use crate::config::{LoadedConfig, ResolvedTheme, ThemePalette};
+use crate::config::{IconMode, LoadedConfig, ResolvedTheme, ThemePalette};
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
@@ -30,6 +30,7 @@ pub struct AppState {
     pane_layout: PaneLayout,
     app_label: String,
     config_path: String,
+    icon_mode: IconMode,
     theme: ResolvedTheme,
     active_menu: Option<MenuId>,
     editor: Option<EditorBuffer>,
@@ -71,6 +72,7 @@ impl AppState {
             pane_layout: PaneLayout::SideBySide,
             app_label: status_bar_label,
             config_path: loaded_config.path.display().to_string(),
+            icon_mode: loaded_config.config.icon_mode,
             theme: resolved_theme.clone(),
             active_menu: None,
             editor: None,
@@ -1123,6 +1125,10 @@ impl AppState {
         &self.theme
     }
 
+    pub fn icon_mode(&self) -> IconMode {
+        self.icon_mode
+    }
+
     pub fn pane_layout(&self) -> PaneLayout {
         self.pane_layout
     }
@@ -1418,6 +1424,7 @@ mod tests {
             pane_layout: PaneLayout::SideBySide,
             app_label: String::from("Zeta"),
             config_path: String::from("/tmp/zeta/config.toml"),
+            icon_mode: crate::config::IconMode::Unicode,
             theme: ResolvedTheme {
                 palette: ThemePalette::resolve(&crate::config::ThemeConfig::default()).palette,
                 preset: String::from("fjord"),
