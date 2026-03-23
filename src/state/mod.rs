@@ -1,6 +1,7 @@
 mod dialog;
 mod menu;
 mod prompt;
+mod settings;
 mod types;
 
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
-use crate::config::{IconMode, LoadedConfig, ResolvedTheme, ThemePalette};
+use crate::config::{AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
@@ -20,6 +21,7 @@ use crate::palette::PaletteState;
 pub use dialog::{CollisionState, DialogState};
 use menu::menu_items_for;
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
+pub use settings::{SettingsEntry, SettingsField, SettingsState};
 pub use types::{MenuItem, PaneFocus, PaneLayout};
 
 #[derive(Clone, Debug)]
@@ -30,6 +32,7 @@ pub struct AppState {
     pane_layout: PaneLayout,
     app_label: String,
     config_path: String,
+    config: AppConfig,
     icon_mode: IconMode,
     theme: ResolvedTheme,
     active_menu: Option<MenuId>,
@@ -40,7 +43,9 @@ pub struct AppState {
     collision: Option<CollisionState>,
     pub preview: Option<(PathBuf, PreviewContent)>,
     pub preview_panel_open: bool,
+    preview_on_selection: bool,
     preview_scroll: usize,
+    settings: Option<SettingsState>,
     status_message: String,
     last_size: Option<(u16, u16)>,
     redraw_count: u64,
@@ -72,6 +77,7 @@ impl AppState {
             pane_layout: PaneLayout::SideBySide,
             app_label: status_bar_label,
             config_path: loaded_config.path.display().to_string(),
+            config: loaded_config.config.clone(),
             icon_mode: loaded_config.config.icon_mode,
             theme: resolved_theme.clone(),
             active_menu: None,
@@ -81,8 +87,10 @@ impl AppState {
             dialog: None,
             collision: None,
             preview: None,
-            preview_panel_open: false,
+            preview_panel_open: loaded_config.config.preview_panel_open,
+            preview_on_selection: loaded_config.config.preview_on_selection,
             preview_scroll: 0,
+            settings: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
                     "loading panes | config {} ({})",
@@ -133,6 +141,7 @@ impl AppState {
         commands.extend(self.reduce_prompt_input(&action)?);
         commands.extend(self.reduce_view(&action)?);
         commands.extend(self.reduce_preview(&action)?);
+        commands.extend(self.reduce_settings(&action)?);
 
         Ok(commands)
     }
@@ -897,15 +906,19 @@ impl AppState {
         match action {
             Action::SetPaneLayout(layout) => {
                 self.pane_layout = *layout;
+                self.config.pane_layout = *layout;
                 self.status_message = match layout {
                     PaneLayout::SideBySide => String::from("layout set to side-by-side"),
                     PaneLayout::Stacked => String::from("layout set to stacked"),
                 };
+                let _ = self.config.save(Path::new(&self.config_path));
                 self.needs_redraw = true;
             }
             Action::SetTheme(preset) => {
                 self.theme = ThemePalette::from_preset(*preset);
+                self.config.theme.preset = preset.as_str().to_string();
                 self.status_message = format!("theme set to {}", preset.as_str());
+                let _ = self.config.save(Path::new(&self.config_path));
                 self.needs_redraw = true;
             }
             Action::ToggleHiddenFiles => {
@@ -953,6 +966,8 @@ impl AppState {
             }
             Action::TogglePreviewPanel => {
                 self.preview_panel_open = !self.preview_panel_open;
+                self.config.preview_panel_open = self.preview_panel_open;
+                let _ = self.config.save(Path::new(&self.config_path));
                 self.needs_redraw = true;
             }
             Action::PreviewFile { path } => {
@@ -1147,6 +1162,184 @@ impl AppState {
 
     pub fn dialog(&self) -> Option<&DialogState> {
         self.dialog.as_ref()
+    }
+
+    pub fn settings(&self) -> Option<&SettingsState> {
+        self.settings.as_ref()
+    }
+
+    pub fn settings_entries(&self) -> Vec<SettingsEntry> {
+        vec![
+            SettingsEntry {
+                label: "Theme",
+                value: self.theme.preset.clone(),
+                hint: "Enter",
+                field: SettingsField::Theme(match self.theme.preset.as_str() {
+                    "sandbar" => ThemePreset::Sandbar,
+                    "oxide" => ThemePreset::Oxide,
+                    _ => ThemePreset::Fjord,
+                }),
+            },
+            SettingsEntry {
+                label: "Icon mode",
+                value: match self.icon_mode {
+                    IconMode::Unicode => String::from("unicode"),
+                    IconMode::Ascii => String::from("ascii"),
+                },
+                hint: "Space",
+                field: SettingsField::IconMode(self.icon_mode),
+            },
+            SettingsEntry {
+                label: "Pane layout",
+                value: match self.pane_layout {
+                    PaneLayout::SideBySide => String::from("side by side"),
+                    PaneLayout::Stacked => String::from("stacked"),
+                },
+                hint: "Enter",
+                field: SettingsField::PaneLayout(self.pane_layout),
+            },
+            SettingsEntry {
+                label: "Preview panel",
+                value: if self.preview_panel_open {
+                    String::from("enabled")
+                } else {
+                    String::from("disabled")
+                },
+                hint: "Space",
+                field: SettingsField::PreviewPanel,
+            },
+            SettingsEntry {
+                label: "Preview on selection",
+                value: if self.preview_on_selection {
+                    String::from("enabled")
+                } else {
+                    String::from("disabled")
+                },
+                hint: "Space",
+                field: SettingsField::PreviewOnSelection,
+            },
+            SettingsEntry {
+                label: "Keymap",
+                value: String::from("coming soon"),
+                hint: "-",
+                field: SettingsField::KeymapPlaceholder,
+            },
+        ]
+    }
+
+    pub fn is_settings_open(&self) -> bool {
+        self.settings.is_some()
+    }
+
+    #[allow(dead_code)]
+    fn reduce_settings(&mut self, action: &Action) -> Result<Vec<Command>> {
+        match action {
+            Action::OpenSettingsPanel => {
+                self.command_palette = None;
+                self.active_menu = None;
+                self.dialog = None;
+                self.collision = None;
+                self.settings = Some(SettingsState::new());
+                self.status_message = String::from("opened settings");
+                self.needs_redraw = true;
+            }
+            Action::CloseSettingsPanel => {
+                self.settings = None;
+                self.status_message = String::from("closed settings");
+                self.needs_redraw = true;
+            }
+            Action::SettingsMoveDown => {
+                let max_index = self.settings_entries().len().saturating_sub(1);
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.selection = (settings.selection + 1).min(max_index);
+                    self.needs_redraw = true;
+                }
+            }
+            Action::SettingsMoveUp => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.selection = settings.selection.saturating_sub(1);
+                    self.needs_redraw = true;
+                }
+            }
+            Action::SettingsToggleCurrent => {
+                if let Some(settings) = self.settings.as_ref() {
+                    if let Some(entry) = self.settings_entries().get(settings.selection).cloned() {
+                        self.apply_settings_entry(entry);
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(Vec::new())
+    }
+
+    #[allow(dead_code)]
+    fn apply_settings_entry(&mut self, entry: SettingsEntry) {
+        match entry.field {
+            SettingsField::Theme(current) => {
+                let next = match current {
+                    ThemePreset::Fjord => ThemePreset::Sandbar,
+                    ThemePreset::Sandbar => ThemePreset::Oxide,
+                    ThemePreset::Oxide => ThemePreset::Fjord,
+                };
+                self.theme = ThemePalette::from_preset(next);
+                self.config.theme.preset = next.as_str().to_string();
+                self.status_message = format!("theme set to {}", next.as_str());
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::IconMode(current) => {
+                let next = match current {
+                    IconMode::Unicode => IconMode::Ascii,
+                    IconMode::Ascii => IconMode::Unicode,
+                };
+                self.icon_mode = next;
+                self.config.icon_mode = next;
+                self.status_message = match next {
+                    IconMode::Unicode => String::from("icons set to unicode"),
+                    IconMode::Ascii => String::from("icons set to ASCII"),
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::PaneLayout(current) => {
+                let next = match current {
+                    PaneLayout::SideBySide => PaneLayout::Stacked,
+                    PaneLayout::Stacked => PaneLayout::SideBySide,
+                };
+                self.pane_layout = next;
+                self.config.pane_layout = next;
+                self.status_message = match next {
+                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
+                    PaneLayout::Stacked => String::from("layout set to stacked"),
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::PreviewPanel => {
+                self.preview_panel_open = !self.preview_panel_open;
+                self.config.preview_panel_open = self.preview_panel_open;
+                self.status_message = if self.preview_panel_open {
+                    String::from("preview panel enabled")
+                } else {
+                    String::from("preview panel disabled")
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::PreviewOnSelection => {
+                self.preview_on_selection = !self.preview_on_selection;
+                self.config.preview_on_selection = self.preview_on_selection;
+                self.status_message = if self.preview_on_selection {
+                    String::from("preview on selection enabled")
+                } else {
+                    String::from("preview on selection disabled")
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::KeymapPlaceholder => {
+                self.status_message = String::from("keymap settings coming soon");
+            }
+        }
+
+        self.needs_redraw = true;
     }
 
     pub fn collision(&self) -> Option<&CollisionState> {
@@ -1438,7 +1631,9 @@ mod tests {
             collision: None,
             preview: None,
             preview_panel_open: false,
+            preview_on_selection: true,
             preview_scroll: 0,
+            settings: None,
             status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
@@ -1448,6 +1643,7 @@ mod tests {
             needs_redraw: false,
             should_quit: false,
             command_palette: None,
+            config: crate::config::AppConfig::default(),
         }
     }
 

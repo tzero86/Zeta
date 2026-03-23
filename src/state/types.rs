@@ -1,4 +1,5 @@
 use crate::action::Action;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaneFocus {
@@ -7,8 +8,9 @@ pub enum PaneFocus {
     Preview,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PaneLayout {
+    #[default]
     SideBySide,
     Stacked,
 }

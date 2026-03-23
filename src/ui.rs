@@ -159,6 +159,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         render_command_palette(frame, areas[1], palette_state, palette);
     }
 
+    if let Some(settings_state) = state.settings() {
+        render_settings_panel(frame, areas[1], settings_state, state, palette);
+    }
+
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
             .fg(palette.status_fg)
@@ -946,6 +950,90 @@ fn render_command_palette(
 
     let list = List::new(items).style(Style::default().bg(palette.prompt_bg));
     frame.render_widget(list, chunks[1]);
+}
+
+fn render_settings_panel(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    settings: &crate::state::SettingsState,
+    state: &AppState,
+    palette: ThemePalette,
+) {
+    let entries = state.settings_entries();
+    let width = ((area.width as f32 * 0.72) as u16)
+        .clamp(52, 84)
+        .min(area.width);
+    let height = (entries.len() as u16 + 6).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .title(" Settings ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(palette.border_focus)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(palette.prompt_bg));
+    let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    let intro =
+        Paragraph::new("Enter/Space toggles • Esc closes • future keymap controls reserved")
+            .style(Style::default().fg(palette.text_muted));
+    frame.render_widget(intro, chunks[0]);
+
+    let rows: Vec<ListItem<'_>> = entries
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let selected = index == settings.selection;
+            let base_style = if selected {
+                Style::default()
+                    .fg(palette.selection_fg)
+                    .bg(palette.selection_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.text_primary)
+            };
+            let line = Line::from(vec![
+                Span::styled(format!(" {:<24}", entry.label), base_style),
+                Span::styled(
+                    entry.value.clone(),
+                    Style::default().fg(palette.key_hint_fg),
+                ),
+                Span::raw(format!("  {}", entry.hint)),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(
+        settings.selection.min(entries.len().saturating_sub(1)),
+    ));
+    frame.render_stateful_widget(List::new(rows), chunks[1], &mut list_state);
+
+    let footer = Paragraph::new("Ctrl+O opens settings • theme, icons, preview, layout")
+        .style(Style::default().fg(palette.text_muted));
+    frame.render_widget(footer, chunks[2]);
 }
 
 fn render_editor(

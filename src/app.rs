@@ -116,6 +116,7 @@ impl App {
                         is_editor_focused: self.state.is_editor_focused(),
                         is_preview_focused: self.state.is_preview_focused(),
                         is_palette_open: self.state.is_palette_open(),
+                        is_settings_open: self.state.is_settings_open(),
                     },
                 );
 
@@ -200,6 +201,7 @@ struct RouteContext {
     is_editor_focused: bool,
     is_preview_focused: bool,
     is_palette_open: bool,
+    is_settings_open: bool,
 }
 
 fn route_key_event(
@@ -208,12 +210,13 @@ fn route_key_event(
     context: RouteContext,
 ) -> Option<Action> {
     if context.is_palette_open {
-        return Action::from_key_event(
+        return Action::from_key_event_with_settings(
             key_event,
             keymap,
             context.is_editor_focused,
             context.is_preview_focused,
             true,
+            context.is_settings_open,
         );
     }
 
@@ -235,16 +238,24 @@ fn route_key_event(
 
     if context.is_editor_focused {
         return Action::from_editor_key_event(key_event).or_else(|| {
-            Action::from_key_event(key_event, keymap, false, context.is_preview_focused, false)
+            Action::from_key_event_with_settings(
+                key_event,
+                keymap,
+                false,
+                context.is_preview_focused,
+                false,
+                context.is_settings_open,
+            )
         });
     }
 
-    Action::from_key_event(
+    Action::from_key_event_with_settings(
         key_event,
         keymap,
         context.is_editor_focused,
         context.is_preview_focused,
         false,
+        context.is_settings_open,
     )
 }
 
@@ -309,6 +320,7 @@ mod tests {
                 is_editor_focused: true,
                 is_preview_focused: false,
                 is_palette_open: false,
+                is_settings_open: false,
             },
         );
 
@@ -330,6 +342,7 @@ mod tests {
                 is_editor_focused: true,
                 is_preview_focused: false,
                 is_palette_open: false,
+                is_settings_open: false,
             },
         );
 
@@ -351,6 +364,7 @@ mod tests {
                 is_editor_focused: true,
                 is_preview_focused: false,
                 is_palette_open: true,
+                is_settings_open: false,
             },
         );
 

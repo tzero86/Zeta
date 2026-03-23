@@ -184,6 +184,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         // View / Layout
         PaletteEntry {
             category: "View / Layout",
+            label: "Open settings panel",
+            hint: "Ctrl+O",
+            action: Action::OpenSettingsPanel,
+        },
+        PaletteEntry {
+            category: "View / Layout",
             label: "Layout: side by side",
             hint: "",
             action: Action::SetPaneLayout(PaneLayout::SideBySide),

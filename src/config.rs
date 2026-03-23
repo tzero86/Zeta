@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::action::KeyBinding;
+use crate::state::PaneLayout;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ThemePreset {
@@ -26,12 +27,31 @@ impl ThemePreset {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AppConfig {
     pub theme: ThemeConfig,
     pub keymap: KeymapConfig,
     #[serde(default)]
     pub icon_mode: IconMode,
+    #[serde(default)]
+    pub pane_layout: PaneLayout,
+    #[serde(default)]
+    pub preview_panel_open: bool,
+    #[serde(default = "default_preview_on_selection")]
+    pub preview_on_selection: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            theme: ThemeConfig::default(),
+            keymap: KeymapConfig::default(),
+            icon_mode: IconMode::default(),
+            pane_layout: PaneLayout::default(),
+            preview_panel_open: false,
+            preview_on_selection: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -83,6 +103,28 @@ impl AppConfig {
     pub fn resolve_theme(&self) -> ResolvedTheme {
         ThemePalette::resolve(&self.theme)
     }
+
+    pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
+        let raw = toml::to_string_pretty(self)?;
+
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std_fs::create_dir_all(parent).map_err(|source| ConfigError::CreateDir {
+                    path: parent.display().to_string(),
+                    source,
+                })?;
+            }
+        }
+
+        std_fs::write(path, raw).map_err(|source| ConfigError::WriteFile {
+            path: path.display().to_string(),
+            source,
+        })
+    }
+}
+
+fn default_preview_on_selection() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -422,13 +464,25 @@ pub enum ConfigError {
     NoConfigHome,
     #[error("invalid key binding for {field}: {value}")]
     InvalidKeyBinding { field: &'static str, value: String },
+    #[error("failed to create config directory {path}: {source}")]
+    CreateDir {
+        path: String,
+        source: std::io::Error,
+    },
     #[error("failed to read config file {path}: {source}")]
     ReadFile {
         path: String,
         source: std::io::Error,
     },
+    #[error("failed to write config file {path}: {source}")]
+    WriteFile {
+        path: String,
+        source: std::io::Error,
+    },
     #[error("failed to parse config file: {0}")]
     Parse(#[from] toml::de::Error),
+    #[error("failed to serialize config file: {0}")]
+    Serialize(#[from] toml::ser::Error),
 }
 
 #[cfg(test)]
@@ -438,6 +492,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     use super::{resolve_config_path_from_env, AppConfig, ConfigSource, IconMode, KeymapConfig};
+    use crate::state::PaneLayout;
 
     #[test]
     fn parses_partial_config() {
@@ -456,6 +511,9 @@ mod tests {
         assert_eq!(config.theme.preset, "sandbar");
         assert_eq!(config.keymap.quit, "x");
         assert_eq!(config.icon_mode, IconMode::Unicode);
+        assert_eq!(config.pane_layout, PaneLayout::SideBySide);
+        assert!(config.preview_on_selection);
+        assert!(!config.preview_panel_open);
     }
 
     #[test]

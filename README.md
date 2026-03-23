@@ -1,5 +1,17 @@
 # Zeta
 
+```text
+ ____  ________  ____             __               
+|    \|        \|    \           |  \              
+| $$$$ \$$$$$$$$ \$$$$  ______  _| $$_     ______  
+| $$      /  $$   | $$ /      \|   $$ \   |      \ 
+| $$     /  $$    | $$|  $$$$$$\\$$$$$$    \$$$$$$\
+| $$    /  $$     | $$| $$    $$ | $$ __  /      $$
+| $$_  /  $$___  _| $$| $$$$$$$$ | $$|  \|  $$$$$$$
+| $$ \|  $$    \|   $$ \$$     \  \$$  $$ \$$    $$
+ \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
+```
+
 Zeta is a keyboard-first terminal file manager and lightweight editor written in Rust.
 It aims for a classic Norton Commander workflow with a cleaner modern TUI, low overhead, and fast local filesystem operations.
 
@@ -15,6 +27,7 @@ Implemented so far:
 - top menu bar, prompts, and dialogs
 - theme switching
 - Unicode icons by default with ASCII fallback in config
+- in-app settings panel for theme, icons, layout, and preview preferences
 - create, rename, delete, copy, and move flows
 - background jobs for scans and file operations
 - GitHub Actions builds for Linux and Windows artifacts
@@ -57,7 +70,11 @@ Config note:
 ```toml
 # icon_mode = "unicode"  # default
 # icon_mode = "ascii"    # safe fallback for limited terminals
+# preview_panel_open = false
+# preview_on_selection = true
 ```
+
+Access settings with `Ctrl+O` or via the View menu / command palette.
 
 ## Direction
 

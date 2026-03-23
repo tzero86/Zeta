@@ -109,6 +109,12 @@ pub fn menu_items_for(menu: MenuId) -> Vec<MenuItem> {
                 action: Action::ToggleHiddenFiles,
             },
             MenuItem {
+                label: "Settings",
+                shortcut: "Ctrl+O",
+                mnemonic: 's',
+                action: Action::OpenSettingsPanel,
+            },
+            MenuItem {
                 label: "Layout: Side by Side",
                 shortcut: "4",
                 mnemonic: 'l',
