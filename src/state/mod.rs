@@ -466,6 +466,16 @@ impl AppState {
 
         match action {
             Action::CloseEditor => {
+                // If search is active, Esc closes the search bar first.
+                if let Some(editor) = self.editor.as_mut() {
+                    if editor.search_active {
+                        editor.search_active = false;
+                        editor.search_query.clear();
+                        self.status_message = String::from("search closed");
+                        self.needs_redraw = true;
+                        return Ok(vec![]);
+                    }
+                }
                 if let Some(editor) = &self.editor {
                     if editor.is_dirty {
                         self.status_message = String::from(
@@ -479,6 +489,46 @@ impl AppState {
                     self.status_message = String::from("no editor buffer is open");
                 }
                 self.needs_redraw = true;
+            }
+            Action::EditorOpenSearch => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.search_active = true;
+                    editor.search_query.clear();
+                    editor.search_match_idx = 0;
+                    self.status_message = String::from("search: type to find");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorCloseSearch => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.search_active = false;
+                    editor.search_query.clear();
+                    self.status_message = String::from("search closed");
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorSearchBackspace => {
+                if let Some(editor) = self.editor.as_mut() {
+                    if editor.search_active {
+                        editor.search_query.pop();
+                        if !editor.search_query.is_empty() {
+                            editor.search_next();
+                        }
+                        self.needs_redraw = true;
+                    }
+                }
+            }
+            Action::EditorSearchNext => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.search_next();
+                    self.needs_redraw = true;
+                }
+            }
+            Action::EditorSearchPrev => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.search_prev();
+                    self.needs_redraw = true;
+                }
             }
             Action::DiscardEditorChanges => {
                 if let Some(editor) = &self.editor {
@@ -496,6 +546,15 @@ impl AppState {
             }
             Action::EditorBackspace => {
                 if let Some(editor) = self.editor.as_mut() {
+                    // Route backspace through search when search is active.
+                    if editor.search_active {
+                        editor.search_query.pop();
+                        if !editor.search_query.is_empty() {
+                            editor.search_next();
+                        }
+                        self.needs_redraw = true;
+                        return Ok(vec![]);
+                    }
                     editor.backspace();
                     self.status_message = String::from("edited buffer");
                     self.needs_redraw = true;
@@ -503,6 +562,13 @@ impl AppState {
             }
             Action::EditorInsert(ch) => {
                 if let Some(editor) = self.editor.as_mut() {
+                    // Route character input through search when search is active.
+                    if editor.search_active {
+                        editor.search_query.push(*ch);
+                        editor.search_next();
+                        self.needs_redraw = true;
+                        return Ok(vec![]);
+                    }
                     editor.insert_char(*ch);
                     self.status_message = String::from("edited buffer");
                     self.needs_redraw = true;
@@ -534,6 +600,12 @@ impl AppState {
             }
             Action::EditorNewline => {
                 if let Some(editor) = self.editor.as_mut() {
+                    // Enter jumps to next match when search is active.
+                    if editor.search_active {
+                        editor.search_next();
+                        self.needs_redraw = true;
+                        return Ok(vec![]);
+                    }
                     editor.insert_newline();
                     self.status_message = String::from("edited buffer");
                     self.needs_redraw = true;

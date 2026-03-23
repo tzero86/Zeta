@@ -11,6 +11,10 @@ pub struct EditorBuffer {
     pub scroll_col: usize,
     pub text: Rope,
     pub is_dirty: bool,
+    // Search
+    pub search_query: String,
+    pub search_active: bool,
+    pub search_match_idx: usize,
 }
 
 impl Default for EditorBuffer {
@@ -21,6 +25,9 @@ impl Default for EditorBuffer {
             scroll_col: 0,
             text: Rope::new(),
             is_dirty: false,
+            search_query: String::new(),
+            search_active: false,
+            search_match_idx: 0,
         }
     }
 }
@@ -39,6 +46,9 @@ impl EditorBuffer {
             scroll_col: 0,
             text: Rope::from_str(&contents),
             is_dirty: false,
+            search_query: String::new(),
+            search_active: false,
+            search_match_idx: 0,
         })
     }
 
@@ -137,6 +147,55 @@ impl EditorBuffer {
         let line = self.text.char_to_line(safe_idx);
         let line_start = self.text.line_to_char(line);
         (line, safe_idx.saturating_sub(line_start))
+    }
+
+    /// Returns all `(char_idx_start, char_idx_end)` pairs for case-insensitive
+    /// query matches within the buffer text.
+    pub fn find_matches(&self, query: &str) -> Vec<(usize, usize)> {
+        if query.is_empty() {
+            return vec![];
+        }
+        let text = self.text.to_string();
+        let query_lower = query.to_lowercase();
+        let text_lower = text.to_lowercase();
+        let mut matches = Vec::new();
+        let mut start = 0;
+        while let Some(pos) = text_lower[start..].find(&query_lower) {
+            let abs = start + pos;
+            matches.push((abs, abs + query.len()));
+            start = abs + 1;
+        }
+        matches
+    }
+
+    /// Jump the cursor to the next match after the current cursor position,
+    /// wrapping around to the first match when the end is reached.
+    pub fn search_next(&mut self) {
+        let matches = self.find_matches(&self.search_query.clone());
+        if matches.is_empty() {
+            return;
+        }
+        let next = matches
+            .iter()
+            .position(|(s, _)| *s > self.cursor_char_idx)
+            .unwrap_or(0);
+        self.search_match_idx = next;
+        self.cursor_char_idx = matches[next].0;
+    }
+
+    /// Jump the cursor to the previous match before the current cursor position,
+    /// wrapping around to the last match when the beginning is reached.
+    pub fn search_prev(&mut self) {
+        let matches = self.find_matches(&self.search_query.clone());
+        if matches.is_empty() {
+            return;
+        }
+        let prev = matches
+            .iter()
+            .rposition(|(s, _)| *s < self.cursor_char_idx)
+            .unwrap_or(matches.len() - 1);
+        self.search_match_idx = prev;
+        self.cursor_char_idx = matches[prev].0;
     }
 
     /// Called by the renderer after layout is known.
@@ -301,6 +360,92 @@ mod tests {
             buffer.scroll_col > 0,
             "scroll_col should have advanced beyond 0"
         );
+    }
+
+    #[test]
+    fn find_matches_returns_all_occurrences() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "foo bar foo baz foo");
+
+        let matches = buffer.find_matches("foo");
+
+        assert_eq!(matches, vec![(0, 3), (8, 11), (16, 19)]);
+    }
+
+    #[test]
+    fn find_matches_is_case_insensitive() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "Hello hello HELLO");
+
+        let matches = buffer.find_matches("hello");
+
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0].0, 0);
+        assert_eq!(matches[1].0, 6);
+        assert_eq!(matches[2].0, 12);
+    }
+
+    #[test]
+    fn find_matches_empty_query_returns_nothing() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "some text");
+
+        let matches = buffer.find_matches("");
+
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn search_next_jumps_to_next_match() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "foo bar foo");
+        buffer.search_query = String::from("foo");
+        // cursor starts at 0 (on first match); search_next should find the second
+        buffer.cursor_char_idx = 0;
+        buffer.search_next();
+
+        // The second "foo" starts at byte/char index 8
+        assert_eq!(buffer.cursor_char_idx, 8);
+    }
+
+    #[test]
+    fn search_next_wraps_around() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "foo bar foo");
+        buffer.search_query = String::from("foo");
+        // Place cursor past the last match so wrap-around triggers
+        buffer.cursor_char_idx = 9;
+        buffer.search_next();
+
+        // Wraps to the first match at 0
+        assert_eq!(buffer.cursor_char_idx, 0);
+    }
+
+    #[test]
+    fn search_prev_jumps_to_previous_match() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "foo bar foo");
+        buffer.search_query = String::from("foo");
+        // Place cursor AT the second match (index 8); prev should find the
+        // last match whose start < 8, which is the first "foo" at index 0.
+        buffer.cursor_char_idx = 8;
+        buffer.search_prev();
+
+        // The first "foo" starts at 0
+        assert_eq!(buffer.cursor_char_idx, 0);
+    }
+
+    #[test]
+    fn search_prev_wraps_around_to_last_match() {
+        let mut buffer = EditorBuffer::default();
+        buffer.insert(0, "foo bar foo");
+        buffer.search_query = String::from("foo");
+        // Place cursor before the first match so wrap-around triggers
+        buffer.cursor_char_idx = 0;
+        buffer.search_prev();
+
+        // Wraps to the last match at index 8
+        assert_eq!(buffer.cursor_char_idx, 8);
     }
 
     #[test]

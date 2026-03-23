@@ -895,12 +895,23 @@ fn render_editor(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // Reserve 1 row at the bottom for the search bar when search is active.
+    let (content_area, search_bar_area) = if editor.search_active {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(inner);
+        (splits[0], Some(splits[1]))
+    } else {
+        (inner, None)
+    };
+
     // Gutter width: enough for 5-digit line numbers + 1 space separator.
     let gutter_width = 6u16;
     let editor_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
-        .split(inner);
+        .split(content_area);
 
     let viewport_cols = editor_chunks[1].width as usize;
     editor.clamp_horizontal_scroll(viewport_cols);
@@ -947,6 +958,26 @@ fn render_editor(
             .bg(palette.surface_bg),
     );
     frame.render_widget(paragraph, editor_chunks[1]);
+
+    // Render the inline search bar when active.
+    if let Some(bar_area) = search_bar_area {
+        let matches = editor.find_matches(&editor.search_query.clone());
+        let count_str = if editor.search_query.is_empty() {
+            String::new()
+        } else {
+            format!("  {}/{}", editor.search_match_idx + 1, matches.len())
+        };
+        let bar_text = format!(
+            " Find: {}{}  [Enter/F3 next  Shift+F3 prev  Esc close]",
+            editor.search_query, count_str
+        );
+        let bar = Paragraph::new(bar_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.selection_bg),
+        );
+        frame.render_widget(bar, bar_area);
+    }
 
     if is_active {
         let (line, column) = editor.cursor_line_col();
