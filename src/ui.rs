@@ -443,6 +443,27 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
                     Span::raw("  "),
                     Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
                 ])
+            } else if raw == "[Z]eta" {
+                Line::from(vec![
+                    Span::styled(
+                        "[",
+                        Style::default()
+                            .fg(palette.logo_accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "Z",
+                        Style::default()
+                            .fg(palette.logo_accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        "]eta",
+                        Style::default()
+                            .fg(palette.text_primary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ])
             } else {
                 // Plain line (About text, ASCII art, etc.) — no accent.
                 Line::from(Span::styled(

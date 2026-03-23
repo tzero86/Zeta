@@ -20,6 +20,7 @@ impl DialogState {
         Self {
             title: "About Zeta",
             lines: vec![
+                String::from("[Z]eta"),
                 String::from(" ____  ________  ____             __               "),
                 String::from("|    \\|        \\|    \\           |  \\              "),
                 String::from("| $$$$ \\$$$$$$$$ \\$$$$  ______  _| $$_     ______  "),
