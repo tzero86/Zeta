@@ -179,6 +179,49 @@ fn copy_overwrite_policy_replaces_existing() {
 }
 
 #[test]
+fn copy_directory_to_itself_is_rejected() {
+    let dir = TempDir::new("copy_dir_self");
+    let source = dir.child("source");
+    fs::create_dir_all(&source).expect("source directory should be created");
+    fs::write(source.join("file.txt"), "content").expect("nested file should be written");
+
+    let err = copy_path(&source, &source, CollisionPolicy::Overwrite)
+        .expect_err("copying a directory to itself should fail");
+
+    assert!(matches!(err, FileSystemError::InvalidCopyTarget { .. }));
+}
+
+#[test]
+fn copy_directory_into_descendant_is_rejected() {
+    let dir = TempDir::new("copy_dir_descendant");
+    let source = dir.child("source");
+    let destination = source.join("nested-copy");
+    fs::create_dir_all(&source).expect("source directory should be created");
+    fs::write(source.join("file.txt"), "content").expect("nested file should be written");
+
+    let err = copy_path(&source, &destination, CollisionPolicy::Overwrite)
+        .expect_err("copying a directory into its descendant should fail");
+
+    assert!(matches!(err, FileSystemError::InvalidCopyTarget { .. }));
+}
+
+#[test]
+fn copy_directory_tree_still_works() {
+    let dir = TempDir::new("copy_dir_ok");
+    let source = dir.child("source");
+    let destination = dir.child("destination");
+    fs::create_dir_all(source.join("nested")).expect("source tree should be created");
+    fs::write(source.join("alpha.txt"), "alpha").expect("source file should be written");
+    fs::write(source.join("nested").join("beta.txt"), "beta")
+        .expect("nested source file should be written");
+
+    copy_path(&source, &destination, CollisionPolicy::Fail).expect("directory copy should succeed");
+
+    assert!(destination.join("alpha.txt").exists());
+    assert!(destination.join("nested").join("beta.txt").exists());
+}
+
+#[test]
 fn create_file_creates_empty_file() {
     let dir = TempDir::new("create_file");
     let path = dir.child("new_file.txt");

@@ -63,6 +63,8 @@ pub enum FileSystemError {
         to: String,
         source: io::Error,
     },
+    #[error("cannot copy directory into itself or a descendant: {from} -> {to}")]
+    InvalidCopyTarget { from: String, to: String },
     #[error("failed to rename {from} to {to}: {source}")]
     RenamePath {
         from: String,
@@ -190,6 +192,19 @@ pub fn copy_path_with_progress<F>(
 where
     F: FnMut(OperationProgress),
 {
+    let metadata = std_fs::symlink_metadata(from).map_err(|source| FileSystemError::CopyPath {
+        from: from.display().to_string(),
+        to: to.display().to_string(),
+        source,
+    })?;
+
+    if metadata.is_dir() && (from == to || is_descendant_path(from, to)) {
+        return Err(FileSystemError::InvalidCopyTarget {
+            from: from.display().to_string(),
+            to: to.display().to_string(),
+        });
+    }
+
     prepare_destination(to, collision)?;
     let total = count_path_entries(from)?;
     let mut completed = 0;
@@ -201,6 +216,14 @@ where
     });
 
     copy_path_recursive(from, to, total, &mut completed, on_progress)
+}
+
+fn is_descendant_path(parent: &Path, child: &Path) -> bool {
+    let parent_components = parent.components().collect::<Vec<_>>();
+    let child_components = child.components().collect::<Vec<_>>();
+
+    child_components.len() > parent_components.len()
+        && child_components.starts_with(&parent_components)
 }
 
 fn copy_path_recursive<F>(
