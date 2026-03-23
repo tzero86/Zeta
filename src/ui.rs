@@ -552,6 +552,7 @@ fn render_pane(
             .map(|(index, entry)| {
                 render_item(
                     entry,
+                    pane.is_marked(&entry.path),
                     index + 1 == visible_entries.len(),
                     list_area.width as usize,
                     palette,
@@ -655,6 +656,7 @@ fn render_preview_panel(
 
 fn render_item(
     entry: &EntryInfo,
+    is_marked: bool,
     is_last: bool,
     available_width: usize,
     palette: ThemePalette,
@@ -670,12 +672,13 @@ fn render_item(
         crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
     };
     let icon = get_entry_icon(entry.kind);
+    let mark_prefix = if is_marked { "* " } else { "  " };
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),
     };
     let meta = format_entry_meta(entry);
-    let prefix = format!("{}{} {} ", guide, branch, icon);
+    let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon);
     let prefix_width = display_width(&prefix);
     let meta_width = display_width(&meta);
     let content_width = available_width.saturating_sub(2);
@@ -696,6 +699,14 @@ fn render_item(
         Span::styled(
             format!("{} ", branch),
             Style::default().fg(palette.text_muted),
+        ),
+        Span::styled(
+            mark_prefix.to_string(),
+            if is_marked {
+                Style::default().fg(palette.key_hint_fg)
+            } else {
+                Style::default().fg(palette.text_muted)
+            },
         ),
         Span::styled(format!("{} ", icon), label_style),
         Span::styled(name, label_style),

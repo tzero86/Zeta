@@ -77,6 +77,16 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "s",
             action: Action::CycleSortMode,
         },
+        PaletteEntry {
+            label: "Toggle mark on selection",
+            hint: "Space",
+            action: Action::ToggleMark,
+        },
+        PaletteEntry {
+            label: "Clear all marks",
+            hint: "Shift+M",
+            action: Action::ClearMarks,
+        },
         // File operations
         PaletteEntry {
             label: "Copy file",

@@ -381,7 +381,9 @@ impl AppState {
                     if let Some(path) = self.active_pane().selected_path() {
                         let pane = self.focused_pane_id();
                         self.status_message = format!("opening directory {}", path.display());
-                        self.active_pane_mut().push_history();
+                        let active = self.active_pane_mut();
+                        active.clear_marks();
+                        active.push_history();
                         self.needs_redraw = true;
                         commands.push(Command::ScanPane { pane, path });
                     }
@@ -394,7 +396,9 @@ impl AppState {
                 if let Some(path) = self.active_pane().parent_path() {
                     let pane = self.focused_pane_id();
                     self.status_message = format!("opening parent {}", path.display());
-                    self.active_pane_mut().push_history();
+                    let active = self.active_pane_mut();
+                    active.clear_marks();
+                    active.push_history();
                     self.needs_redraw = true;
                     commands.push(Command::ScanPane { pane, path });
                 } else {
@@ -405,6 +409,7 @@ impl AppState {
             Action::NavigateBack => {
                 if let Some(path) = self.active_pane_mut().pop_back() {
                     let pane_id = self.focused_pane_id();
+                    self.active_pane_mut().clear_marks();
                     self.needs_redraw = true;
                     return Ok(vec![Command::ScanPane {
                         pane: pane_id,
@@ -415,6 +420,7 @@ impl AppState {
             Action::NavigateForward => {
                 if let Some(path) = self.active_pane_mut().pop_forward() {
                     let pane_id = self.focused_pane_id();
+                    self.active_pane_mut().clear_marks();
                     self.needs_redraw = true;
                     return Ok(vec![Command::ScanPane {
                         pane: pane_id,
@@ -435,6 +441,15 @@ impl AppState {
             }
             Action::MoveSelectionUp => {
                 self.active_pane_mut().move_selection_up();
+                self.needs_redraw = true;
+            }
+            Action::ToggleMark => {
+                if self.active_pane_mut().toggle_mark_selected().is_some() {
+                    self.needs_redraw = true;
+                }
+            }
+            Action::ClearMarks => {
+                self.active_pane_mut().clear_marks();
                 self.needs_redraw = true;
             }
             Action::Refresh => {
@@ -1185,10 +1200,16 @@ impl AppState {
     }
 
     pub fn status_line(&self) -> String {
+        let mark_count = self.active_pane().marked_count();
         let scan = self
             .last_scan_time_ms
             .map(|value| format!("scan:{value}ms"))
             .unwrap_or_else(|| String::from("scan:-"));
+        let marks = if mark_count > 0 {
+            format!(" | marks:{mark_count}")
+        } else {
+            String::new()
+        };
         let progress = self
             .file_operation_status
             .as_ref()
@@ -1205,12 +1226,13 @@ impl AppState {
             })
             .unwrap_or_default();
         format!(
-            "{} | {} | {} | up:{}ms {}{} | d:{}",
+            "{} | {} | {} | up:{}ms {}{}{} | d:{}",
             self.app_label,
             self.status_message,
             self.theme.preset,
             self.startup_time_ms,
             scan,
+            marks,
             progress,
             self.redraw_count
         )
@@ -1363,6 +1385,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            marked: std::collections::BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         }
@@ -1387,6 +1410,7 @@ mod tests {
                 scroll_offset: 0,
                 show_hidden: false,
                 sort_mode: SortMode::Name,
+                marked: std::collections::BTreeSet::new(),
                 history_back: Vec::new(),
                 history_forward: Vec::new(),
             },
@@ -1612,6 +1636,35 @@ mod tests {
         let status = state.status_line();
 
         assert!(status.contains("copy:2/5 note.txt"));
+    }
+
+    #[test]
+    fn status_line_includes_mark_count() {
+        let mut state = test_state();
+        state.left.marked.insert(PathBuf::from("./note.txt"));
+
+        let status = state.status_line();
+
+        assert!(status.contains("marks:1"));
+    }
+
+    #[test]
+    fn toggle_mark_action_updates_active_pane_marks() {
+        let mut state = test_state();
+
+        state.apply(Action::ToggleMark).expect("toggle should work");
+
+        assert_eq!(state.left.marked_count(), 1);
+    }
+
+    #[test]
+    fn clear_marks_action_clears_active_pane_marks() {
+        let mut state = test_state();
+        state.left.marked.insert(PathBuf::from("./note.txt"));
+
+        state.apply(Action::ClearMarks).expect("clear should work");
+
+        assert_eq!(state.left.marked_count(), 0);
     }
 
     #[test]

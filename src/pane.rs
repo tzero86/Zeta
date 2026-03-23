@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use crate::fs::{scan_directory, EntryInfo, EntryKind, FileSystemError};
@@ -56,6 +57,7 @@ pub struct PaneState {
     pub scroll_offset: usize,
     pub show_hidden: bool,
     pub sort_mode: SortMode,
+    pub marked: BTreeSet<PathBuf>,
     // Navigation history
     pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
     pub history_forward: Vec<PathBuf>, // dirs we can go forward to
@@ -71,6 +73,7 @@ impl PaneState {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         }
@@ -120,6 +123,12 @@ impl PaneState {
             .into_iter()
             .filter(|entry| self.show_hidden || !entry.name.starts_with('.'))
             .collect();
+        let entry_paths: BTreeSet<PathBuf> = self
+            .entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect();
+        self.marked.retain(|path| entry_paths.contains(path));
 
         if self.selection >= self.entries.len() {
             self.selection = self.entries.len().saturating_sub(1);
@@ -154,6 +163,33 @@ impl PaneState {
 
     pub fn selected_path(&self) -> Option<PathBuf> {
         self.selected_entry().map(|entry| entry.path.clone())
+    }
+
+    pub fn selected_marked_path(&self) -> Option<PathBuf> {
+        self.selected_path()
+    }
+
+    pub fn toggle_mark_selected(&mut self) -> Option<bool> {
+        let path = self.selected_path()?;
+        if self.marked.contains(&path) {
+            self.marked.remove(&path);
+            Some(false)
+        } else {
+            self.marked.insert(path);
+            Some(true)
+        }
+    }
+
+    pub fn clear_marks(&mut self) {
+        self.marked.clear();
+    }
+
+    pub fn is_marked(&self, path: &PathBuf) -> bool {
+        self.marked.contains(path)
+    }
+
+    pub fn marked_count(&self) -> usize {
+        self.marked.len()
     }
 
     pub fn can_enter_selected(&self) -> bool {
@@ -266,6 +302,7 @@ fn dir_first(a: &EntryInfo, b: &EntryInfo) -> std::cmp::Ordering {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::path::PathBuf;
 
     use crate::fs::{EntryInfo, EntryKind};
@@ -282,6 +319,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -309,6 +347,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -352,6 +391,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -395,6 +435,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::SizeDesc,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -437,6 +478,7 @@ mod tests {
             scroll_offset: 0,
             show_hidden: false,
             sort_mode: SortMode::Extension,
+            marked: BTreeSet::new(),
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -459,6 +501,129 @@ mod tests {
         mode = mode.next(); // Extension
         mode = mode.next(); // back to Name
         assert_eq!(mode, SortMode::Name);
+    }
+
+    #[test]
+    fn toggle_mark_selected_adds_and_removes_mark() {
+        let mut pane = PaneState {
+            title: String::from("left"),
+            cwd: PathBuf::from("."),
+            entries: vec![EntryInfo {
+                name: String::from("file.txt"),
+                path: PathBuf::from("./file.txt"),
+                kind: EntryKind::File,
+                size_bytes: Some(1),
+                modified: None,
+            }],
+            selection: 0,
+            scroll_offset: 0,
+            show_hidden: false,
+            sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
+        };
+
+        assert_eq!(pane.toggle_mark_selected(), Some(true));
+        assert_eq!(pane.marked_count(), 1);
+        assert_eq!(pane.toggle_mark_selected(), Some(false));
+        assert_eq!(pane.marked_count(), 0);
+    }
+
+    #[test]
+    fn clear_marks_removes_all() {
+        let mut pane = PaneState {
+            title: String::from("left"),
+            cwd: PathBuf::from("."),
+            entries: vec![EntryInfo {
+                name: String::from("file.txt"),
+                path: PathBuf::from("./file.txt"),
+                kind: EntryKind::File,
+                size_bytes: Some(1),
+                modified: None,
+            }],
+            selection: 0,
+            scroll_offset: 0,
+            show_hidden: false,
+            sort_mode: SortMode::Name,
+            marked: BTreeSet::from([PathBuf::from("./file.txt")]),
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
+        };
+
+        pane.clear_marks();
+
+        assert_eq!(pane.marked_count(), 0);
+    }
+
+    #[test]
+    fn set_entries_purges_stale_marks() {
+        let mut pane = PaneState {
+            title: String::from("left"),
+            cwd: PathBuf::from("."),
+            entries: vec![EntryInfo {
+                name: String::from("file.txt"),
+                path: PathBuf::from("./file.txt"),
+                kind: EntryKind::File,
+                size_bytes: Some(1),
+                modified: None,
+            }],
+            selection: 0,
+            scroll_offset: 0,
+            show_hidden: false,
+            sort_mode: SortMode::Name,
+            marked: BTreeSet::from([PathBuf::from("./file.txt"), PathBuf::from("./missing.txt")]),
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
+        };
+
+        pane.set_entries(vec![EntryInfo {
+            name: String::from("file.txt"),
+            path: PathBuf::from("./file.txt"),
+            kind: EntryKind::File,
+            size_bytes: Some(1),
+            modified: None,
+        }]);
+
+        assert_eq!(pane.marked_count(), 1);
+        assert!(pane.is_marked(&PathBuf::from("./file.txt")));
+    }
+
+    #[test]
+    fn marked_count_tracks_number_of_marks() {
+        let mut pane = PaneState {
+            title: String::from("left"),
+            cwd: PathBuf::from("."),
+            entries: vec![
+                EntryInfo {
+                    name: String::from("a.txt"),
+                    path: PathBuf::from("./a.txt"),
+                    kind: EntryKind::File,
+                    size_bytes: Some(1),
+                    modified: None,
+                },
+                EntryInfo {
+                    name: String::from("b.txt"),
+                    path: PathBuf::from("./b.txt"),
+                    kind: EntryKind::File,
+                    size_bytes: Some(1),
+                    modified: None,
+                },
+            ],
+            selection: 0,
+            scroll_offset: 0,
+            show_hidden: false,
+            sort_mode: SortMode::Name,
+            marked: BTreeSet::new(),
+            history_back: Vec::new(),
+            history_forward: Vec::new(),
+        };
+
+        assert_eq!(pane.marked_count(), 0);
+        let _ = pane.toggle_mark_selected();
+        pane.move_selection_down();
+        let _ = pane.toggle_mark_selected();
+        assert_eq!(pane.marked_count(), 2);
     }
 
     fn empty_pane(cwd: &str) -> PaneState {

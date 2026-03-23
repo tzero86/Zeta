@@ -75,6 +75,8 @@ pub enum Action {
     SaveEditor,
     SetPaneLayout(PaneLayout),
     SetTheme(ThemePreset),
+    ToggleMark,
+    ClearMarks,
     ToggleHiddenFiles,
     TogglePreviewPanel,
     Quit,
@@ -235,6 +237,10 @@ impl Action {
             }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
+            KeyCode::Char(' ') => Some(Self::ToggleMark),
+            KeyCode::Char('M') if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ClearMarks)
+            }
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
             }
@@ -468,6 +474,26 @@ mod tests {
                 false,
             ),
             Some(Action::NavigateToParent)
+        );
+        assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+                &keymap,
+                false,
+                false,
+                false,
+            ),
+            Some(Action::ToggleMark)
+        );
+        assert_eq!(
+            Action::from_key_event(
+                KeyEvent::new(KeyCode::Char('M'), KeyModifiers::SHIFT),
+                &keymap,
+                false,
+                false,
+                false,
+            ),
+            Some(Action::ClearMarks)
         );
     }
 
