@@ -16,6 +16,7 @@ use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult, PreviewContent};
 use crate::pane::{PaneId, PaneState};
 
+use crate::palette::PaletteState;
 pub use dialog::{CollisionState, DialogState};
 use menu::menu_items_for;
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
@@ -47,6 +48,7 @@ pub struct AppState {
     file_operation_status: Option<FileOperationStatus>,
     needs_redraw: bool,
     should_quit: bool,
+    command_palette: Option<PaletteState>,
 }
 
 impl AppState {
@@ -93,6 +95,7 @@ impl AppState {
             file_operation_status: None,
             needs_redraw: true,
             should_quit: false,
+            command_palette: None,
         })
     }
 
@@ -112,7 +115,13 @@ impl AppState {
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
 
+        // When the palette is open only palette actions are processed — no bleed.
+        if self.command_palette.is_some() {
+            return self.reduce_palette(&action);
+        }
+
         // Delegate to focused reducers
+        commands.extend(self.reduce_palette(&action)?);
         commands.extend(self.reduce_collision(&action)?);
         commands.extend(self.reduce_dialog(&action)?);
         commands.extend(self.reduce_menu(&action)?);
@@ -124,6 +133,73 @@ impl AppState {
         commands.extend(self.reduce_preview(&action)?);
 
         Ok(commands)
+    }
+
+    // =========================================================================
+    // Palette Reducer
+    // =========================================================================
+
+    fn reduce_palette(&mut self, action: &Action) -> Result<Vec<Command>> {
+        match action {
+            Action::OpenCommandPalette => {
+                // Don't open if another modal is active.
+                if self.active_menu.is_none()
+                    && self.prompt.is_none()
+                    && self.dialog.is_none()
+                    && self.collision.is_none()
+                {
+                    self.command_palette = Some(PaletteState::new());
+                    self.needs_redraw = true;
+                }
+            }
+            Action::CloseCommandPalette => {
+                self.command_palette = None;
+                self.needs_redraw = true;
+            }
+            Action::PaletteInput(c) => {
+                if let Some(p) = self.command_palette.as_mut() {
+                    p.query.push(*c);
+                    p.selection = 0;
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PaletteBackspace => {
+                if let Some(p) = self.command_palette.as_mut() {
+                    p.query.pop();
+                    p.selection = 0;
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PaletteMoveDown => {
+                if let Some(p) = self.command_palette.as_mut() {
+                    let entries = crate::palette::all_entries();
+                    let matches = crate::palette::filter_entries(&entries, &p.query);
+                    if !matches.is_empty() {
+                        p.selection = (p.selection + 1).min(matches.len() - 1);
+                    }
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PaletteMoveUp => {
+                if let Some(p) = self.command_palette.as_mut() {
+                    p.selection = p.selection.saturating_sub(1);
+                    self.needs_redraw = true;
+                }
+            }
+            Action::PaletteConfirm => {
+                if let Some(p) = self.command_palette.take() {
+                    // take() removes the palette before the recursive apply call.
+                    self.needs_redraw = true;
+                    let entries = crate::palette::all_entries();
+                    let matches = crate::palette::filter_entries(&entries, &p.query);
+                    if let Some(entry) = matches.get(p.selection) {
+                        return self.apply(entry.action.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(vec![])
     }
 
     // =========================================================================
@@ -991,6 +1067,14 @@ impl AppState {
         self.collision.is_some()
     }
 
+    pub fn is_palette_open(&self) -> bool {
+        self.command_palette.is_some()
+    }
+
+    pub fn palette(&self) -> Option<&PaletteState> {
+        self.command_palette.as_ref()
+    }
+
     pub fn menu_items(&self) -> Vec<MenuItem> {
         self.active_menu.map(menu_items_for).unwrap_or_default()
     }
@@ -1226,6 +1310,7 @@ mod tests {
             file_operation_status: None,
             needs_redraw: false,
             should_quit: false,
+            command_palette: None,
         }
     }
 

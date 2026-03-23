@@ -146,6 +146,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
         render_collision_dialog(frame, areas[1], collision, palette);
     }
 
+    if let Some(palette_state) = state.palette() {
+        render_command_palette(frame, areas[1], palette_state, palette);
+    }
+
     let status = Paragraph::new(Line::raw(state.status_line())).style(
         Style::default()
             .fg(palette.status_fg)
@@ -756,6 +760,102 @@ fn human_size(size: u64) -> String {
     } else {
         format!("{value:.1}{}", UNITS[unit])
     }
+}
+
+fn render_command_palette(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::palette::PaletteState,
+    palette: ThemePalette,
+) {
+    let width = (area.width as f32 * 0.70) as u16;
+    let max_results = 15usize;
+    let height = (max_results as u16 + 4).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .title(" Command Palette ")
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(palette.border_focus)
+                .add_modifier(Modifier::BOLD),
+        )
+        .style(Style::default().bg(palette.prompt_bg));
+    let inner = block.inner(popup_area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Split inner: 1 row for the query input, rest for results.
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(1)])
+        .split(inner);
+
+    // Input line: "> query_"
+    let input_line = format!("> {}_", state.query);
+    let input = Paragraph::new(input_line).style(
+        Style::default()
+            .fg(palette.text_primary)
+            .add_modifier(Modifier::BOLD),
+    );
+    frame.render_widget(input, chunks[0]);
+
+    // Results list.
+    let entries = crate::palette::all_entries();
+    let matches = crate::palette::filter_entries(&entries, &state.query);
+    let visible_height = chunks[1].height as usize;
+
+    // Scroll window around selection.
+    let scroll_start = if state.selection >= visible_height {
+        state.selection - visible_height + 1
+    } else {
+        0
+    };
+
+    let items: Vec<ListItem> = matches
+        .iter()
+        .enumerate()
+        .skip(scroll_start)
+        .take(visible_height)
+        .map(|(i, entry)| {
+            let is_selected = i == state.selection;
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(palette.selection_fg)
+                    .bg(palette.selection_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.text_primary)
+            };
+            let hint_style = Style::default().fg(palette.key_hint_fg);
+
+            let hint = entry.hint;
+            let label_max = (width as usize).saturating_sub(hint.len() + 4);
+            let label_text: String = entry.label.chars().take(label_max).collect();
+            let pad = label_max.saturating_sub(label_text.chars().count());
+            let padding = " ".repeat(pad);
+
+            let line = Line::from(vec![
+                Span::raw(" "),
+                Span::styled(label_text + &padding, label_style),
+                Span::raw("  "),
+                Span::styled(hint.to_string(), hint_style),
+                Span::raw(" "),
+            ]);
+            ListItem::new(line)
+        })
+        .collect();
+
+    let list = List::new(items).style(Style::default().bg(palette.prompt_bg));
+    frame.render_widget(list, chunks[1]);
 }
 
 fn render_editor(

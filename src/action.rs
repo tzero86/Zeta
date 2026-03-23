@@ -72,6 +72,13 @@ pub enum Action {
     TogglePreviewPanel,
     Quit,
     Resize { width: u16, height: u16 },
+    OpenCommandPalette,
+    CloseCommandPalette,
+    PaletteInput(char),
+    PaletteBackspace,
+    PaletteConfirm,
+    PaletteMoveDown,
+    PaletteMoveUp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -137,7 +144,26 @@ impl Action {
         keymap: &RuntimeKeymap,
         is_editor_focused: bool,
         is_preview_focused: bool,
+        is_palette_open: bool,
     ) -> Option<Self> {
+        // Palette has highest priority — consume all input when open.
+        if is_palette_open {
+            return match key_event.code {
+                KeyCode::Esc => Some(Self::CloseCommandPalette),
+                KeyCode::Enter => Some(Self::PaletteConfirm),
+                KeyCode::Up => Some(Self::PaletteMoveUp),
+                KeyCode::Down => Some(Self::PaletteMoveDown),
+                KeyCode::Backspace => Some(Self::PaletteBackspace),
+                KeyCode::Char(c)
+                    if key_event.modifiers == KeyModifiers::NONE
+                        || key_event.modifiers == KeyModifiers::SHIFT =>
+                {
+                    Some(Self::PaletteInput(c))
+                }
+                _ => None,
+            };
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -201,6 +227,9 @@ impl Action {
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
+            }
+            KeyCode::Char('p') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenCommandPalette)
             }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
@@ -347,6 +376,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::Quit)
         );
@@ -356,6 +386,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::FocusNextPane)
         );
@@ -363,6 +394,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -380,6 +412,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::MoveSelectionDown)
         );
@@ -387,6 +420,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -398,6 +432,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::EnterSelection)
         );
@@ -405,6 +440,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -422,6 +458,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenSelectedInEditor)
         );
@@ -429,6 +466,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -440,6 +478,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenRenamePrompt)
         );
@@ -447,6 +486,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::F(6), KeyModifiers::SHIFT),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -458,6 +498,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenDeletePrompt)
         );
@@ -465,6 +506,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -476,6 +518,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenNewDirectoryPrompt)
         );
@@ -483,6 +526,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -520,6 +564,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenMenu(MenuId::File))
         );
@@ -529,6 +574,7 @@ mod tests {
                 &keymap,
                 false,
                 false,
+                false,
             ),
             Some(Action::OpenMenu(MenuId::View))
         );
@@ -536,6 +582,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
                 &keymap,
+                false,
                 false,
                 false,
             ),
@@ -567,6 +614,7 @@ mod tests {
             Action::from_key_event(
                 KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
                 &keymap,
+                false,
                 false,
                 false,
             ),

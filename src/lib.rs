@@ -6,6 +6,7 @@ pub mod event;
 pub mod fs;
 pub mod highlight;
 pub mod jobs;
+pub mod palette;
 pub mod pane;
 pub mod preview;
 pub mod state;

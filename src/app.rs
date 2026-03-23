@@ -121,6 +121,7 @@ impl App {
                         &self.keymap,
                         self.state.is_editor_focused(),
                         self.state.is_preview_focused(),
+                        self.state.is_palette_open(),
                     )
                 };
 
