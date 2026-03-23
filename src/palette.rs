@@ -62,6 +62,11 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "",
             action: Action::ToggleHiddenFiles,
         },
+        PaletteEntry {
+            label: "Cycle sort mode (name/size/date/ext)",
+            hint: "s",
+            action: Action::CycleSortMode,
+        },
         // File operations
         PaletteEntry {
             label: "Copy file",

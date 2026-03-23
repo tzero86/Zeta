@@ -422,6 +422,13 @@ impl AppState {
                 self.needs_redraw = true;
                 commands.push(Command::ScanPane { pane, path });
             }
+            Action::CycleSortMode => {
+                let pane = self.active_pane_mut();
+                pane.sort_mode = pane.sort_mode.next();
+                pane.selection = 0;
+                pane.scroll_offset = 0;
+                self.needs_redraw = true;
+            }
             _ => {}
         }
 
@@ -1256,6 +1263,7 @@ mod tests {
                 path: PathBuf::from(path),
                 kind: EntryKind::File,
                 size_bytes: Some(1024),
+                modified: None,
             }],
             selection: 0,
             scroll_offset: 0,

@@ -525,7 +525,13 @@ fn render_pane(
         Style::default().fg(palette.text_muted)
     };
 
-    let title = format!("{} [{}]  {}", label, pane.entries.len(), pane.cwd.display());
+    let title = format!(
+        "{} [{}]  {}  ({})",
+        label,
+        pane.entries.len(),
+        pane.cwd.display(),
+        pane.sort_mode.label()
+    );
     let block = Block::default()
         .title(title)
         .borders(borders)

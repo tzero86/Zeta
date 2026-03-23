@@ -79,6 +79,7 @@ pub enum Action {
     PaletteConfirm,
     PaletteMoveDown,
     PaletteMoveUp,
+    CycleSortMode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -233,6 +234,12 @@ impl Action {
             }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
+            KeyCode::Char('s') | KeyCode::Char('S')
+                if key_event.modifiers == KeyModifiers::NONE
+                    || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::CycleSortMode)
+            }
             _ => None,
         }
     }
