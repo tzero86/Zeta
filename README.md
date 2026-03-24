@@ -1,4 +1,4 @@
-# Zeta
+# Neo-Commander
 
 ```text
  ____  ________  ____             __               
@@ -12,14 +12,14 @@
  \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
 ```
 
-Zeta is a keyboard-first terminal file manager and lightweight editor written in Rust.
+Neo-Commander is a keyboard-first terminal file manager and lightweight editor written in Rust.
 It aims for a classic Norton Commander workflow with a cleaner modern TUI, low overhead, and fast local filesystem operations.
 
 ## Current Status
 
 This project is in active early development.
 
-Implemented so far:
+Implemented core features:
 
 - dual-pane file browser
 - side-by-side and stacked pane layouts

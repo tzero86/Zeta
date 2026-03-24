@@ -18,7 +18,7 @@ pub struct DialogState {
 impl DialogState {
     pub fn about(theme_name: String, config_path: String) -> Self {
         Self {
-            title: "About Zeta",
+            title: "About Neo-Commander",
             lines: vec![
                 String::from(" ____  ________  ____             __               "),
                 String::from("|    \\|        \\|    \\           |  \\              "),
@@ -30,15 +30,17 @@ impl DialogState {
                 String::from("| $$ \\|  $$    \\|   $$ \\$$     \\  \\$$  $$ \\$$    $$"),
                 String::from(" \\$$$$ \\$$$$$$$$ \\$$$$  \\$$$$$$$   \\$$$$   \\$$$$$$$"),
                 String::new(),
-                String::from("Keyboard-first dual-pane file manager and basic text editor."),
+                String::from("Neo-Commander is a keyboard-first dual-pane file manager and lightweight editor."),
                 format!("Version: {}", env!("CARGO_PKG_VERSION")),
                 String::new(),
                 String::from("By tzero86"),
                 String::new(),
                 format!("Theme: {theme_name}"),
                 format!("Config: {config_path}"),
-                String::from("Icons: Unicode (configurable to ASCII)"),
+                String::from("Icons: Unicode by default with ASCII fallback"),
                 String::from("Set icon_mode = \"ascii\" in config.toml"),
+                String::from("Settings: Ctrl+O opens the settings panel"),
+                String::from("Core features: dual panes, stacked layouts, editor, menus, dialogs, theme switching, and file operations"),
                 String::new(),
                 String::from("Esc or Enter closes this window"),
             ],
