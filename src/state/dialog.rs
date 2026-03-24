@@ -20,7 +20,6 @@ impl DialogState {
         Self {
             title: "About Zeta",
             lines: vec![
-                String::from("[Z]eta"),
                 String::from(" ____  ________  ____             __               "),
                 String::from("|    \\|        \\|    \\           |  \\              "),
                 String::from("| $$$$ \\$$$$$$$$ \\$$$$  ______  _| $$_     ______  "),
@@ -33,7 +32,9 @@ impl DialogState {
                 String::new(),
                 String::from("Keyboard-first dual-pane file manager and basic text editor."),
                 format!("Version: {}", env!("CARGO_PKG_VERSION")),
+                String::new(),
                 String::from("By tzero86"),
+                String::new(),
                 format!("Theme: {theme_name}"),
                 format!("Config: {config_path}"),
                 String::from("Icons: Unicode (configurable to ASCII)"),

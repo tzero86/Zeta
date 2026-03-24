@@ -173,9 +173,14 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
 }
 
 fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
+    let active = state.active_menu().is_none();
+    let top_bar_bg = if active {
+        palette.menu_active_bg
+    } else {
+        palette.menu_bg
+    };
     let mut line = Line::default();
-    line.spans
-        .extend(logo_spans(state.active_menu().is_none(), palette));
+    line.spans.extend(top_bar_logo_spans(active, palette));
     line.spans.extend(menu_spans(
         " File ",
         Some('F'),
@@ -204,13 +209,13 @@ fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette:
     let menu = Paragraph::new(line).style(
         Style::default()
             .fg(palette.menu_fg)
-            .bg(palette.menu_bg)
+            .bg(top_bar_bg)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
 }
 
-fn logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'static>> {
+pub(super) fn top_bar_logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'static>> {
     let bg = if active {
         palette.menu_active_bg
     } else {
@@ -267,6 +272,32 @@ fn menu_spans(
     }
 
     spans
+}
+
+struct PaneChrome {
+    border: Style,
+    title: Style,
+    surface: Style,
+}
+
+fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
+    if is_focused {
+        PaneChrome {
+            border: Style::default()
+                .fg(palette.border_focus)
+                .add_modifier(Modifier::BOLD),
+            title: Style::default()
+                .fg(palette.border_focus)
+                .add_modifier(Modifier::BOLD),
+            surface: Style::default().bg(palette.surface_bg),
+        }
+    } else {
+        PaneChrome {
+            border: Style::default().fg(palette.text_muted),
+            title: Style::default().fg(palette.text_muted),
+            surface: Style::default().bg(palette.tools_bg),
+        }
+    }
 }
 
 fn render_menu_popup(
@@ -443,25 +474,12 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
                     Span::raw("  "),
                     Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
                 ])
-            } else if raw == "[Z]eta" {
+            } else if raw == " ____  ________  ____             __               " {
                 Line::from(vec![
+                    Span::raw(" "),
                     Span::styled(
-                        "[",
-                        Style::default()
-                            .fg(palette.logo_accent)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "Z",
-                        Style::default()
-                            .fg(palette.logo_accent)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "]eta",
-                        Style::default()
-                            .fg(palette.text_primary)
-                            .add_modifier(Modifier::BOLD),
+                        "____  ________  ____             __               ",
+                        Style::default().fg(palette.text_primary),
                     ),
                 ])
             } else {
@@ -553,13 +571,7 @@ fn render_pane(
 ) {
     let palette = state.theme().palette;
     let icon_mode = state.icon_mode();
-    let border_style = if is_focused {
-        Style::default()
-            .fg(palette.border_focus)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(palette.text_muted)
-    };
+    let chrome = pane_chrome_style(is_focused, palette);
 
     let title = format!(
         "{} [{}]  {}  ({})",
@@ -569,9 +581,10 @@ fn render_pane(
         pane.sort_mode.label()
     );
     let block = Block::default()
-        .title(title)
+        .title(Span::styled(title, chrome.title))
         .borders(borders)
-        .border_style(border_style);
+        .border_style(chrome.border)
+        .style(chrome.surface);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -588,6 +601,7 @@ fn render_pane(
             .map(|(index, entry)| {
                 render_item(
                     entry,
+                    is_focused,
                     pane.is_marked(&entry.path),
                     index + 1 == visible_entries.len(),
                     list_area.width as usize,
@@ -612,7 +626,7 @@ fn render_pane(
         list_state.select(pane.visible_selection(visible_height));
     }
 
-    frame.render_stateful_widget(list, list_area, &mut list_state);
+    frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 }
 
 fn render_preview_panel(
@@ -693,22 +707,16 @@ fn render_preview_panel(
 
 fn render_item(
     entry: &EntryInfo,
+    is_focused: bool,
     is_marked: bool,
     is_last: bool,
     available_width: usize,
     palette: ThemePalette,
     icon_mode: IconMode,
 ) -> ListItem<'static> {
+    let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };
-    let label_style = match entry.kind {
-        crate::fs::EntryKind::Directory => Style::default()
-            .fg(palette.directory_fg)
-            .add_modifier(Modifier::BOLD),
-        crate::fs::EntryKind::Symlink => Style::default().fg(palette.symlink_fg),
-        crate::fs::EntryKind::File => Style::default().fg(palette.file_fg),
-        crate::fs::EntryKind::Other => Style::default().fg(palette.text_muted),
-    };
     let icon = get_entry_icon(entry.kind, icon_mode);
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = match entry.kind {
@@ -734,24 +742,70 @@ fn render_item(
         .max(1);
 
     ListItem::new(Line::from(vec![
-        Span::styled(guide, Style::default().fg(palette.text_muted)),
-        Span::styled(
-            format!("{} ", branch),
-            Style::default().fg(palette.text_muted),
-        ),
-        Span::styled(
-            mark_prefix.to_string(),
-            if is_marked {
-                Style::default().fg(palette.key_hint_fg)
-            } else {
-                Style::default().fg(palette.text_muted)
-            },
-        ),
-        Span::styled(format!("{} ", icon_slot), label_style),
-        Span::styled(name, label_style),
+        Span::styled(guide, row_styles.guide),
+        Span::styled(format!("{} ", branch), row_styles.branch),
+        Span::styled(mark_prefix.to_string(), row_styles.mark),
+        Span::styled(format!("{} ", icon_slot), row_styles.icon),
+        Span::styled(name, row_styles.name),
         Span::styled(" ".repeat(spacer_width), Style::default()),
-        Span::styled(meta, Style::default().fg(palette.text_muted)),
+        Span::styled(meta, row_styles.meta),
     ]))
+}
+
+struct PaneRowStyles {
+    guide: Style,
+    branch: Style,
+    mark: Style,
+    icon: Style,
+    name: Style,
+    meta: Style,
+}
+
+fn pane_row_styles(
+    is_focused: bool,
+    is_marked: bool,
+    kind: EntryKind,
+    palette: ThemePalette,
+) -> PaneRowStyles {
+    let text_tone = if is_focused {
+        palette.text_primary
+    } else {
+        palette.text_muted
+    };
+    let label_style = match kind {
+        EntryKind::Directory => Style::default()
+            .fg(palette.directory_fg)
+            .add_modifier(Modifier::BOLD),
+        EntryKind::Symlink => Style::default().fg(palette.symlink_fg),
+        EntryKind::File => Style::default().fg(palette.file_fg),
+        EntryKind::Other => Style::default().fg(text_tone),
+    };
+
+    PaneRowStyles {
+        guide: Style::default().fg(text_tone),
+        branch: Style::default().fg(text_tone),
+        mark: if is_marked {
+            Style::default().fg(palette.key_hint_fg)
+        } else {
+            Style::default().fg(text_tone)
+        },
+        icon: label_style,
+        name: if is_focused {
+            label_style
+        } else {
+            label_style.fg(match kind {
+                EntryKind::Directory => palette.directory_fg,
+                EntryKind::Symlink => palette.symlink_fg,
+                EntryKind::File => palette.file_fg,
+                EntryKind::Other => text_tone,
+            })
+        },
+        meta: Style::default().fg(if is_focused {
+            palette.text_primary
+        } else {
+            palette.text_muted
+        }),
+    }
 }
 
 fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
@@ -1189,9 +1243,37 @@ fn render_editor(
 
 #[cfg(test)]
 mod tests {
-    use super::{format_icon_slot, get_entry_icon};
-    use crate::config::IconMode;
+    use super::{format_icon_slot, get_entry_icon, pane_chrome_style, top_bar_logo_spans};
+    use crate::config::{IconMode, ThemePalette};
     use crate::fs::EntryKind;
+    use ratatui::style::Color;
+
+    fn test_palette() -> ThemePalette {
+        ThemePalette {
+            menu_bg: Color::Rgb(10, 11, 12),
+            menu_fg: Color::Rgb(20, 21, 22),
+            menu_active_bg: Color::Rgb(30, 31, 32),
+            menu_mnemonic_fg: Color::Rgb(40, 41, 42),
+            border_focus: Color::Rgb(50, 51, 52),
+            border_editor_focus: Color::Rgb(60, 61, 62),
+            selection_bg: Color::Rgb(70, 71, 72),
+            selection_fg: Color::Rgb(80, 81, 82),
+            surface_bg: Color::Rgb(90, 91, 92),
+            tools_bg: Color::Rgb(100, 101, 102),
+            prompt_bg: Color::Rgb(110, 111, 112),
+            prompt_border: Color::Rgb(120, 121, 122),
+            text_primary: Color::Rgb(130, 131, 132),
+            text_muted: Color::Rgb(140, 141, 142),
+            directory_fg: Color::Rgb(150, 151, 152),
+            symlink_fg: Color::Rgb(160, 161, 162),
+            file_fg: Color::Rgb(170, 171, 172),
+            status_bg: Color::Rgb(180, 181, 182),
+            status_fg: Color::Rgb(190, 191, 192),
+            logo_accent: Color::Rgb(200, 201, 202),
+            key_hint_fg: Color::Rgb(210, 211, 212),
+            syntect_theme: "test",
+        }
+    }
 
     #[test]
     fn unicode_icons_use_glyphs() {
@@ -1217,5 +1299,32 @@ mod tests {
     #[test]
     fn ascii_icon_slot_uses_label_width() {
         assert_eq!(format_icon_slot("[D]", IconMode::Ascii), "[D]");
+    }
+
+    #[test]
+    fn top_bar_logo_uses_logo_accent() {
+        let spans = top_bar_logo_spans(true, test_palette());
+
+        assert_eq!(spans[1].style.fg, Some(Color::Rgb(200, 201, 202)));
+        assert_eq!(spans[2].style.fg, Some(Color::Rgb(200, 201, 202)));
+        assert_eq!(spans[3].style.fg, Some(Color::Rgb(200, 201, 202)));
+    }
+
+    #[test]
+    fn focused_pane_uses_focus_border_and_surface() {
+        let chrome = pane_chrome_style(true, test_palette());
+
+        assert_eq!(chrome.border.fg, Some(Color::Rgb(50, 51, 52)));
+        assert_eq!(chrome.title.fg, Some(Color::Rgb(50, 51, 52)));
+        assert_eq!(chrome.surface.bg, Some(Color::Rgb(90, 91, 92)));
+    }
+
+    #[test]
+    fn inactive_pane_uses_muted_border_and_quieter_surface() {
+        let chrome = pane_chrome_style(false, test_palette());
+
+        assert_eq!(chrome.border.fg, Some(Color::Rgb(140, 141, 142)));
+        assert_eq!(chrome.title.fg, Some(Color::Rgb(140, 141, 142)));
+        assert_eq!(chrome.surface.bg, Some(Color::Rgb(100, 101, 102)));
     }
 }
