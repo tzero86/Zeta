@@ -14,7 +14,7 @@ use crate::config::{AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalet
 use crate::editor::EditorBuffer;
 use crate::fs;
 use crate::fs::EntryKind;
-use crate::jobs::{FileOperationStatus, JobResult, PreviewContent};
+use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
 
 use crate::palette::PaletteState;
@@ -41,10 +41,9 @@ pub struct AppState {
     prompt: Option<PromptState>,
     dialog: Option<DialogState>,
     collision: Option<CollisionState>,
-    pub preview: Option<(PathBuf, PreviewContent)>,
+    pub preview_view: Option<(PathBuf, crate::preview::ViewBuffer)>,
     pub preview_panel_open: bool,
     preview_on_selection: bool,
-    preview_scroll: usize,
     settings: Option<SettingsState>,
     status_message: String,
     last_size: Option<(u16, u16)>,
@@ -86,10 +85,9 @@ impl AppState {
             prompt: None,
             dialog: None,
             collision: None,
-            preview: None,
+            preview_view: None,
             preview_panel_open: loaded_config.config.preview_panel_open,
             preview_on_selection: loaded_config.config.preview_on_selection,
-            preview_scroll: 0,
             settings: None,
             status_message: resolved_theme.warning.unwrap_or_else(|| {
                 format!(
@@ -447,7 +445,7 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::CycleFocus => {
-                let preview_available = self.preview_panel_open && self.preview.is_some();
+                let preview_available = self.preview_panel_open && self.preview_view.is_some();
                 self.focus = match self.focus {
                     PaneFocus::Left => PaneFocus::Right,
                     PaneFocus::Right => {
@@ -981,8 +979,7 @@ impl AppState {
 
         match action {
             Action::ClearPreview => {
-                self.preview = None;
-                self.preview_scroll = 0;
+                self.preview_view = None;
                 self.needs_redraw = true;
             }
             Action::TogglePreviewPanel => {
@@ -992,7 +989,6 @@ impl AppState {
                 self.needs_redraw = true;
             }
             Action::PreviewFile { path } => {
-                self.preview_scroll = 0;
                 commands.push(Command::PreviewFile { path: path.clone() });
             }
             Action::FocusPreviewPanel => {
@@ -1009,25 +1005,33 @@ impl AppState {
             }
             Action::ScrollPreviewDown => {
                 if self.focus == PaneFocus::Preview {
-                    self.preview_scroll = self.preview_scroll.saturating_add(1);
+                    if let Some((_, v)) = self.preview_view.as_mut() {
+                        v.scroll_down(1);
+                    }
                     self.needs_redraw = true;
                 }
             }
             Action::ScrollPreviewUp => {
                 if self.focus == PaneFocus::Preview {
-                    self.preview_scroll = self.preview_scroll.saturating_sub(1);
+                    if let Some((_, v)) = self.preview_view.as_mut() {
+                        v.scroll_up(1);
+                    }
                     self.needs_redraw = true;
                 }
             }
             Action::ScrollPreviewPageDown => {
                 if self.focus == PaneFocus::Preview {
-                    self.preview_scroll = self.preview_scroll.saturating_add(20);
+                    if let Some((_, v)) = self.preview_view.as_mut() {
+                        v.scroll_down(20);
+                    }
                     self.needs_redraw = true;
                 }
             }
             Action::ScrollPreviewPageUp => {
                 if self.focus == PaneFocus::Preview {
-                    self.preview_scroll = self.preview_scroll.saturating_sub(20);
+                    if let Some((_, v)) = self.preview_view.as_mut() {
+                        v.scroll_up(20);
+                    }
                     self.needs_redraw = true;
                 }
             }
@@ -1042,11 +1046,11 @@ impl AppState {
                             path: entry.path.clone(),
                         });
                     } else {
-                        self.preview = None;
+                        self.preview_view = None;
                         self.needs_redraw = true;
                     }
                 } else {
-                    self.preview = None;
+                    self.preview_view = None;
                     self.needs_redraw = true;
                 }
             }
@@ -1132,9 +1136,16 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
                 self.needs_redraw = true;
             }
-            JobResult::PreviewLoaded { path, content } => {
-                self.preview = Some((path, content));
-                self.preview_scroll = 0;
+            JobResult::PreviewLoaded { path, view } => {
+                if let Some((ref current_path, ref mut buf)) = self.preview_view {
+                    if *current_path == path {
+                        // Same file reloaded — reset scroll.
+                        buf.reset_scroll();
+                        self.needs_redraw = true;
+                        return;
+                    }
+                }
+                self.preview_view = Some((path, view));
                 self.needs_redraw = true;
             }
         }
@@ -1148,8 +1159,8 @@ impl AppState {
         &self.left
     }
 
-    pub fn preview(&self) -> Option<&(PathBuf, PreviewContent)> {
-        self.preview.as_ref()
+    pub fn preview_view(&self) -> Option<&(PathBuf, crate::preview::ViewBuffer)> {
+        self.preview_view.as_ref()
     }
 
     pub fn is_preview_panel_open(&self) -> bool {
@@ -1390,10 +1401,6 @@ impl AppState {
 
     pub fn is_editor_focused(&self) -> bool {
         self.editor.is_some()
-    }
-
-    pub fn preview_scroll(&self) -> usize {
-        self.preview_scroll
     }
 
     pub fn is_preview_focused(&self) -> bool {
@@ -1663,10 +1670,9 @@ mod tests {
             prompt: None,
             dialog: None,
             collision: None,
-            preview: None,
+            preview_view: None,
             preview_panel_open: false,
             preview_on_selection: true,
-            preview_scroll: 0,
             settings: None,
             status_message: String::from("ready"),
             last_size: None,

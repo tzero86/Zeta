@@ -10,8 +10,8 @@ use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::fs::EntryKind;
 use crate::icon::icon_for_kind;
-use crate::jobs::PreviewContent;
 use crate::pane::{PaneId, PaneState};
+use crate::preview::ViewBuffer;
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
 
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
@@ -98,14 +98,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
                 render_editor(frame, tools_area, editor, true, true, palette);
             }
         } else if is_preview_open {
-            let preview_content = state.preview().map(|(_, c)| c);
+            let preview_view = state.preview_view().map(|(_, v)| v);
             let filename = state.active_pane_title().to_string();
             render_preview_panel(
                 frame,
                 tools_area,
-                preview_content,
+                preview_view,
                 &filename,
-                state.preview_scroll(),
                 state.is_preview_focused(),
                 palette,
             );
@@ -604,16 +603,145 @@ fn render_pane(
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 }
 
+/// Shared renderer for both preview and editor content.
+/// Renders each visible line into its own 1-row Rect to prevent soft-wrap
+/// and eliminate ghost cells from previous frames.
+///
+/// - `area`: the full content area (no border, no title — inner area only)
+/// - `lines`: slice of highlighted lines to render, pre-sliced to viewport height
+/// - `first_line_number`: line number of lines[0] for gutter display (1-based)
+/// - `gutter_width`: number of columns to reserve for line numbers (suggest 5)
+/// - `scroll_col`: horizontal scroll offset in chars
+/// - `cursor_row`: if Some(r), highlight that row with selection_bg (editor cursor)
+/// - `palette`: theme colours
+fn render_code_view(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    lines: &[crate::highlight::HighlightedLine],
+    first_line_number: usize,
+    gutter_width: u16,
+    scroll_col: usize,
+    cursor_row: Option<usize>,
+    palette: ThemePalette,
+) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+
+    // Split area into gutter | content horizontally.
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
+        .split(area);
+    let gutter_area = chunks[0];
+    let content_area = chunks[1];
+    let viewport_cols = content_area.width as usize;
+
+    let blank_style = Style::default().bg(palette.surface_bg);
+
+    for row_idx in 0..area.height as usize {
+        let y = area.y + row_idx as u16;
+        if y >= area.y + area.height {
+            break;
+        }
+        let gutter_rect = Rect {
+            x: gutter_area.x,
+            y,
+            width: gutter_area.width,
+            height: 1,
+        };
+        let content_rect = Rect {
+            x: content_area.x,
+            y,
+            width: content_area.width,
+            height: 1,
+        };
+        frame.render_widget(Paragraph::new(" ").style(blank_style), gutter_rect);
+        frame.render_widget(Paragraph::new(" ").style(blank_style), content_rect);
+    }
+
+    for (row_idx, line_tokens) in lines.iter().enumerate() {
+        let y = area.y + row_idx as u16;
+        if y >= area.y + area.height {
+            break;
+        }
+
+        // Gutter: right-aligned line number.
+        let line_num = first_line_number + row_idx;
+        let gutter_text = format!(
+            "{:>width$} ",
+            line_num,
+            width = (gutter_width as usize).saturating_sub(2)
+        );
+        let gutter_rect = Rect {
+            x: gutter_area.x,
+            y,
+            width: gutter_area.width,
+            height: 1,
+        };
+        let gutter_style = Style::default()
+            .fg(palette.text_muted)
+            .bg(palette.surface_bg);
+        frame.render_widget(Paragraph::new(gutter_text).style(gutter_style), gutter_rect);
+
+        // Content row.
+        let content_rect = Rect {
+            x: content_area.x,
+            y,
+            width: content_area.width,
+            height: 1,
+        };
+        let row_bg = if cursor_row == Some(row_idx) {
+            Style::default().bg(palette.selection_bg)
+        } else {
+            Style::default().bg(palette.surface_bg)
+        };
+
+        // Build spans, applying horizontal scroll and column truncation.
+        let mut spans: Vec<Span> = Vec::new();
+        let mut raw_cols = 0usize;
+        let mut visible_cols = 0usize;
+        for (color, modifier, text) in line_tokens {
+            let token_chars: Vec<char> = text.chars().collect();
+            let token_len = token_chars.len();
+            let token_start = raw_cols;
+            let token_end = raw_cols + token_len;
+            raw_cols = token_end;
+
+            if token_end <= scroll_col {
+                continue;
+            }
+
+            let skip = scroll_col.saturating_sub(token_start);
+            let visible_chars: String = token_chars[skip..].iter().collect();
+            let remaining = viewport_cols.saturating_sub(visible_cols);
+            let truncated: String = visible_chars.chars().take(remaining).collect();
+            if !truncated.is_empty() {
+                visible_cols += truncated.chars().count();
+                spans.push(Span::styled(
+                    truncated,
+                    Style::default().fg(*color).add_modifier(*modifier),
+                ));
+            }
+        }
+
+        if visible_cols < viewport_cols {
+            spans.push(Span::raw(" ".repeat(viewport_cols - visible_cols)));
+        }
+
+        let line = Line::from(spans);
+        frame.render_widget(Paragraph::new(line).style(row_bg), content_rect);
+    }
+}
+
 fn render_preview_panel(
     frame: &mut Frame<'_>,
     area: Rect,
-    content: Option<&PreviewContent>,
+    view: Option<&ViewBuffer>,
     filename: &str,
-    scroll: usize,
     is_focused: bool,
     palette: ThemePalette,
 ) {
-    let surface = Style::default().bg(palette.tools_bg);
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_focus)
@@ -621,78 +749,39 @@ fn render_preview_panel(
     } else {
         Style::default().fg(palette.text_muted)
     };
-
     let title = format!(" Preview  {} ", filename);
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_style(border_style)
-        .style(surface);
+        .style(Style::default().bg(palette.tools_bg));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let max_cols = inner.width as usize;
-    let visible_height = inner.height as usize;
-
-    // Paint a solid background over the entire inner area first so no cell
-    // from a previous frame bleeds through when content is shorter than the panel.
-    let clear_lines: Vec<Line> = (0..visible_height)
-        .map(|_| Line::from(Span::raw(" ".repeat(max_cols))))
-        .collect();
-    frame.render_widget(Paragraph::new(clear_lines).style(surface), inner);
-
-    // Handle the highlighted variant first — it renders a styled paragraph and
-    // returns early so the plain-text path below does not run.
-    if let Some(PreviewContent::Highlighted(lines)) = content {
-        let start = scroll.min(lines.len().saturating_sub(1));
-        let styled_lines: Vec<Line> = lines[start..]
-            .iter()
-            .take(visible_height)
-            .map(|tokens| {
-                // Truncate each line to max_cols visible columns to prevent
-                // ratatui from soft-wrapping long lines onto the next row.
-                let mut cols_used = 0usize;
-                let mut spans: Vec<Span> = Vec::new();
-                for (color, modifier, text) in tokens {
-                    if cols_used >= max_cols {
-                        break;
-                    }
-                    let remaining = max_cols - cols_used;
-                    let truncated: String = text.chars().take(remaining).collect();
-                    cols_used += truncated.chars().count();
-                    spans.push(Span::styled(
-                        truncated,
-                        Style::default().fg(*color).add_modifier(*modifier),
-                    ));
-                }
-                Line::from(spans)
-            })
-            .collect();
-        let paragraph = Paragraph::new(styled_lines).style(surface.fg(palette.text_primary));
-        frame.render_widget(paragraph, inner);
-        return;
-    }
-
-    let body = match content {
-        Some(PreviewContent::Text(t)) => {
-            let lines: Vec<&str> = t.lines().collect();
-            let start = scroll.min(lines.len().saturating_sub(1));
-            lines[start..]
-                .iter()
-                .take(visible_height)
-                .map(|line| line.chars().take(max_cols).collect::<String>())
-                .collect::<Vec<_>>()
-                .join("\n")
+    match view {
+        None => frame.render_widget(
+            Paragraph::new("select a file to preview")
+                .style(Style::default().fg(palette.text_muted).bg(palette.tools_bg)),
+            inner,
+        ),
+        Some(v) => {
+            let height = inner.height as usize;
+            let (first_line_num, window) = v.visible_window(height);
+            if window.is_empty() {
+                return;
+            }
+            render_code_view(
+                frame,
+                inner,
+                window,
+                first_line_num + 1,
+                5,
+                0,
+                None,
+                palette,
+            );
         }
-        Some(PreviewContent::Binary { size_bytes }) => format!("[binary — {size_bytes} bytes]"),
-        Some(PreviewContent::Empty) => String::from("[empty file]"),
-        // Highlighted is handled above; this arm is unreachable but kept for exhaustiveness.
-        Some(PreviewContent::Highlighted(_)) => String::new(),
-        None => String::from("[directory — select a file to preview]"),
-    };
-
-    let paragraph = Paragraph::new(body).style(surface.fg(palette.text_primary));
-    frame.render_widget(paragraph, inner);
+    }
 }
 
 fn render_item(
@@ -1140,56 +1229,43 @@ fn render_editor(
 
     // Gutter width: enough for 5-digit line numbers + 1 space separator.
     let gutter_width = 6u16;
-    let editor_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
-        .split(content_area);
 
-    let viewport_cols = editor_chunks[1].width as usize;
+    // Derive viewport size from content_area (render_code_view will split it,
+    // but we need the content column width to compute scroll clamping).
+    let (visible_start, visible_lines) = editor.visible_line_window(content_area.height as usize);
+    let viewport_cols = content_area.width.saturating_sub(gutter_width) as usize;
     editor.clamp_horizontal_scroll(viewport_cols);
     let scroll_col = editor.scroll_col;
 
-    let line_number_width = (gutter_width as usize).saturating_sub(1);
-    let (visible_start, visible_lines) =
-        editor.visible_line_window(editor_chunks[1].height as usize);
-
-    // Build gutter: right-align numbers, pad with a space on the right.
-    let numbers = visible_lines
+    // Convert visible lines to HighlightedLine (single plain token per line).
+    let highlighted: Vec<crate::highlight::HighlightedLine> = visible_lines
         .iter()
-        .enumerate()
-        .map(|(index, _)| {
-            format!(
-                "{:>width$} ",
-                visible_start + index + 1,
-                width = line_number_width.saturating_sub(1),
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let gutter = Paragraph::new(numbers).style(
-        Style::default()
-            .fg(palette.text_muted)
-            .bg(palette.surface_bg),
-    );
-    frame.render_widget(gutter, editor_chunks[0]);
-
-    // Content: slice each line by scroll_col so the viewport pans horizontally.
-    // No word-wrap so line numbers stay in sync with visible rows.
-    let preview = visible_lines
-        .into_iter()
         .map(|line| {
-            let stripped = line.strip_suffix('\n').unwrap_or(&line);
-            let chars: Vec<char> = stripped.chars().collect();
-            chars.into_iter().skip(scroll_col).collect::<String>()
+            let text = line.strip_suffix('\n').unwrap_or(line).to_string();
+            vec![(
+                palette.text_primary,
+                ratatui::style::Modifier::empty(),
+                text,
+            )]
         })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let paragraph = Paragraph::new(preview).style(
-        Style::default()
-            .fg(palette.text_primary)
-            .bg(palette.surface_bg),
+        .collect();
+
+    let cursor_visible_row = if is_active {
+        Some(editor.cursor_line_col().0.saturating_sub(visible_start))
+    } else {
+        None
+    };
+
+    render_code_view(
+        frame,
+        content_area,
+        &highlighted,
+        visible_start + 1, // 1-based
+        gutter_width,
+        scroll_col,
+        cursor_visible_row,
+        palette,
     );
-    frame.render_widget(paragraph, editor_chunks[1]);
 
     // Render the inline search bar when active.
     if let Some(bar_area) = search_bar_area {
@@ -1214,15 +1290,17 @@ fn render_editor(
         frame.render_widget(bar, bar_area);
     }
 
+    // Set terminal cursor position for blinking cursor.
     if is_active {
         let (line, column) = editor.cursor_line_col();
         let visible_line = line.saturating_sub(visible_start);
-        let cursor_y = editor_chunks[1].y
-            + (visible_line as u16).min(editor_chunks[1].height.saturating_sub(1));
-        // Offset cursor X by the horizontal scroll position.
+        // gutter_width columns are reserved; content starts at content_area.x + gutter_width.
+        let content_x = content_area.x + gutter_width;
+        let cursor_y =
+            content_area.y + (visible_line as u16).min(content_area.height.saturating_sub(1));
         let visible_col = column.saturating_sub(scroll_col);
-        let cursor_x =
-            editor_chunks[1].x + (visible_col as u16).min(editor_chunks[1].width.saturating_sub(1));
+        let cursor_x = content_x
+            + (visible_col as u16).min(content_area.width.saturating_sub(gutter_width + 1));
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }

@@ -11,19 +11,6 @@ use crate::fs::{
 };
 use crate::pane::PaneId;
 
-/// Content produced by a non-blocking file preview read.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PreviewContent {
-    /// First up to 200 lines of a text file, truncated to 4 KB.
-    Text(String),
-    /// Syntax-highlighted lines produced by the `highlight` module.
-    Highlighted(Vec<crate::highlight::HighlightedLine>),
-    /// File that looks binary — only the byte size is stored.
-    Binary { size_bytes: u64 },
-    /// File was empty or unreadable.
-    Empty,
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum JobRequest {
     FileOperation {
@@ -71,7 +58,7 @@ pub enum JobResult {
     },
     PreviewLoaded {
         path: PathBuf,
-        content: PreviewContent,
+        view: crate::preview::ViewBuffer,
     },
 }
 
@@ -152,9 +139,9 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
                 path,
                 syntect_theme,
             } => {
-                let content = load_preview_content(&path, &syntect_theme);
+                let view = load_preview_content(&path, &syntect_theme);
                 if result_tx
-                    .send(JobResult::PreviewLoaded { path, content })
+                    .send(JobResult::PreviewLoaded { path, view })
                     .is_err()
                 {
                     break;
@@ -164,14 +151,14 @@ fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult
     }
 }
 
-fn load_preview_content(path: &Path, syntect_theme: &str) -> PreviewContent {
+fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(_) => return PreviewContent::Empty,
+        Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
     };
 
     if bytes.is_empty() {
-        return PreviewContent::Empty;
+        return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
 
     if looks_like_binary(&bytes) {
@@ -179,7 +166,8 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> PreviewContent {
         let size_bytes = std::fs::metadata(path)
             .map(|m| m.len())
             .unwrap_or(bytes.len() as u64);
-        return PreviewContent::Binary { size_bytes };
+        let label = format!("[binary file — {size_bytes} bytes]");
+        return crate::preview::ViewBuffer::from_plain(&label);
     }
 
     // Decode lossily and attempt syntax highlighting (safe — runs in worker thread).
@@ -187,7 +175,7 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> PreviewContent {
     let extension = path.extension().and_then(|e| e.to_str());
 
     if let Some(lines) = crate::highlight::highlight_text(&text, extension, syntect_theme) {
-        return PreviewContent::Highlighted(lines);
+        return crate::preview::ViewBuffer::from_highlighted(lines);
     }
 
     // Fallback: truncate to 200 lines, capped at 200 × 80 chars.
@@ -200,7 +188,7 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> PreviewContent {
         .take(200 * 80)
         .collect();
 
-    PreviewContent::Text(truncated)
+    crate::preview::ViewBuffer::from_plain(&truncated)
 }
 
 fn run_file_operation(
