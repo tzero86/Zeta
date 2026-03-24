@@ -44,6 +44,29 @@ fn to_ratatui_modifier(style: SyntectStyle) -> Modifier {
     m
 }
 
+/// Normalize preview text for terminal-safe rendering.
+pub(crate) fn normalize_preview_text(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                normalized.push('\n');
+            }
+            '\n' => normalized.push('\n'),
+            '\t' => normalized.push_str("    "),
+            ch if ch.is_control() => {}
+            ch => normalized.push(ch),
+        }
+    }
+
+    normalized
+}
+
 /// Highlight `text` for the given file `extension` (e.g. `"rs"`, `"py"`).
 ///
 /// Returns `None` when:
@@ -60,6 +83,8 @@ pub fn highlight_text(
     extension: Option<&str>,
     syntect_theme: &str,
 ) -> Option<Vec<HighlightedLine>> {
+    let text = normalize_preview_text(text);
+
     if text.len() > MAX_HIGHLIGHT_BYTES {
         return None;
     }
@@ -79,7 +104,7 @@ pub fn highlight_text(
     let mut h = HighlightLines::new(syntax, theme);
     let mut result = Vec::new();
 
-    for line in LinesWithEndings::from(text) {
+    for line in LinesWithEndings::from(&text) {
         let ranges = h.highlight_line(line, ss).ok()?;
         let tokens: HighlightedLine = ranges
             .into_iter()

@@ -2,7 +2,7 @@ use ratatui::style::{Color, Modifier};
 
 #[cfg(test)]
 use crate::highlight::HighlightToken;
-use crate::highlight::HighlightedLine;
+use crate::highlight::{normalize_preview_text, HighlightedLine};
 
 /// A read-only scrollable view of syntax-highlighted file content.
 /// Used by the preview panel. Scroll state is owned here.
@@ -14,6 +14,11 @@ pub struct ViewBuffer {
 }
 
 impl ViewBuffer {
+    /// Build a sanitized read-only preview buffer from raw text.
+    pub fn from_render_text(text: &str) -> Self {
+        Self::from_plain(text)
+    }
+
     /// Build from pre-highlighted lines (from syntect).
     pub fn from_highlighted(lines: Vec<HighlightedLine>) -> Self {
         let total_lines = lines.len();
@@ -26,6 +31,7 @@ impl ViewBuffer {
 
     /// Build from plain text — each line becomes a single unstyled token.
     pub fn from_plain(text: &str) -> Self {
+        let text = normalize_preview_text(text);
         let lines: Vec<HighlightedLine> = text
             .lines()
             .map(|l| vec![(Color::Reset, Modifier::empty(), l.to_string())])
@@ -77,7 +83,7 @@ mod tests {
     #[test]
     fn from_plain_builds_correct_total() {
         let text = "alpha\nbeta\ngamma";
-        let buf = ViewBuffer::from_plain(text);
+        let buf = ViewBuffer::from_render_text(text);
         assert_eq!(buf.total_lines, 3);
         assert_eq!(buf.scroll_row, 0);
         assert_eq!(buf.lines.len(), 3);
@@ -87,6 +93,26 @@ mod tests {
         assert_eq!(token.0, Color::Reset);
         assert_eq!(token.1, Modifier::empty());
         assert_eq!(token.2, "beta");
+    }
+
+    #[test]
+    fn preview_prep_strips_control_chars_and_preserves_visible_width() {
+        let buf = ViewBuffer::from_plain("alpha\r\nbeta\nchar\tlie\nwide: 測試\u{0007}");
+
+        assert_eq!(buf.lines.len(), 4);
+        assert!(buf
+            .lines
+            .iter()
+            .all(|line| line.iter().all(|token| !token.2.contains('\r'))));
+        assert!(buf
+            .lines
+            .iter()
+            .all(|line| line.iter().all(|token| !token.2.contains('\u{0007}'))));
+        assert_eq!(buf.lines[2][0].2, "char    lie");
+        assert!(buf
+            .lines
+            .iter()
+            .any(|line| line.iter().any(|token| token.2.contains("wide: 測試"))));
     }
 
     #[test]

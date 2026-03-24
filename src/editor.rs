@@ -4,6 +4,14 @@ use std::path::{Path, PathBuf};
 use ropey::Rope;
 use thiserror::Error;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorRenderState {
+    pub visible_start: usize,
+    pub visible_lines: Vec<String>,
+    pub cursor_visible_row: Option<usize>,
+    pub scroll_col: usize,
+}
+
 #[derive(Clone, Debug)]
 pub struct EditorBuffer {
     pub path: Option<PathBuf>,
@@ -226,6 +234,27 @@ impl EditorBuffer {
             self.scroll_col = col;
         } else if viewport_cols > 0 && col >= self.scroll_col + viewport_cols {
             self.scroll_col = col.saturating_sub(viewport_cols) + 1;
+        }
+    }
+
+    pub fn render_state(
+        &mut self,
+        height: usize,
+        viewport_cols: usize,
+        is_active: bool,
+    ) -> EditorRenderState {
+        self.clamp_horizontal_scroll(viewport_cols);
+        let (visible_start, visible_lines) = self.visible_line_window(height);
+
+        EditorRenderState {
+            visible_start,
+            visible_lines,
+            cursor_visible_row: if is_active {
+                Some(self.cursor_line_col().0.saturating_sub(visible_start))
+            } else {
+                None
+            },
+            scroll_col: self.scroll_col,
         }
     }
 

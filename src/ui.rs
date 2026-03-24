@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::action::MenuId;
 use crate::config::{IconMode, ThemePalette};
-use crate::editor::EditorBuffer;
+use crate::editor::{EditorBuffer, EditorRenderState};
 use crate::fs::EntryInfo;
 use crate::fs::EntryKind;
 use crate::icon::icon_for_kind;
@@ -96,10 +96,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
             if let Some(editor) = state.editor_mut() {
-                render_editor(frame, tools_area, editor, true, true, palette);
+                let editor_view = editor_render_state(editor, tools_area, true);
+                render_editor(frame, tools_area, editor, &editor_view, true, palette);
             }
         } else if is_preview_open {
-            let preview_view = state.preview_view().map(|(_, v)| v);
+            let preview_view = state.preview_view().map(|(_, view)| view);
             let filename = state.active_pane_title().to_string();
             render_preview_panel(
                 frame,
@@ -803,6 +804,16 @@ fn render_preview_panel(
     }
 }
 
+fn editor_render_state(
+    editor: &mut EditorBuffer,
+    area: Rect,
+    is_active: bool,
+) -> EditorRenderState {
+    let viewport_cols = area.width.saturating_sub(6) as usize;
+    let viewport_rows = area.height.saturating_sub(2) as usize;
+    editor.render_state(viewport_rows, viewport_cols, is_active)
+}
+
 fn render_item(
     entry: &EntryInfo,
     is_focused: bool,
@@ -1209,8 +1220,8 @@ fn render_editor(
     frame: &mut Frame<'_>,
     area: Rect,
     editor: &mut EditorBuffer,
+    render_state: &EditorRenderState,
     is_focused: bool,
-    is_active: bool,
     palette: ThemePalette,
 ) {
     let border_style = if is_focused {
@@ -1251,13 +1262,9 @@ fn render_editor(
 
     // Derive viewport size from content_area (render_code_view will split it,
     // but we need the content column width to compute scroll clamping).
-    let (visible_start, visible_lines) = editor.visible_line_window(content_area.height as usize);
-    let viewport_cols = content_area.width.saturating_sub(gutter_width) as usize;
-    editor.clamp_horizontal_scroll(viewport_cols);
-    let scroll_col = editor.scroll_col;
-
     // Convert visible lines to HighlightedLine (single plain token per line).
-    let highlighted: Vec<crate::highlight::HighlightedLine> = visible_lines
+    let highlighted: Vec<crate::highlight::HighlightedLine> = render_state
+        .visible_lines
         .iter()
         .map(|line| {
             let text = line.strip_suffix('\n').unwrap_or(line).to_string();
@@ -1269,20 +1276,14 @@ fn render_editor(
         })
         .collect();
 
-    let cursor_visible_row = if is_active {
-        Some(editor.cursor_line_col().0.saturating_sub(visible_start))
-    } else {
-        None
-    };
-
     render_code_view(
         frame,
         content_area,
         &highlighted,
-        visible_start + 1, // 1-based
+        render_state.visible_start + 1, // 1-based
         gutter_width,
-        scroll_col,
-        cursor_visible_row,
+        render_state.scroll_col,
+        render_state.cursor_visible_row,
         palette,
     );
 
@@ -1310,14 +1311,14 @@ fn render_editor(
     }
 
     // Set terminal cursor position for blinking cursor.
-    if is_active {
+    if render_state.cursor_visible_row.is_some() {
         let (line, column) = editor.cursor_line_col();
-        let visible_line = line.saturating_sub(visible_start);
+        let visible_line = line.saturating_sub(render_state.visible_start);
         // gutter_width columns are reserved; content starts at content_area.x + gutter_width.
         let content_x = content_area.x + gutter_width;
         let cursor_y =
             content_area.y + (visible_line as u16).min(content_area.height.saturating_sub(1));
-        let visible_col = column.saturating_sub(scroll_col);
+        let visible_col = column.saturating_sub(render_state.scroll_col);
         let cursor_x = content_x
             + (visible_col as u16).min(content_area.width.saturating_sub(gutter_width + 1));
         frame.set_cursor_position((cursor_x, cursor_y));
@@ -1373,9 +1374,12 @@ mod tests {
         overlay_title_style, pane_chrome_style, top_bar_logo_spans,
     };
     use crate::config::{IconMode, ThemePalette};
+    use crate::editor::EditorBuffer;
     use crate::fs::EntryKind;
     use crate::icon::icon_for_kind;
     use crate::palette::all_entries;
+    use crate::preview::ViewBuffer;
+    use ratatui::layout::Rect;
     use ratatui::style::Color;
 
     fn test_palette() -> ThemePalette {
@@ -1511,5 +1515,28 @@ mod tests {
         assert_eq!(label_style.fg, Some(Color::Rgb(80, 81, 82)));
         assert_eq!(hint_style.fg, Some(Color::Rgb(210, 211, 212)));
         assert_eq!(entry.hint, "Enter");
+    }
+
+    #[test]
+    fn preview_and_editor_paths_use_different_view_states() {
+        fn accepts_preview_input(_: &ViewBuffer) -> usize {
+            0
+        }
+
+        fn accepts_editor_input(_: &crate::editor::EditorRenderState) -> usize {
+            1
+        }
+
+        let preview_view = ViewBuffer::from_render_text("alpha\nbeta");
+        let mut editor = EditorBuffer::default();
+        editor.insert_char('x');
+        let editor_state = editor_render_state(&mut editor, Rect::new(0, 0, 20, 8), true);
+
+        assert_eq!(preview_view.total_lines, 2);
+        assert_eq!(accepts_preview_input(&preview_view), 0);
+        assert_eq!(accepts_editor_input(&editor_state), 1);
+        assert_eq!(editor_state.visible_start, 0);
+        assert_eq!(editor_state.cursor_visible_row, Some(0));
+        assert_eq!(editor_state.scroll_col, 0);
     }
 }
