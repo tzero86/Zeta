@@ -616,16 +616,16 @@ fn render_pane(
 /// - `scroll_col`: horizontal scroll offset in chars
 /// - `cursor_row`: if Some(r), highlight that row with selection_bg (editor cursor)
 /// - `palette`: theme colours
-fn render_code_view(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    lines: &[crate::highlight::HighlightedLine],
+struct CodeViewRenderArgs<'a> {
+    lines: &'a [crate::highlight::HighlightedLine],
     first_line_number: usize,
     gutter_width: u16,
     scroll_col: usize,
     cursor_row: Option<usize>,
     palette: ThemePalette,
-) {
+}
+
+fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderArgs<'_>) {
     if area.height == 0 || area.width == 0 {
         return;
     }
@@ -633,13 +633,13 @@ fn render_code_view(
     // Split area into gutter | content horizontally.
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(gutter_width), Constraint::Min(1)])
+        .constraints([Constraint::Length(args.gutter_width), Constraint::Min(1)])
         .split(area);
     let gutter_area = chunks[0];
     let content_area = chunks[1];
     let viewport_cols = content_area.width as usize;
 
-    let blank_style = Style::default().bg(palette.surface_bg);
+    let blank_style = Style::default().bg(args.palette.surface_bg);
 
     for row_idx in 0..area.height as usize {
         let y = area.y + row_idx as u16;
@@ -662,18 +662,18 @@ fn render_code_view(
         frame.render_widget(Paragraph::new(" ").style(blank_style), content_rect);
     }
 
-    for (row_idx, line_tokens) in lines.iter().enumerate() {
+    for (row_idx, line_tokens) in args.lines.iter().enumerate() {
         let y = area.y + row_idx as u16;
         if y >= area.y + area.height {
             break;
         }
 
         // Gutter: right-aligned line number.
-        let line_num = first_line_number + row_idx;
+        let line_num = args.first_line_number + row_idx;
         let gutter_text = format!(
             "{:>width$} ",
             line_num,
-            width = (gutter_width as usize).saturating_sub(2)
+            width = (args.gutter_width as usize).saturating_sub(2)
         );
         let gutter_rect = Rect {
             x: gutter_area.x,
@@ -682,8 +682,8 @@ fn render_code_view(
             height: 1,
         };
         let gutter_style = Style::default()
-            .fg(palette.text_muted)
-            .bg(palette.surface_bg);
+            .fg(args.palette.text_muted)
+            .bg(args.palette.surface_bg);
         frame.render_widget(Paragraph::new(gutter_text).style(gutter_style), gutter_rect);
 
         // Content row.
@@ -693,10 +693,10 @@ fn render_code_view(
             width: content_area.width,
             height: 1,
         };
-        let row_bg = if cursor_row == Some(row_idx) {
-            Style::default().bg(palette.selection_bg)
+        let row_bg = if args.cursor_row == Some(row_idx) {
+            Style::default().bg(args.palette.selection_bg)
         } else {
-            Style::default().bg(palette.surface_bg)
+            Style::default().bg(args.palette.surface_bg)
         };
 
         // Build spans, applying horizontal scroll and column truncation.
@@ -713,11 +713,11 @@ fn render_code_view(
             let token_end = raw_cols + token_width;
             raw_cols = token_end;
 
-            if token_end <= scroll_col {
+            if token_end <= args.scroll_col {
                 continue;
             }
 
-            let skip = scroll_col.saturating_sub(token_start);
+            let skip = args.scroll_col.saturating_sub(token_start);
             let mut visible_chars = String::new();
             let mut skipped = 0usize;
             let mut used_width = 0usize;
@@ -751,6 +751,168 @@ fn render_code_view(
 
         let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line).style(row_bg), content_rect);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WrappedPreviewRow {
+    line_number: usize,
+    line_tokens: crate::highlight::HighlightedLine,
+}
+
+fn wrap_preview_line(
+    line_number: usize,
+    line_tokens: &crate::highlight::HighlightedLine,
+    viewport_cols: usize,
+) -> Vec<WrappedPreviewRow> {
+    if viewport_cols == 0 {
+        return vec![];
+    }
+
+    let mut rows: Vec<WrappedPreviewRow> = Vec::new();
+    let mut current_row: crate::highlight::HighlightedLine = Vec::new();
+    let mut current_width = 0usize;
+
+    for (color, modifier, text) in line_tokens {
+        let mut chunk = String::new();
+
+        for ch in text.chars() {
+            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+
+            if current_width > 0 && current_width + ch_width > viewport_cols {
+                if !chunk.is_empty() {
+                    current_row.push((*color, *modifier, std::mem::take(&mut chunk)));
+                }
+                rows.push(WrappedPreviewRow {
+                    line_number,
+                    line_tokens: std::mem::take(&mut current_row),
+                });
+                current_width = 0;
+            }
+
+            chunk.push(ch);
+            current_width += ch_width;
+
+            if current_width >= viewport_cols {
+                current_row.push((*color, *modifier, std::mem::take(&mut chunk)));
+                rows.push(WrappedPreviewRow {
+                    line_number,
+                    line_tokens: std::mem::take(&mut current_row),
+                });
+                current_width = 0;
+            }
+        }
+
+        if !chunk.is_empty() {
+            current_row.push((*color, *modifier, chunk));
+        }
+    }
+
+    if !current_row.is_empty() {
+        rows.push(WrappedPreviewRow {
+            line_number,
+            line_tokens: current_row,
+        });
+    }
+
+    if rows.is_empty() {
+        rows.push(WrappedPreviewRow {
+            line_number,
+            line_tokens: vec![],
+        });
+    }
+
+    rows
+}
+
+fn render_wrapped_preview_view(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    lines: &[crate::highlight::HighlightedLine],
+    first_line_number: usize,
+    palette: ThemePalette,
+) {
+    if area.height == 0 || area.width == 0 {
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(6), Constraint::Min(1)])
+        .split(area);
+    let gutter_area = chunks[0];
+    let content_area = chunks[1];
+
+    let blank_style = Style::default().bg(palette.tools_bg);
+    for row_idx in 0..area.height as usize {
+        let y = area.y + row_idx as u16;
+        let gutter_rect = Rect {
+            x: gutter_area.x,
+            y,
+            width: gutter_area.width,
+            height: 1,
+        };
+        let content_rect = Rect {
+            x: content_area.x,
+            y,
+            width: content_area.width,
+            height: 1,
+        };
+        frame.render_widget(Paragraph::new(" ").style(blank_style), gutter_rect);
+        frame.render_widget(Paragraph::new(" ").style(blank_style), content_rect);
+    }
+
+    let mut visual_row = 0usize;
+    for (source_idx, line_tokens) in lines.iter().enumerate() {
+        let wrapped_rows = wrap_preview_line(
+            first_line_number + source_idx,
+            line_tokens,
+            content_area.width as usize,
+        );
+        for row in wrapped_rows {
+            let y = area.y + visual_row as u16;
+            if y >= area.y + area.height {
+                return;
+            }
+
+            let gutter_text = format!("{:>4} ", row.line_number);
+            let gutter_rect = Rect {
+                x: gutter_area.x,
+                y,
+                width: gutter_area.width,
+                height: 1,
+            };
+            frame.render_widget(
+                Paragraph::new(gutter_text).style(
+                    Style::default()
+                        .fg(palette.text_muted)
+                        .bg(palette.surface_bg),
+                ),
+                gutter_rect,
+            );
+
+            let content_rect = Rect {
+                x: content_area.x,
+                y,
+                width: content_area.width,
+                height: 1,
+            };
+            let spans: Vec<Span> = row
+                .line_tokens
+                .iter()
+                .map(|(color, modifier, text)| {
+                    Span::styled(
+                        text.clone(),
+                        Style::default().fg(*color).add_modifier(*modifier),
+                    )
+                })
+                .collect();
+            frame.render_widget(
+                Paragraph::new(Line::from(spans)).style(Style::default().bg(palette.surface_bg)),
+                content_rect,
+            );
+            visual_row += 1;
+        }
     }
 }
 
@@ -790,16 +952,7 @@ fn render_preview_panel(
             if window.is_empty() {
                 return;
             }
-            render_code_view(
-                frame,
-                inner,
-                window,
-                first_line_num + 1,
-                5,
-                0,
-                None,
-                palette,
-            );
+            render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
         }
     }
 }
@@ -1260,8 +1413,6 @@ fn render_editor(
     // Gutter width: enough for 5-digit line numbers + 1 space separator.
     let gutter_width = 6u16;
 
-    // Derive viewport size from content_area (render_code_view will split it,
-    // but we need the content column width to compute scroll clamping).
     // Convert visible lines to HighlightedLine (single plain token per line).
     let highlighted: Vec<crate::highlight::HighlightedLine> = render_state
         .visible_lines
@@ -1279,12 +1430,14 @@ fn render_editor(
     render_code_view(
         frame,
         content_area,
-        &highlighted,
-        render_state.visible_start + 1, // 1-based
-        gutter_width,
-        render_state.scroll_col,
-        render_state.cursor_visible_row,
-        palette,
+        CodeViewRenderArgs {
+            lines: &highlighted,
+            first_line_number: render_state.visible_start + 1, // 1-based
+            gutter_width,
+            scroll_col: render_state.scroll_col,
+            cursor_row: render_state.cursor_visible_row,
+            palette,
+        },
     );
 
     // Render the inline search bar when active.
@@ -1370,8 +1523,8 @@ fn command_palette_entry_hint_style(palette: ThemePalette) -> Style {
 mod tests {
     use super::{
         command_palette_entry_hint_style, command_palette_entry_label_style,
-        command_palette_header_style, elevated_surface_style, format_icon_slot,
-        overlay_title_style, pane_chrome_style, top_bar_logo_spans,
+        command_palette_header_style, editor_render_state, elevated_surface_style,
+        format_icon_slot, overlay_title_style, pane_chrome_style, top_bar_logo_spans,
     };
     use crate::config::{IconMode, ThemePalette};
     use crate::editor::EditorBuffer;
@@ -1380,7 +1533,7 @@ mod tests {
     use crate::palette::all_entries;
     use crate::preview::ViewBuffer;
     use ratatui::layout::Rect;
-    use ratatui::style::Color;
+    use ratatui::style::{Color, Modifier};
 
     fn test_palette() -> ThemePalette {
         ThemePalette {
@@ -1538,5 +1691,20 @@ mod tests {
         assert_eq!(editor_state.visible_start, 0);
         assert_eq!(editor_state.cursor_visible_row, Some(0));
         assert_eq!(editor_state.scroll_col, 0);
+    }
+    #[test]
+    fn preview_wraps_long_lines_into_multiple_visual_rows() {
+        let line = vec![(
+            Color::Rgb(200, 200, 200),
+            Modifier::empty(),
+            String::from("abcdefghij"),
+        )];
+
+        let wrapped = super::wrap_preview_line(1, &line, 4);
+
+        assert!(
+            wrapped.len() > 1,
+            "expected long line to wrap into multiple rows"
+        );
     }
 }
