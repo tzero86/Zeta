@@ -634,6 +634,13 @@ fn render_preview_panel(
     let max_cols = inner.width as usize;
     let visible_height = inner.height as usize;
 
+    // Paint a solid background over the entire inner area first so no cell
+    // from a previous frame bleeds through when content is shorter than the panel.
+    let clear_lines: Vec<Line> = (0..visible_height)
+        .map(|_| Line::from(Span::raw(" ".repeat(max_cols))))
+        .collect();
+    frame.render_widget(Paragraph::new(clear_lines).style(surface), inner);
+
     // Handle the highlighted variant first — it renders a styled paragraph and
     // returns early so the plain-text path below does not run.
     if let Some(PreviewContent::Highlighted(lines)) = content {
@@ -673,10 +680,7 @@ fn render_preview_panel(
             lines[start..]
                 .iter()
                 .take(visible_height)
-                .map(|line| {
-                    // Hard-truncate to panel width so ratatui never wraps.
-                    line.chars().take(max_cols).collect::<String>()
-                })
+                .map(|line| line.chars().take(max_cols).collect::<String>())
                 .collect::<Vec<_>>()
                 .join("\n")
         }
