@@ -381,10 +381,10 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
     };
 
     let block = Block::default()
-        .title(prompt.title)
+        .title(Span::styled(prompt.title, overlay_title_style(palette)))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
-        .style(Style::default().bg(palette.prompt_bg));
+        .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
@@ -416,7 +416,7 @@ fn render_prompt(frame: &mut Frame<'_>, area: Rect, prompt: &PromptState, palett
     let paragraph = Paragraph::new(body)
         .style(
             Style::default()
-                .bg(palette.prompt_bg)
+                .bg(palette.tools_bg)
                 .fg(palette.text_primary),
         )
         .wrap(Wrap { trim: false });
@@ -436,10 +436,10 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
     };
 
     let block = Block::default()
-        .title(dialog.title)
+        .title(Span::styled(dialog.title, overlay_title_style(palette)))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
-        .style(Style::default().bg(palette.prompt_bg));
+        .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
@@ -465,12 +465,7 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
                 let indent = " ".repeat(indent_len);
                 Line::from(vec![
                     Span::raw(indent),
-                    Span::styled(
-                        key_part.to_string(),
-                        Style::default()
-                            .fg(palette.key_hint_fg)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(key_part.to_string(), overlay_key_hint_style(palette)),
                     Span::raw("  "),
                     Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
                 ])
@@ -492,7 +487,7 @@ fn render_dialog(frame: &mut Frame<'_>, area: Rect, dialog: &DialogState, palett
         })
         .collect();
 
-    let paragraph = Paragraph::new(styled_lines).style(Style::default().bg(palette.prompt_bg));
+    let paragraph = Paragraph::new(styled_lines).style(elevated_surface_style(palette));
     frame.render_widget(paragraph, inner);
 }
 
@@ -900,14 +895,17 @@ fn render_command_palette(
     };
 
     let block = Block::default()
-        .title(" Command Palette ")
+        .title(Span::styled(
+            " Command Palette ",
+            overlay_title_style(palette),
+        ))
         .borders(Borders::ALL)
         .border_style(
             Style::default()
                 .fg(palette.border_focus)
                 .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().bg(palette.prompt_bg));
+        .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
@@ -927,15 +925,13 @@ fn render_command_palette(
     let input = Paragraph::new(input_line).style(
         Style::default()
             .fg(palette.text_primary)
+            .bg(palette.tools_bg)
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(input, chunks[0]);
 
-    let footer = Paragraph::new("Type to filter • Enter to run • Esc to close").style(
-        Style::default()
-            .fg(palette.text_muted)
-            .add_modifier(Modifier::BOLD),
-    );
+    let footer = Paragraph::new("Type to filter • Enter to run • Esc to close")
+        .style(overlay_footer_style(palette));
     frame.render_widget(footer, chunks[2]);
 
     // Results list.
@@ -988,21 +984,12 @@ fn render_command_palette(
         .map(|(row_index, row)| match row {
             Row::Header(category) => ListItem::new(Line::from(Span::styled(
                 format!(" {category}"),
-                Style::default()
-                    .fg(palette.text_muted)
-                    .add_modifier(Modifier::BOLD),
+                command_palette_header_style(palette),
             ))),
             Row::Entry(entry) => {
                 let is_selected = row_index == selected_row_index;
-                let label_style = if is_selected {
-                    Style::default()
-                        .fg(palette.selection_fg)
-                        .bg(palette.selection_bg)
-                        .add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(palette.text_primary)
-                };
-                let hint_style = Style::default().fg(palette.key_hint_fg);
+                let label_style = command_palette_entry_label_style(is_selected, palette);
+                let hint_style = command_palette_entry_hint_style(palette);
 
                 let hint = entry.hint;
                 // Use inner.width (excludes borders) so the row fits exactly.
@@ -1023,7 +1010,7 @@ fn render_command_palette(
         })
         .collect();
 
-    let list = List::new(items).style(Style::default().bg(palette.prompt_bg));
+    let list = List::new(items).style(elevated_surface_style(palette));
     frame.render_widget(list, chunks[1]);
 }
 
@@ -1049,14 +1036,14 @@ fn render_settings_panel(
     };
 
     let block = Block::default()
-        .title(" Settings ")
+        .title(Span::styled(" Settings ", overlay_title_style(palette)))
         .borders(Borders::ALL)
         .border_style(
             Style::default()
                 .fg(palette.border_focus)
                 .add_modifier(Modifier::BOLD),
         )
-        .style(Style::default().bg(palette.prompt_bg));
+        .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
@@ -1064,7 +1051,7 @@ fn render_settings_panel(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2),
+            Constraint::Length(3),
             Constraint::Min(1),
             Constraint::Length(1),
         ])
@@ -1072,7 +1059,7 @@ fn render_settings_panel(
 
     let intro =
         Paragraph::new("Enter/Space toggles • Esc closes • future keymap controls reserved")
-            .style(Style::default().fg(palette.text_muted));
+            .style(overlay_footer_style(palette));
     frame.render_widget(intro, chunks[0]);
 
     let rows: Vec<ListItem<'_>> = entries
@@ -1104,10 +1091,14 @@ fn render_settings_panel(
     list_state.select(Some(
         settings.selection.min(entries.len().saturating_sub(1)),
     ));
-    frame.render_stateful_widget(List::new(rows), chunks[1], &mut list_state);
+    frame.render_stateful_widget(
+        List::new(rows).style(elevated_surface_style(palette)),
+        chunks[1],
+        &mut list_state,
+    );
 
     let footer = Paragraph::new("Ctrl+O opens settings • theme, icons, preview, layout")
-        .style(Style::default().fg(palette.text_muted));
+        .style(overlay_footer_style(palette));
     frame.render_widget(footer, chunks[2]);
 }
 
@@ -1241,11 +1232,57 @@ fn render_editor(
     }
 }
 
+fn elevated_surface_style(palette: ThemePalette) -> Style {
+    Style::default().bg(palette.tools_bg)
+}
+
+fn overlay_title_style(palette: ThemePalette) -> Style {
+    Style::default()
+        .fg(palette.menu_mnemonic_fg)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn overlay_key_hint_style(palette: ThemePalette) -> Style {
+    Style::default()
+        .fg(palette.key_hint_fg)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn overlay_footer_style(palette: ThemePalette) -> Style {
+    Style::default().fg(palette.text_muted)
+}
+
+fn command_palette_header_style(palette: ThemePalette) -> Style {
+    Style::default()
+        .fg(palette.text_muted)
+        .add_modifier(Modifier::BOLD)
+}
+
+fn command_palette_entry_label_style(is_selected: bool, palette: ThemePalette) -> Style {
+    if is_selected {
+        Style::default()
+            .fg(palette.selection_fg)
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(palette.text_primary)
+    }
+}
+
+fn command_palette_entry_hint_style(palette: ThemePalette) -> Style {
+    Style::default().fg(palette.key_hint_fg)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{format_icon_slot, get_entry_icon, pane_chrome_style, top_bar_logo_spans};
+    use super::{
+        command_palette_entry_hint_style, command_palette_entry_label_style,
+        command_palette_header_style, elevated_surface_style, format_icon_slot, get_entry_icon,
+        overlay_title_style, pane_chrome_style, top_bar_logo_spans,
+    };
     use crate::config::{IconMode, ThemePalette};
     use crate::fs::EntryKind;
+    use crate::palette::all_entries;
     use ratatui::style::Color;
 
     fn test_palette() -> ThemePalette {
@@ -1326,5 +1363,38 @@ mod tests {
         assert_eq!(chrome.border.fg, Some(Color::Rgb(140, 141, 142)));
         assert_eq!(chrome.title.fg, Some(Color::Rgb(140, 141, 142)));
         assert_eq!(chrome.surface.bg, Some(Color::Rgb(100, 101, 102)));
+    }
+
+    #[test]
+    fn elevated_overlays_use_tools_surface() {
+        let style = elevated_surface_style(test_palette());
+
+        assert_eq!(style.bg, Some(Color::Rgb(100, 101, 102)));
+    }
+
+    #[test]
+    fn overlay_titles_keep_accent_styling() {
+        let style = overlay_title_style(test_palette());
+
+        assert_eq!(style.fg, Some(Color::Rgb(40, 41, 42)));
+        assert!(style.add_modifier.contains(ratatui::style::Modifier::BOLD));
+    }
+
+    #[test]
+    fn command_palette_rows_keep_category_and_hint_emphasis() {
+        let entries = all_entries();
+        let entry = entries
+            .iter()
+            .find(|entry| entry.category == "Navigation" && entry.label == "Open / enter selection")
+            .expect("expected navigation entry");
+
+        let category_style = command_palette_header_style(test_palette());
+        let label_style = command_palette_entry_label_style(true, test_palette());
+        let hint_style = command_palette_entry_hint_style(test_palette());
+
+        assert_eq!(category_style.fg, Some(Color::Rgb(140, 141, 142)));
+        assert_eq!(label_style.fg, Some(Color::Rgb(80, 81, 82)));
+        assert_eq!(hint_style.fg, Some(Color::Rgb(210, 211, 212)));
+        assert_eq!(entry.hint, "Enter");
     }
 }
