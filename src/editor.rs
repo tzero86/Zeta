@@ -1,10 +1,11 @@
 use std::fs as std_fs;
 use std::path::{Path, PathBuf};
 
+use ratatui::style::{Color, Modifier};
 use ropey::Rope;
 use thiserror::Error;
 
-use crate::highlight::normalize_preview_text;
+use crate::highlight::{highlight_text, normalize_preview_text, HighlightedLine};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditorRenderState {
@@ -137,6 +138,35 @@ impl EditorBuffer {
             .map(|line| normalize_preview_text(&line.to_string()))
             .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
             .collect()
+    }
+
+    pub fn visible_highlighted_window(
+        &self,
+        height: usize,
+        syntect_theme: &str,
+        fallback_color: Color,
+    ) -> (usize, Vec<HighlightedLine>) {
+        if height == 0 {
+            return (0, Vec::new());
+        }
+
+        let (start, visible_plain_lines) = self.visible_line_window(height);
+        let text = normalize_preview_text(&self.contents());
+        let extension = self
+            .path
+            .as_ref()
+            .and_then(|path| path.extension())
+            .and_then(|ext| ext.to_str());
+
+        let lines = match highlight_text(&text, extension, syntect_theme) {
+            Some(lines) => lines.into_iter().skip(start).take(height).collect(),
+            None => visible_plain_lines
+                .into_iter()
+                .map(|line| vec![(fallback_color, Modifier::empty(), line)])
+                .collect(),
+        };
+
+        (start, lines)
     }
 
     pub fn visible_line_window(&self, height: usize) -> (usize, Vec<String>) {

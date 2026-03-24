@@ -95,9 +95,18 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     // Tools panel — editor takes priority over preview when both could be shown.
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
+            let syntect_theme = state.theme().palette.syntect_theme;
             if let Some(editor) = state.editor_mut() {
                 let editor_view = editor_render_state(editor, tools_area, true);
-                render_editor(frame, tools_area, editor, &editor_view, true, palette);
+                render_editor(
+                    frame,
+                    tools_area,
+                    editor,
+                    &editor_view,
+                    true,
+                    palette,
+                    syntect_theme,
+                );
             }
         } else if is_preview_open {
             let preview_view = state.preview_view().map(|(_, view)| view);
@@ -975,6 +984,16 @@ fn editor_render_state(
     editor.render_state(viewport_rows, viewport_cols, is_active)
 }
 
+fn editor_highlighted_render_state(
+    editor: &EditorBuffer,
+    area: Rect,
+    syntect_theme: &str,
+    palette: ThemePalette,
+) -> (usize, Vec<crate::highlight::HighlightedLine>) {
+    let height = area.height.saturating_sub(2) as usize;
+    editor.visible_highlighted_window(height, syntect_theme, palette.text_primary)
+}
+
 fn render_item(
     entry: &EntryInfo,
     is_focused: bool,
@@ -1384,6 +1403,7 @@ fn render_editor(
     render_state: &EditorRenderState,
     is_focused: bool,
     palette: ThemePalette,
+    syntect_theme: &str,
 ) {
     let border_style = if is_focused {
         Style::default()
@@ -1421,29 +1441,15 @@ fn render_editor(
     // Gutter width: enough for 5-digit line numbers + 1 space separator.
     let gutter_width = 6u16;
 
-    // Convert visible lines to HighlightedLine (single plain token per line).
-    let highlighted: Vec<crate::highlight::HighlightedLine> = render_state
-        .visible_lines
-        .iter()
-        .map(|line| {
-            let text = crate::highlight::normalize_preview_text(line)
-                .strip_suffix('\n')
-                .unwrap_or(line)
-                .to_string();
-            vec![(
-                palette.text_primary,
-                ratatui::style::Modifier::empty(),
-                text,
-            )]
-        })
-        .collect();
+    let (first_line_num, highlighted) =
+        editor_highlighted_render_state(editor, content_area, syntect_theme, palette);
 
     render_code_view(
         frame,
         content_area,
         CodeViewRenderArgs {
             lines: &highlighted,
-            first_line_number: render_state.visible_start + 1, // 1-based
+            first_line_number: first_line_num + 1, // 1-based
             gutter_width,
             scroll_col: render_state.scroll_col,
             cursor_row: render_state.cursor_visible_row,
@@ -1735,5 +1741,23 @@ mod tests {
         assert_eq!(editor_state.visible_lines[0], "alpha");
         assert_eq!(editor_state.visible_lines[1], "beta");
         assert_eq!(editor_state.visible_lines[2], "char    lie");
+    }
+
+    #[test]
+    fn editor_highlighted_window_uses_python_syntax_colors() {
+        let mut editor = EditorBuffer {
+            path: Some(std::path::PathBuf::from("sample.py")),
+            ..EditorBuffer::default()
+        };
+        editor.insert(0, "def hello():\n    return 1\n");
+
+        let (_start, lines) =
+            editor.visible_highlighted_window(4, "base16-ocean.dark", Color::Rgb(1, 2, 3));
+
+        let first_line = &lines[0];
+        assert!(first_line.iter().any(|(_, _, text)| text.contains("def")));
+        assert!(first_line
+            .iter()
+            .any(|(color, _, text)| text.contains("def") && *color != Color::Rgb(1, 2, 3)));
     }
 }
