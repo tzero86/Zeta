@@ -234,6 +234,7 @@ pub struct ThemePalette {
     pub selection_bg: Color,
     pub selection_fg: Color,
     pub surface_bg: Color,
+    pub tools_bg: Color,
     pub prompt_bg: Color,
     pub prompt_border: Color,
     pub text_primary: Color,
@@ -302,6 +303,7 @@ impl ThemePalette {
             selection_bg: Color::Rgb(47, 58, 66),
             selection_fg: Color::White,
             surface_bg: Color::Rgb(30, 34, 38),
+            tools_bg: Color::Rgb(38, 43, 48),
             prompt_bg: Color::Rgb(24, 27, 30),
             prompt_border: Color::Rgb(212, 196, 168),
             text_primary: Color::White,
@@ -328,6 +330,7 @@ impl ThemePalette {
             selection_bg: Color::Rgb(72, 82, 90),
             selection_fg: Color::White,
             surface_bg: Color::Rgb(36, 33, 29),
+            tools_bg: Color::Rgb(44, 40, 34),
             prompt_bg: Color::Rgb(28, 26, 22),
             prompt_border: Color::Rgb(224, 207, 175),
             text_primary: Color::Rgb(241, 236, 228),
@@ -354,6 +357,7 @@ impl ThemePalette {
             selection_bg: Color::Rgb(61, 67, 79),
             selection_fg: Color::White,
             surface_bg: Color::Rgb(27, 31, 36),
+            tools_bg: Color::Rgb(33, 38, 44),
             prompt_bg: Color::Rgb(20, 24, 28),
             prompt_border: Color::Rgb(189, 178, 166),
             text_primary: Color::Rgb(233, 236, 239),
@@ -491,7 +495,10 @@ mod tests {
 
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    use super::{resolve_config_path_from_env, AppConfig, ConfigSource, IconMode, KeymapConfig};
+    use super::{
+        resolve_config_path_from_env, AppConfig, ConfigSource, IconMode, KeymapConfig, ThemeConfig,
+        ThemePalette,
+    };
     use crate::state::PaneLayout;
 
     #[test]
@@ -641,5 +648,53 @@ mod tests {
         };
 
         assert!(keymap.compile().is_err());
+    }
+
+    fn assert_palette_ladder(palette: ThemePalette) {
+        assert_ne!(palette.surface_bg, palette.tools_bg);
+        assert_ne!(palette.surface_bg, palette.prompt_bg);
+        assert_ne!(palette.surface_bg, palette.status_bg);
+        assert_ne!(palette.tools_bg, palette.prompt_bg);
+        assert_ne!(palette.tools_bg, palette.status_bg);
+        assert_ne!(palette.prompt_bg, palette.status_bg);
+
+        assert_ne!(palette.logo_accent, palette.selection_bg);
+        assert_ne!(palette.logo_accent, palette.selection_fg);
+        assert_ne!(palette.selection_bg, palette.selection_fg);
+
+        assert_ne!(palette.text_primary, palette.text_muted);
+    }
+
+    #[test]
+    fn fjord_palette_exposes_distinct_surface_roles() {
+        let palette = ThemePalette::resolve(&ThemeConfig {
+            preset: String::from("fjord"),
+            status_bar_label: String::from("Zeta"),
+        })
+        .palette;
+
+        assert_palette_ladder(palette);
+    }
+
+    #[test]
+    fn sandbar_palette_exposes_distinct_surface_roles() {
+        let palette = ThemePalette::resolve(&ThemeConfig {
+            preset: String::from("sandbar"),
+            status_bar_label: String::from("Zeta"),
+        })
+        .palette;
+
+        assert_palette_ladder(palette);
+    }
+
+    #[test]
+    fn oxide_palette_exposes_distinct_surface_roles() {
+        let palette = ThemePalette::resolve(&ThemeConfig {
+            preset: String::from("oxide"),
+            status_bar_label: String::from("Zeta"),
+        })
+        .palette;
+
+        assert_palette_ladder(palette);
     }
 }
