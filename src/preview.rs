@@ -14,6 +14,11 @@ pub struct ViewBuffer {
 }
 
 impl ViewBuffer {
+    /// Build a sanitized read-only preview buffer from raw text.
+    pub fn from_render_text(text: &str) -> Self {
+        Self::from_plain(text)
+    }
+
     /// Build from pre-highlighted lines (from syntect).
     pub fn from_highlighted(lines: Vec<HighlightedLine>) -> Self {
         let total_lines = lines.len();
@@ -77,7 +82,7 @@ mod tests {
     #[test]
     fn from_plain_builds_correct_total() {
         let text = "alpha\nbeta\ngamma";
-        let buf = ViewBuffer::from_plain(text);
+        let buf = ViewBuffer::from_render_text(text);
         assert_eq!(buf.total_lines, 3);
         assert_eq!(buf.scroll_row, 0);
         assert_eq!(buf.lines.len(), 3);
