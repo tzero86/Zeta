@@ -447,17 +447,17 @@ impl AppState {
             Action::CycleFocus => {
                 let preview_available = self.preview_panel_open && self.preview_view.is_some();
                 self.focus = match self.focus {
-                    PaneFocus::Left => PaneFocus::Right,
-                    PaneFocus::Right => {
+                    PaneFocus::Left => {
                         if preview_available {
                             self.status_message = String::from(
                                 "preview panel focused  (Ctrl+W to cycle, Esc to return)",
                             );
                             PaneFocus::Preview
                         } else {
-                            PaneFocus::Left
+                            PaneFocus::Right
                         }
                     }
+                    PaneFocus::Right => PaneFocus::Left,
                     PaneFocus::Preview => {
                         self.status_message = String::from("focus returned to left pane");
                         PaneFocus::Left

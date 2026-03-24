@@ -13,6 +13,7 @@ use crate::icon::icon_for_kind;
 use crate::pane::{PaneId, PaneState};
 use crate::preview::ViewBuffer;
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
+use unicode_width::UnicodeWidthChar;
 
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     let palette = state.theme().palette;
@@ -703,9 +704,12 @@ fn render_code_view(
         let mut visible_cols = 0usize;
         for (color, modifier, text) in line_tokens {
             let token_chars: Vec<char> = text.chars().collect();
-            let token_len = token_chars.len();
             let token_start = raw_cols;
-            let token_end = raw_cols + token_len;
+            let token_width = token_chars
+                .iter()
+                .map(|ch| UnicodeWidthChar::width(*ch).unwrap_or(0))
+                .sum::<usize>();
+            let token_end = raw_cols + token_width;
             raw_cols = token_end;
 
             if token_end <= scroll_col {
@@ -713,13 +717,28 @@ fn render_code_view(
             }
 
             let skip = scroll_col.saturating_sub(token_start);
-            let visible_chars: String = token_chars[skip..].iter().collect();
-            let remaining = viewport_cols.saturating_sub(visible_cols);
-            let truncated: String = visible_chars.chars().take(remaining).collect();
-            if !truncated.is_empty() {
-                visible_cols += truncated.chars().count();
+            let mut visible_chars = String::new();
+            let mut skipped = 0usize;
+            let mut used_width = 0usize;
+            for ch in token_chars.iter().skip_while(|_| {
+                if skipped < skip {
+                    skipped += 1;
+                    true
+                } else {
+                    false
+                }
+            }) {
+                let ch_width = UnicodeWidthChar::width(*ch).unwrap_or(0);
+                if used_width + ch_width > viewport_cols.saturating_sub(visible_cols) {
+                    break;
+                }
+                used_width += ch_width;
+                visible_chars.push(*ch);
+            }
+            if !visible_chars.is_empty() {
+                visible_cols += used_width;
                 spans.push(Span::styled(
-                    truncated,
+                    visible_chars,
                     Style::default().fg(*color).add_modifier(*modifier),
                 ));
             }
