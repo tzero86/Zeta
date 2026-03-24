@@ -60,6 +60,7 @@ pub enum IconMode {
     #[default]
     Unicode,
     Ascii,
+    Custom,
 }
 
 impl AppConfig {
@@ -541,6 +542,26 @@ mod tests {
         let config: AppConfig = toml::from_str(raw).expect("config should parse");
 
         assert_eq!(config.icon_mode, IconMode::Ascii);
+    }
+
+    #[test]
+    fn parses_custom_icon_mode() {
+        let raw = r#"
+            icon_mode = "custom"
+
+            [theme]
+            preset = "fjord"
+            status_bar_label = "Zeta"
+
+            [keymap]
+            quit = "q"
+            switch_pane = "tab"
+            refresh = "r"
+        "#;
+
+        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+
+        assert_eq!(config.icon_mode, IconMode::Custom);
     }
 
     #[test]

@@ -1,4 +1,4 @@
-# Neo-Commander
+# Zeta
 
 ```text
  ____  ________  ____             __               
@@ -12,7 +12,7 @@
  \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
 ```
 
-Neo-Commander is a keyboard-first terminal file manager and lightweight editor written in Rust.
+Zeta is a keyboard-first terminal file manager and lightweight editor written in Rust.
 It aims for a classic Norton Commander workflow with a cleaner modern TUI, low overhead, and fast local filesystem operations.
 
 ## Current Status
@@ -27,6 +27,7 @@ Implemented core features:
 - top menu bar, prompts, and dialogs
 - theme switching
 - Unicode icons by default with ASCII fallback in config
+- optional custom icon mode via bundled font asset
 - in-app settings panel for theme, icons, layout, and preview preferences
 - create, rename, delete, copy, and move flows
 - background jobs for scans and file operations
@@ -70,9 +71,12 @@ Config note:
 ```toml
 # icon_mode = "unicode"  # default
 # icon_mode = "ascii"    # safe fallback for limited terminals
+# icon_mode = "custom"   # requires selecting the bundled icon font in your terminal
 # preview_panel_open = false
 # preview_on_selection = true
 ```
+
+If you enable `custom`, install and select `assets/fonts/zeta-icons.ttf` in your terminal emulator first.
 
 Access settings with `Ctrl+O` or via the View menu / command palette.
 

@@ -9,30 +9,10 @@ use crate::config::{IconMode, ThemePalette};
 use crate::editor::EditorBuffer;
 use crate::fs::EntryInfo;
 use crate::fs::EntryKind;
+use crate::icon::icon_for_kind;
 use crate::jobs::PreviewContent;
 use crate::pane::{PaneId, PaneState};
 use crate::state::{AppState, CollisionState, DialogState, MenuItem, PaneLayout, PromptState};
-
-fn get_entry_icon(kind: EntryKind, icon_mode: IconMode) -> &'static str {
-    match kind {
-        EntryKind::Directory => match icon_mode {
-            IconMode::Unicode => "▣",
-            IconMode::Ascii => kind.ascii_label(),
-        },
-        EntryKind::File => match icon_mode {
-            IconMode::Unicode => "•",
-            IconMode::Ascii => kind.ascii_label(),
-        },
-        EntryKind::Symlink => match icon_mode {
-            IconMode::Unicode => "↗",
-            IconMode::Ascii => kind.ascii_label(),
-        },
-        EntryKind::Other => match icon_mode {
-            IconMode::Unicode => "◦",
-            IconMode::Ascii => kind.ascii_label(),
-        },
-    }
-}
 
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) {
     let palette = state.theme().palette;
@@ -633,6 +613,7 @@ fn render_preview_panel(
     is_focused: bool,
     palette: ThemePalette,
 ) {
+    let surface = Style::default().bg(palette.tools_bg);
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_focus)
@@ -645,7 +626,8 @@ fn render_preview_panel(
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(border_style);
+        .border_style(border_style)
+        .style(surface);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -671,8 +653,7 @@ fn render_preview_panel(
                 )
             })
             .collect();
-        let paragraph =
-            Paragraph::new(styled_lines).style(Style::default().fg(palette.text_primary));
+        let paragraph = Paragraph::new(styled_lines).style(surface.fg(palette.text_primary));
         frame.render_widget(paragraph, inner);
         return;
     }
@@ -696,7 +677,7 @@ fn render_preview_panel(
         None => String::from("[directory — select a file to preview]"),
     };
 
-    let paragraph = Paragraph::new(body).style(Style::default().fg(palette.text_primary));
+    let paragraph = Paragraph::new(body).style(surface.fg(palette.text_primary));
     frame.render_widget(paragraph, inner);
 }
 
@@ -712,7 +693,7 @@ fn render_item(
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };
-    let icon = get_entry_icon(entry.kind, icon_mode);
+    let icon = icon_for_kind(entry.kind, icon_mode);
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = match entry.kind {
         crate::fs::EntryKind::Directory => format!("{}/", entry.name),
@@ -805,7 +786,7 @@ fn pane_row_styles(
 
 fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
     match icon_mode {
-        IconMode::Unicode => format!("{icon}  "),
+        IconMode::Unicode | IconMode::Custom => format!("{icon}  "),
         IconMode::Ascii => icon.to_string(),
     }
 }
@@ -1277,11 +1258,12 @@ fn command_palette_entry_hint_style(palette: ThemePalette) -> Style {
 mod tests {
     use super::{
         command_palette_entry_hint_style, command_palette_entry_label_style,
-        command_palette_header_style, elevated_surface_style, format_icon_slot, get_entry_icon,
+        command_palette_header_style, elevated_surface_style, format_icon_slot,
         overlay_title_style, pane_chrome_style, top_bar_logo_spans,
     };
     use crate::config::{IconMode, ThemePalette};
     use crate::fs::EntryKind;
+    use crate::icon::icon_for_kind;
     use crate::palette::all_entries;
     use ratatui::style::Color;
 
@@ -1314,18 +1296,35 @@ mod tests {
 
     #[test]
     fn unicode_icons_use_glyphs() {
-        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Unicode), "▣");
-        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Unicode), "•");
-        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Unicode), "↗");
-        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Unicode), "◦");
+        assert_eq!(icon_for_kind(EntryKind::Directory, IconMode::Unicode), "▣");
+        assert_eq!(icon_for_kind(EntryKind::File, IconMode::Unicode), "•");
+        assert_eq!(icon_for_kind(EntryKind::Symlink, IconMode::Unicode), "↗");
+        assert_eq!(icon_for_kind(EntryKind::Other, IconMode::Unicode), "◦");
     }
 
     #[test]
     fn ascii_icons_use_labels() {
-        assert_eq!(get_entry_icon(EntryKind::Directory, IconMode::Ascii), "[D]");
-        assert_eq!(get_entry_icon(EntryKind::File, IconMode::Ascii), "[F]");
-        assert_eq!(get_entry_icon(EntryKind::Symlink, IconMode::Ascii), "[L]");
-        assert_eq!(get_entry_icon(EntryKind::Other, IconMode::Ascii), "[?]");
+        assert_eq!(icon_for_kind(EntryKind::Directory, IconMode::Ascii), "[D]");
+        assert_eq!(icon_for_kind(EntryKind::File, IconMode::Ascii), "[F]");
+        assert_eq!(icon_for_kind(EntryKind::Symlink, IconMode::Ascii), "[L]");
+        assert_eq!(icon_for_kind(EntryKind::Other, IconMode::Ascii), "[?]");
+    }
+
+    #[test]
+    fn custom_icons_use_private_use_glyphs() {
+        assert_eq!(
+            icon_for_kind(EntryKind::Directory, IconMode::Custom),
+            "\u{e001}"
+        );
+        assert_eq!(icon_for_kind(EntryKind::File, IconMode::Custom), "\u{e002}");
+        assert_eq!(
+            icon_for_kind(EntryKind::Symlink, IconMode::Custom),
+            "\u{e003}"
+        );
+        assert_eq!(
+            icon_for_kind(EntryKind::Other, IconMode::Custom),
+            "\u{e004}"
+        );
     }
 
     #[test]
@@ -1336,6 +1335,11 @@ mod tests {
     #[test]
     fn ascii_icon_slot_uses_label_width() {
         assert_eq!(format_icon_slot("[D]", IconMode::Ascii), "[D]");
+    }
+
+    #[test]
+    fn custom_icon_slot_reserves_two_columns() {
+        assert_eq!(format_icon_slot("\u{e001}", IconMode::Custom), "\u{e001}  ");
     }
 
     #[test]

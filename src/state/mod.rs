@@ -978,27 +978,37 @@ impl AppState {
                 if self.preview_panel_open && self.editor.is_none() {
                     if self.focus == PaneFocus::Preview {
                         self.focus = PaneFocus::Left;
+                        self.status_message = String::from("preview focus returned to file pane");
                     } else {
                         self.focus = PaneFocus::Preview;
+                        self.status_message = String::from("preview panel focused");
                     }
                     self.needs_redraw = true;
                 }
             }
             Action::ScrollPreviewDown => {
-                self.preview_scroll = self.preview_scroll.saturating_add(1);
-                self.needs_redraw = true;
+                if self.focus == PaneFocus::Preview {
+                    self.preview_scroll = self.preview_scroll.saturating_add(1);
+                    self.needs_redraw = true;
+                }
             }
             Action::ScrollPreviewUp => {
-                self.preview_scroll = self.preview_scroll.saturating_sub(1);
-                self.needs_redraw = true;
+                if self.focus == PaneFocus::Preview {
+                    self.preview_scroll = self.preview_scroll.saturating_sub(1);
+                    self.needs_redraw = true;
+                }
             }
             Action::ScrollPreviewPageDown => {
-                self.preview_scroll = self.preview_scroll.saturating_add(20);
-                self.needs_redraw = true;
+                if self.focus == PaneFocus::Preview {
+                    self.preview_scroll = self.preview_scroll.saturating_add(20);
+                    self.needs_redraw = true;
+                }
             }
             Action::ScrollPreviewPageUp => {
-                self.preview_scroll = self.preview_scroll.saturating_sub(20);
-                self.needs_redraw = true;
+                if self.focus == PaneFocus::Preview {
+                    self.preview_scroll = self.preview_scroll.saturating_sub(20);
+                    self.needs_redraw = true;
+                }
             }
             // After navigation actions, request a preview for the newly selected file.
             Action::MoveSelectionDown
@@ -1185,6 +1195,7 @@ impl AppState {
                 value: match self.icon_mode {
                     IconMode::Unicode => String::from("unicode"),
                     IconMode::Ascii => String::from("ascii"),
+                    IconMode::Custom => String::from("custom"),
                 },
                 hint: "Space",
                 field: SettingsField::IconMode(self.icon_mode),
@@ -1292,12 +1303,14 @@ impl AppState {
                 let next = match current {
                     IconMode::Unicode => IconMode::Ascii,
                     IconMode::Ascii => IconMode::Unicode,
+                    IconMode::Custom => IconMode::Unicode,
                 };
                 self.icon_mode = next;
                 self.config.icon_mode = next;
                 self.status_message = match next {
                     IconMode::Unicode => String::from("icons set to unicode"),
                     IconMode::Ascii => String::from("icons set to ASCII"),
+                    IconMode::Custom => String::from("icons set to custom"),
                 };
                 let _ = self.config.save(Path::new(&self.config_path));
             }
