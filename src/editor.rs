@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use ropey::Rope;
 use thiserror::Error;
 
+use crate::highlight::normalize_preview_text;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EditorRenderState {
     pub visible_start: usize,
@@ -130,7 +132,11 @@ impl EditorBuffer {
     }
 
     pub fn visible_lines(&self) -> Vec<String> {
-        self.text.lines().map(|line| line.to_string()).collect()
+        self.text
+            .lines()
+            .map(|line| normalize_preview_text(&line.to_string()))
+            .map(|line| line.strip_suffix('\n').unwrap_or(&line).to_string())
+            .collect()
     }
 
     pub fn visible_line_window(&self, height: usize) -> (usize, Vec<String>) {

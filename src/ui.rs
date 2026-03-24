@@ -825,6 +825,14 @@ fn wrap_preview_line(
     rows
 }
 
+fn preview_gutter_label(line_number: usize, is_continuation: bool) -> String {
+    if is_continuation {
+        "     ".to_string()
+    } else {
+        format!("{:>4} ", line_number)
+    }
+}
+
 fn render_wrapped_preview_view(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -869,13 +877,13 @@ fn render_wrapped_preview_view(
             line_tokens,
             content_area.width as usize,
         );
-        for row in wrapped_rows {
+        for (wrap_idx, row) in wrapped_rows.into_iter().enumerate() {
             let y = area.y + visual_row as u16;
             if y >= area.y + area.height {
                 return;
             }
 
-            let gutter_text = format!("{:>4} ", row.line_number);
+            let gutter_text = preview_gutter_label(row.line_number, wrap_idx > 0);
             let gutter_rect = Rect {
                 x: gutter_area.x,
                 y,
@@ -1418,7 +1426,10 @@ fn render_editor(
         .visible_lines
         .iter()
         .map(|line| {
-            let text = line.strip_suffix('\n').unwrap_or(line).to_string();
+            let text = crate::highlight::normalize_preview_text(line)
+                .strip_suffix('\n')
+                .unwrap_or(line)
+                .to_string();
             vec![(
                 palette.text_primary,
                 ratatui::style::Modifier::empty(),
@@ -1706,5 +1717,23 @@ mod tests {
             wrapped.len() > 1,
             "expected long line to wrap into multiple rows"
         );
+    }
+
+    #[test]
+    fn preview_gutter_label_blanks_wrapped_continuations() {
+        assert_eq!(super::preview_gutter_label(42, false), "  42 ");
+        assert_eq!(super::preview_gutter_label(42, true), "     ");
+    }
+
+    #[test]
+    fn editor_visible_lines_are_sanitized_for_rendering() {
+        let mut editor = EditorBuffer::default();
+        editor.insert(0, "alpha\r\nbeta\nchar\tlie\u{0007}");
+
+        let editor_state = editor_render_state(&mut editor, Rect::new(0, 0, 24, 6), true);
+
+        assert_eq!(editor_state.visible_lines[0], "alpha");
+        assert_eq!(editor_state.visible_lines[1], "beta");
+        assert_eq!(editor_state.visible_lines[2], "char    lie");
     }
 }
