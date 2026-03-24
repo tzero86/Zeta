@@ -631,26 +631,34 @@ fn render_preview_panel(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let max_cols = inner.width as usize;
+    let visible_height = inner.height as usize;
+
     // Handle the highlighted variant first — it renders a styled paragraph and
     // returns early so the plain-text path below does not run.
     if let Some(PreviewContent::Highlighted(lines)) = content {
-        let visible_height = inner.height as usize;
         let start = scroll.min(lines.len().saturating_sub(1));
         let styled_lines: Vec<Line> = lines[start..]
             .iter()
             .take(visible_height)
             .map(|tokens| {
-                Line::from(
-                    tokens
-                        .iter()
-                        .map(|(color, modifier, text)| {
-                            Span::styled(
-                                text.clone(),
-                                Style::default().fg(*color).add_modifier(*modifier),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                )
+                // Truncate each line to max_cols visible columns to prevent
+                // ratatui from soft-wrapping long lines onto the next row.
+                let mut cols_used = 0usize;
+                let mut spans: Vec<Span> = Vec::new();
+                for (color, modifier, text) in tokens {
+                    if cols_used >= max_cols {
+                        break;
+                    }
+                    let remaining = max_cols - cols_used;
+                    let truncated: String = text.chars().take(remaining).collect();
+                    cols_used += truncated.chars().count();
+                    spans.push(Span::styled(
+                        truncated,
+                        Style::default().fg(*color).add_modifier(*modifier),
+                    ));
+                }
+                Line::from(spans)
             })
             .collect();
         let paragraph = Paragraph::new(styled_lines).style(surface.fg(palette.text_primary));
@@ -661,12 +669,14 @@ fn render_preview_panel(
     let body = match content {
         Some(PreviewContent::Text(t)) => {
             let lines: Vec<&str> = t.lines().collect();
-            let visible_height = inner.height as usize;
             let start = scroll.min(lines.len().saturating_sub(1));
             lines[start..]
                 .iter()
                 .take(visible_height)
-                .cloned()
+                .map(|line| {
+                    // Hard-truncate to panel width so ratatui never wraps.
+                    line.chars().take(max_cols).collect::<String>()
+                })
                 .collect::<Vec<_>>()
                 .join("\n")
         }
