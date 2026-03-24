@@ -446,6 +446,27 @@ impl AppState {
                 };
                 self.needs_redraw = true;
             }
+            Action::CycleFocus => {
+                let preview_available = self.preview_panel_open && self.preview.is_some();
+                self.focus = match self.focus {
+                    PaneFocus::Left => PaneFocus::Right,
+                    PaneFocus::Right => {
+                        if preview_available {
+                            self.status_message = String::from(
+                                "preview panel focused  (Ctrl+W to cycle, Esc to return)",
+                            );
+                            PaneFocus::Preview
+                        } else {
+                            PaneFocus::Left
+                        }
+                    }
+                    PaneFocus::Preview => {
+                        self.status_message = String::from("focus returned to left pane");
+                        PaneFocus::Left
+                    }
+                };
+                self.needs_redraw = true;
+            }
             Action::MoveSelectionDown => {
                 self.active_pane_mut().move_selection_down();
                 self.needs_redraw = true;
@@ -975,7 +996,7 @@ impl AppState {
                 commands.push(Command::PreviewFile { path: path.clone() });
             }
             Action::FocusPreviewPanel => {
-                if self.preview_panel_open && self.editor.is_none() {
+                if self.preview_panel_open {
                     if self.focus == PaneFocus::Preview {
                         self.focus = PaneFocus::Left;
                         self.status_message = String::from("preview focus returned to file pane");
@@ -2114,6 +2135,19 @@ mod tests {
         let dialog = state.dialog.as_ref().expect("dialog should exist");
         assert_eq!(dialog.title, "About Zeta");
         assert!(dialog.lines.iter().any(|line| line.contains("sandbar")));
+    }
+
+    #[test]
+    fn focus_preview_panel_toggles_even_when_editor_exists() {
+        let mut state = test_state();
+        state.preview_panel_open = true;
+        state.editor = Some(EditorBuffer::default());
+
+        state
+            .apply(Action::FocusPreviewPanel)
+            .expect("focus preview should succeed");
+
+        assert_eq!(state.focus, PaneFocus::Preview);
     }
 
     #[test]

@@ -114,6 +114,7 @@ impl App {
                         is_dialog_open: self.state.is_dialog_open(),
                         is_menu_open: self.state.is_menu_open(),
                         is_editor_focused: self.state.is_editor_focused(),
+                        is_preview_open: self.state.is_preview_panel_open(),
                         is_preview_focused: self.state.is_preview_focused(),
                         is_palette_open: self.state.is_palette_open(),
                         is_settings_open: self.state.is_settings_open(),
@@ -199,6 +200,7 @@ struct RouteContext {
     is_dialog_open: bool,
     is_menu_open: bool,
     is_editor_focused: bool,
+    is_preview_open: bool,
     is_preview_focused: bool,
     is_palette_open: bool,
     is_settings_open: bool,
@@ -234,6 +236,13 @@ fn route_key_event(
 
     if context.is_menu_open {
         return Action::from_menu_key_event(key_event);
+    }
+
+    if context.is_preview_open
+        && key_event.code == crossterm::event::KeyCode::F(3)
+        && key_event.modifiers == crossterm::event::KeyModifiers::ALT
+    {
+        return Some(Action::FocusPreviewPanel);
     }
 
     if context.is_editor_focused {
@@ -318,6 +327,7 @@ mod tests {
                 is_dialog_open: false,
                 is_menu_open: false,
                 is_editor_focused: true,
+                is_preview_open: false,
                 is_preview_focused: false,
                 is_palette_open: false,
                 is_settings_open: false,
@@ -340,6 +350,7 @@ mod tests {
                 is_dialog_open: false,
                 is_menu_open: false,
                 is_editor_focused: true,
+                is_preview_open: false,
                 is_preview_focused: false,
                 is_palette_open: false,
                 is_settings_open: false,
@@ -362,6 +373,7 @@ mod tests {
                 is_dialog_open: false,
                 is_menu_open: false,
                 is_editor_focused: true,
+                is_preview_open: false,
                 is_preview_focused: false,
                 is_palette_open: true,
                 is_settings_open: false,

@@ -177,9 +177,9 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "Preview",
-            label: "Focus preview panel",
-            hint: "Shift+F3",
-            action: Action::FocusPreviewPanel,
+            label: "Cycle focus (left / right / preview)",
+            hint: "Ctrl+W",
+            action: Action::CycleFocus,
         },
         // View / Layout
         PaletteEntry {

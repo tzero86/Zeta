@@ -40,6 +40,7 @@ pub enum Action {
     EditorSearchNext,
     EditorSearchPrev,
     FocusNextPane,
+    CycleFocus,
     FocusPreviewPanel,
     ScrollPreviewDown,
     ScrollPreviewUp,
@@ -226,8 +227,8 @@ impl Action {
                 KeyCode::PageUp => Some(Self::ScrollPreviewPageUp),
                 KeyCode::PageDown => Some(Self::ScrollPreviewPageDown),
                 KeyCode::Esc => Some(Self::FocusPreviewPanel),
-                KeyCode::F(3) if key_event.modifiers == KeyModifiers::SHIFT => {
-                    Some(Self::FocusPreviewPanel)
+                KeyCode::Char('w') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    Some(Self::CycleFocus)
                 }
                 _ => None,
             };
@@ -237,6 +238,10 @@ impl Action {
 
         if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::Quit);
+        }
+
+        if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::CycleFocus);
         }
 
         if keymap.switch_pane.matches(&key_event) {
@@ -253,7 +258,7 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
-            KeyCode::F(3) if key_event.modifiers == KeyModifiers::SHIFT => {
+            KeyCode::F(3) if key_event.modifiers == KeyModifiers::ALT => {
                 Some(Self::FocusPreviewPanel)
             }
             KeyCode::F(3) => Some(Self::TogglePreviewPanel),
