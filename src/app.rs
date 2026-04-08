@@ -282,7 +282,15 @@ fn route_mouse_event(
         // Left click
         // -------------------------------------------------------------------
         MouseEventKind::Down(MouseButton::Left) => {
-            // Modals absorb all clicks — don't route through layout.
+            // When a menu is already open, still allow clicks on the menu bar
+            // so the user can switch menus naturally by clicking.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Menu))
+                && rect_contains(cache.menu_bar, col, row)
+            {
+                return route_menu_bar_click(col, cache.menu_bar.x);
+            }
+
+            // All other modal states absorb left clicks.
             if matches!(focus, FocusLayer::Modal(_)) {
                 return None;
             }

@@ -18,7 +18,7 @@ pub fn editor_render_state(
 }
 
 pub fn editor_highlighted_render_state(
-    editor: &EditorBuffer,
+    editor: &mut EditorBuffer,
     area: Rect,
     syntect_theme: &str,
     palette: ThemePalette,

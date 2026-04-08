@@ -89,6 +89,13 @@ pub struct EditorBuffer {
     text: Rope,
     cursor_char_idx: usize,
     history: UndoStack,
+    /// Increments on every text-changing operation (insert, delete, undo, redo).
+    /// Used as the cache key for `highlight_cache` — scrolling alone never
+    /// increments this, so highlighting is free during scroll.
+    edit_version: usize,
+    /// Full-file syntax-highlighted lines, keyed by `(edit_version, theme)`.
+    /// `None` until first render. Recomputed only when text actually changes.
+    highlight_cache: Option<(usize, String, Vec<HighlightedLine>)>,
 }
 
 impl EditorBuffer {
@@ -122,6 +129,7 @@ impl EditorBuffer {
         self.cursor_char_idx = edit.cursor_after;
         self.history.push(edit);
         self.is_dirty = true;
+        self.edit_version += 1;
     }
 
     // -----------------------------------------------------------------------
@@ -141,6 +149,7 @@ impl EditorBuffer {
         self.cursor_char_idx = edit.cursor_after;
         self.history.push(edit);
         self.is_dirty = true;
+        self.edit_version += 1;
     }
 
     pub fn insert_newline(&mut self) {
@@ -164,6 +173,7 @@ impl EditorBuffer {
         self.cursor_char_idx = start;
         self.history.push(edit);
         self.is_dirty = true;
+        self.edit_version += 1;
     }
 
     pub fn move_left(&mut self) {
@@ -222,6 +232,7 @@ impl EditorBuffer {
         }
         self.cursor_char_idx = edit.cursor_after;
         self.is_dirty = true;
+        self.edit_version += 1;
     }
 
     // -----------------------------------------------------------------------
@@ -259,8 +270,13 @@ impl EditorBuffer {
     // Rendering
     // -----------------------------------------------------------------------
 
+    /// Returns syntax-highlighted lines for the visible viewport.
+    ///
+    /// The full-file highlight result is cached by `edit_version` so repeated
+    /// calls during scrolling (no text change) cost only a slice — not a full
+    /// syntect re-parse.
     pub fn visible_highlighted_window(
-        &self,
+        &mut self,
         height: usize,
         syntect_theme: &str,
         fallback_color: Color,
@@ -268,34 +284,66 @@ impl EditorBuffer {
         if height == 0 {
             return (0, Vec::new());
         }
-        let text = normalize_preview_text(&self.text.to_string());
+
         let ext = self
             .path
             .as_ref()
             .and_then(|p| p.extension())
-            .and_then(|e| e.to_str());
+            .and_then(|e| e.to_str())
+            .map(str::to_owned);
+
+        // Recompute only when text has changed or theme/ext has changed.
+        let cache_valid = self
+            .highlight_cache
+            .as_ref()
+            .is_some_and(|(v, t, _)| *v == self.edit_version && t == syntect_theme);
+
+        if !cache_valid {
+            let text = normalize_preview_text(&self.text.to_string());
+            let all_lines = match highlight_text(&text, ext.as_deref(), syntect_theme) {
+                Some(lines) => lines,
+                None => self
+                    .text
+                    .lines()
+                    .map(|l| {
+                        let s = normalize_preview_text(&l.to_string());
+                        let s = s.strip_suffix('\n').unwrap_or(&s).to_string();
+                        vec![(fallback_color, Modifier::empty(), s)]
+                    })
+                    .collect(),
+            };
+            self.highlight_cache =
+                Some((self.edit_version, syntect_theme.to_string(), all_lines));
+        }
+
         let (start, _) = self.visible_line_window(height);
-        let lines = match highlight_text(&text, ext, syntect_theme) {
-            Some(all) => all.into_iter().skip(start).take(height).collect(),
-            None => {
-                let (_, window) = self.visible_line_window(height);
-                window
-                    .into_iter()
-                    .map(|l| vec![(fallback_color, Modifier::empty(), l)])
-                    .collect()
-            }
-        };
-        (start, lines)
+        let all_lines = &self.highlight_cache.as_ref().unwrap().2;
+        let window = all_lines
+            .iter()
+            .skip(start)
+            .take(height)
+            .cloned()
+            .collect();
+        (start, window)
     }
 
+    /// Returns the visible line window as plain strings.
+    ///
+    /// Uses direct rope line access — O(height), not O(total_lines).
     pub fn visible_line_window(&self, height: usize) -> (usize, Vec<String>) {
         if height == 0 {
             return (0, Vec::new());
         }
-        let all = self.visible_lines();
+        let total = self.text.len_lines();
         let (cursor_line, _) = self.cursor_line_col();
         let start = (cursor_line + 1).saturating_sub(height);
-        let visible = all.into_iter().skip(start).take(height).collect();
+        let end = (start + height).min(total);
+        let visible = (start..end)
+            .map(|i| {
+                let s = normalize_preview_text(&self.text.line(i).to_string());
+                s.strip_suffix('\n').unwrap_or(&s).to_string()
+            })
+            .collect();
         (start, visible)
     }
 
