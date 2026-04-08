@@ -59,11 +59,8 @@ impl App {
         let mut terminal = TerminalSession::enter()?;
 
         while !self.state.should_quit() {
-            if self.state.needs_redraw() {
-                terminal.draw(|frame| ui::render(frame, &mut self.state))?;
-                self.state.mark_drawn();
-            }
-
+            terminal.draw(|frame| ui::render(frame, &mut self.state))?;
+            self.state.mark_drawn();
             self.process_next_event()?;
         }
 
