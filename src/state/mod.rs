@@ -1,8 +1,11 @@
 mod dialog;
 mod menu;
+pub mod pane_set;
 mod prompt;
 mod settings;
 mod types;
+
+pub use pane_set::PaneSetState;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
