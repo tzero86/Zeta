@@ -11,22 +11,32 @@ use crate::fs::{
 };
 use crate::pane::PaneId;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum JobRequest {
-    FileOperation {
-        operation: FileOperation,
-        refresh: Vec<RefreshTarget>,
-        collision: CollisionPolicy,
-    },
-    ScanDirectory {
-        pane: PaneId,
-        path: PathBuf,
-    },
-    PreviewFile {
-        path: PathBuf,
-        syntect_theme: String,
-    },
+// ---------------------------------------------------------------------------
+// Public request types — one per worker
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct ScanRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
 }
+
+#[derive(Clone, Debug)]
+pub struct FileOpRequest {
+    pub operation: FileOperation,
+    pub refresh: Vec<RefreshTarget>,
+    pub collision: CollisionPolicy,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreviewRequest {
+    pub path: PathBuf,
+    pub syntect_theme: String,
+}
+
+// ---------------------------------------------------------------------------
+// Result types (unchanged public surface)
+// ---------------------------------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum JobResult {
@@ -77,79 +87,105 @@ pub struct FileOperationStatus {
     pub current_path: PathBuf,
 }
 
-pub fn spawn_scan_worker() -> (Sender<JobRequest>, Receiver<JobResult>) {
-    let (request_tx, request_rx) = bounded::<JobRequest>(16);
-    let (result_tx, result_rx) = bounded::<JobResult>(32);
+// ---------------------------------------------------------------------------
+// Worker channels
+// ---------------------------------------------------------------------------
 
-    thread::spawn(move || run_scan_worker(request_rx, result_tx));
-
-    (request_tx, result_rx)
+/// Three typed senders — one per dedicated worker thread.
+pub struct WorkerChannels {
+    pub scan_tx: Sender<ScanRequest>,
+    pub file_op_tx: Sender<FileOpRequest>,
+    pub preview_tx: Sender<PreviewRequest>,
 }
 
-fn run_scan_worker(request_rx: Receiver<JobRequest>, result_tx: Sender<JobResult>) {
-    while let Ok(request) = request_rx.recv() {
-        match request {
-            JobRequest::FileOperation {
-                operation,
-                refresh,
-                collision,
-            } => {
-                let result = run_file_operation(operation, refresh, collision, &result_tx);
-                match result {
-                    Ok(job_result) | Err(job_result) => {
-                        if result_tx.send(job_result).is_err() {
-                            break;
-                        }
-                    }
-                }
-            }
-            JobRequest::ScanDirectory { pane, path } => {
-                let started_at = Instant::now();
+/// Spawn three dedicated background workers that all fan results into a single
+/// `Receiver<JobResult>`. Each worker processes its queue sequentially; because
+/// the queues are independent, a slow file operation never delays a scan.
+pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
+    let (result_tx, result_rx) = bounded::<JobResult>(64);
 
-                match scan_directory(&path) {
-                    Ok(entries) => {
-                        if result_tx
-                            .send(JobResult::DirectoryScanned {
-                                pane,
-                                path,
-                                entries,
-                                elapsed_ms: started_at.elapsed().as_millis(),
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        if result_tx
-                            .send(JobResult::JobFailed {
-                                pane,
-                                path,
-                                message: error.to_string(),
-                                elapsed_ms: started_at.elapsed().as_millis(),
-                            })
-                            .is_err()
-                        {
-                            break;
-                        }
+    // --- Scan worker ---
+    let (scan_tx, scan_rx) = bounded::<ScanRequest>(16);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-scan".into())
+            .spawn(move || {
+                for req in scan_rx {
+                    let started_at = Instant::now();
+                    let job_result = match scan_directory(&req.path) {
+                        Ok(entries) => JobResult::DirectoryScanned {
+                            pane: req.pane,
+                            path: req.path,
+                            entries,
+                            elapsed_ms: started_at.elapsed().as_millis(),
+                        },
+                        Err(err) => JobResult::JobFailed {
+                            pane: req.pane,
+                            path: req.path,
+                            message: err.to_string(),
+                            elapsed_ms: started_at.elapsed().as_millis(),
+                        },
+                    };
+                    if result_tx.send(job_result).is_err() {
+                        break;
                     }
                 }
-            }
-            JobRequest::PreviewFile {
-                path,
-                syntect_theme,
-            } => {
-                let view = load_preview_content(&path, &syntect_theme);
-                if result_tx
-                    .send(JobResult::PreviewLoaded { path, view })
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        }
+            })
+            .expect("failed to spawn scan worker");
     }
+
+    // --- File operation worker ---
+    let (file_op_tx, file_op_rx) = bounded::<FileOpRequest>(8);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-file-op".into())
+            .spawn(move || {
+                for req in file_op_rx {
+                    let outcome = run_file_operation(
+                        req.operation,
+                        req.refresh,
+                        req.collision,
+                        &result_tx,
+                    );
+                    let job_result = match outcome {
+                        Ok(r) | Err(r) => r,
+                    };
+                    if result_tx.send(job_result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn file-op worker");
+    }
+
+    // --- Preview worker ---
+    let (preview_tx, preview_rx) = bounded::<PreviewRequest>(8);
+    {
+        // Last clone — move ownership.
+        thread::Builder::new()
+            .name("zeta-preview".into())
+            .spawn(move || {
+                for req in preview_rx {
+                    let view = load_preview_content(&req.path, &req.syntect_theme);
+                    if result_tx
+                        .send(JobResult::PreviewLoaded { path: req.path, view })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn preview worker");
+    }
+
+    (WorkerChannels { scan_tx, file_op_tx, preview_tx }, result_rx)
 }
+
+// ---------------------------------------------------------------------------
+// Internal worker logic
+// ---------------------------------------------------------------------------
 
 fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
@@ -162,7 +198,6 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
     }
 
     if looks_like_binary(&bytes) {
-        // Try to get the full file size from metadata; fall back to bytes read.
         let size_bytes = std::fs::metadata(path)
             .map(|m| m.len())
             .unwrap_or(bytes.len() as u64);
@@ -170,9 +205,13 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
         return crate::preview::ViewBuffer::from_plain(&label);
     }
 
-    // Decode lossily and attempt syntax highlighting (safe — runs in worker thread).
     let text = String::from_utf8_lossy(&bytes);
     let extension = path.extension().and_then(|e| e.to_str());
+
+    // Markdown: store raw text for AST rendering at display time.
+    if extension == Some("md") {
+        return crate::preview::ViewBuffer::from_markdown(text.into_owned());
+    }
 
     if let Some(lines) = crate::highlight::highlight_text(&text, extension, syntect_theme) {
         return crate::preview::ViewBuffer::from_highlighted(lines);
@@ -207,21 +246,16 @@ fn run_file_operation(
         .unwrap_or(PaneId::Left);
 
     let op_result = match &operation {
-        FileOperation::Copy {
-            source,
-            destination,
-        } => run_copy_with_progress(source, destination, collision, result_tx),
+        FileOperation::Copy { source, destination } => {
+            run_copy_with_progress(source, destination, collision, result_tx)
+        }
         FileOperation::CreateDirectory { path } => create_directory(path, collision),
         FileOperation::CreateFile { path } => create_file(path, collision),
         FileOperation::Delete { path } => delete_path(path),
-        FileOperation::Move {
-            source,
-            destination,
-        } => run_move_with_progress(source, destination, collision, result_tx),
-        FileOperation::Rename {
-            source,
-            destination,
-        } => rename_path(source, destination, collision),
+        FileOperation::Move { source, destination } => {
+            run_move_with_progress(source, destination, collision, result_tx)
+        }
+        FileOperation::Rename { source, destination } => rename_path(source, destination, collision),
     };
 
     if let Err(error) = op_result {
@@ -371,5 +405,55 @@ fn describe_operation(operation: &FileOperation) -> String {
         FileOperation::Rename { destination, .. } => {
             format!("renamed to {}", destination.display())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_channels_can_send_and_receive_scan_request() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Left, path: tmp })
+            .unwrap();
+        let result = results
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                JobResult::DirectoryScanned { pane: PaneId::Left, .. }
+                    | JobResult::JobFailed { pane: PaneId::Left, .. }
+            ),
+            "unexpected result: {result:?}"
+        );
+    }
+
+    #[test]
+    fn three_workers_process_requests_independently() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+
+        // Send two scan requests — both should complete.
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Left, path: tmp.clone() })
+            .unwrap();
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Right, path: tmp })
+            .unwrap();
+
+        let mut received = 0usize;
+        for _ in 0..2 {
+            if results.recv_timeout(std::time::Duration::from_secs(5)).is_ok() {
+                received += 1;
+            }
+        }
+        assert_eq!(received, 2);
     }
 }
