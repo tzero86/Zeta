@@ -179,7 +179,10 @@ impl OverlayState {
             }
             Action::OpenMenu(menu_id) => {
                 self.close_all();
-                self.modal = Some(ModalState::Menu { id: *menu_id, selection: 0 });
+                self.modal = Some(ModalState::Menu {
+                    id: *menu_id,
+                    selection: 0,
+                });
             }
             Action::MenuActivate => {
                 if let Some(ModalState::Menu { id, selection }) = &self.modal {
@@ -317,6 +320,7 @@ impl OverlayState {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 
@@ -327,14 +331,20 @@ mod tests {
         s.apply(&Action::OpenMenu(MenuId::File)).unwrap();
         assert!(matches!(
             s.modal,
-            Some(ModalState::Menu { id: MenuId::File, selection: 0 })
+            Some(ModalState::Menu {
+                id: MenuId::File,
+                selection: 0
+            })
         ));
     }
 
     #[test]
     fn open_settings_closes_any_existing_modal() {
         let mut s = OverlayState::default();
-        s.modal = Some(ModalState::Menu { id: MenuId::File, selection: 0 });
+        s.modal = Some(ModalState::Menu {
+            id: MenuId::File,
+            selection: 0,
+        });
         s.apply(&Action::OpenSettingsPanel).unwrap();
         assert!(matches!(s.modal, Some(ModalState::Settings(_))));
     }
@@ -350,7 +360,10 @@ mod tests {
     #[test]
     fn menu_activate_emits_dispatch_action() {
         let mut s = OverlayState::default();
-        s.modal = Some(ModalState::Menu { id: MenuId::File, selection: 0 });
+        s.modal = Some(ModalState::Menu {
+            id: MenuId::File,
+            selection: 0,
+        });
         let cmds = s.apply(&Action::MenuActivate).unwrap();
         assert!(s.modal.is_none(), "menu should close after activation");
         assert!(!cmds.is_empty(), "should emit DispatchAction command");

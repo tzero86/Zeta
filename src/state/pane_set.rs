@@ -91,14 +91,20 @@ impl PaneSetState {
                 if let Some(path) = self.active_pane_mut().pop_back() {
                     let pane_id = self.focused_pane_id();
                     self.active_pane_mut().clear_marks();
-                    commands.push(Command::ScanPane { pane: pane_id, path });
+                    commands.push(Command::ScanPane {
+                        pane: pane_id,
+                        path,
+                    });
                 }
             }
             Action::NavigateForward => {
                 if let Some(path) = self.active_pane_mut().pop_forward() {
                     let pane_id = self.focused_pane_id();
                     self.active_pane_mut().clear_marks();
-                    commands.push(Command::ScanPane { pane: pane_id, path });
+                    commands.push(Command::ScanPane {
+                        pane: pane_id,
+                        path,
+                    });
                 }
             }
             Action::FocusNextPane => {
@@ -144,10 +150,9 @@ impl PaneSetState {
 mod tests {
     use super::*;
     use crate::pane::PaneState;
-    use std::path::PathBuf;
 
     fn make_state() -> PaneSetState {
-        let cwd = PathBuf::from(std::env::temp_dir());
+        let cwd = std::env::temp_dir();
         PaneSetState::new(
             PaneState::empty("Left", cwd.clone()),
             PaneState::empty("Right", cwd),
@@ -172,7 +177,7 @@ mod tests {
 
     #[test]
     fn inactive_pane_returns_opposite_of_focus() {
-        let cwd = PathBuf::from(std::env::temp_dir());
+        let cwd = std::env::temp_dir();
         let mut s = PaneSetState::new(
             PaneState::empty("Left", cwd.clone()),
             PaneState::empty("Right", cwd.clone()),

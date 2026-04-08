@@ -273,6 +273,7 @@ pub fn render_collision_dialog(
     frame.render_widget(paragraph, inner);
 }
 
+#[allow(dead_code)]
 pub fn render_footer_hint(frame: &mut Frame<'_>, area: Rect, text: &str, palette: ThemePalette) {
     frame.render_widget(
         Paragraph::new(text).style(overlay_footer_style(palette)),

@@ -195,7 +195,6 @@ mod tests {
     use ratatui::style::{Color, Modifier};
 
     use super::editor::editor_render_state;
-    use super::layout_cache::rect_contains;
     use super::menu_bar::top_bar_logo_spans;
     use super::pane::{format_icon_slot, pane_chrome_style};
     use super::styles::{

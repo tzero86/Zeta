@@ -191,6 +191,7 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
     crate::preview::ViewBuffer::from_plain(&truncated)
 }
 
+#[allow(clippy::result_large_err)]
 fn run_file_operation(
     operation: FileOperation,
     refresh: Vec<RefreshTarget>,
