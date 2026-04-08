@@ -301,6 +301,83 @@ impl Action {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Focused dispatch helpers — one per FocusLayer arm in route_key_event
+    // -----------------------------------------------------------------------
+
+    /// Keys when the command palette is open. Consumes ALL input.
+    pub fn from_palette_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseCommandPalette),
+            KeyCode::Enter => Some(Self::PaletteConfirm),
+            KeyCode::Up => Some(Self::PaletteMoveUp),
+            KeyCode::Down => Some(Self::PaletteMoveDown),
+            KeyCode::Backspace => Some(Self::PaletteBackspace),
+            KeyCode::Char(c)
+                if key_event.modifiers == KeyModifiers::NONE
+                    || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::PaletteInput(c))
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys when the settings panel is open. Consumes ALL input.
+    pub fn from_settings_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseSettingsPanel),
+            KeyCode::Enter | KeyCode::Char(' ') => Some(Self::SettingsToggleCurrent),
+            KeyCode::Up => Some(Self::SettingsMoveUp),
+            KeyCode::Down => Some(Self::SettingsMoveDown),
+            _ => None,
+        }
+    }
+
+    /// Keys when the preview panel has focus. Consumes ALL input.
+    pub fn from_preview_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Up => Some(Self::ScrollPreviewUp),
+            KeyCode::Down => Some(Self::ScrollPreviewDown),
+            KeyCode::PageUp => Some(Self::ScrollPreviewPageUp),
+            KeyCode::PageDown => Some(Self::ScrollPreviewPageDown),
+            KeyCode::Esc => Some(Self::FocusPreviewPanel),
+            KeyCode::Char('w') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::CycleFocus)
+            }
+            _ => None,
+        }
+    }
+
+    /// Global keys available in Pane context (and as lower-priority fallback from Editor).
+    pub fn from_pane_key_event(
+        key_event: KeyEvent,
+        keymap: &crate::config::RuntimeKeymap,
+    ) -> Option<Self> {
+        if key_event.modifiers == KeyModifiers::ALT {
+            return match key_event.code {
+                KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
+                KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
+                KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
+                KeyCode::Left => Some(Self::NavigateBack),
+                KeyCode::Right => Some(Self::NavigateForward),
+                _ => None,
+            };
+        }
+        if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::Quit);
+        }
+        if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::CycleFocus);
+        }
+        if keymap.switch_pane.matches(&key_event) {
+            return Some(Self::FocusNextPane);
+        }
+        // Delegate remaining keys to the comprehensive fallback handler.
+        Self::from_key_event_with_settings(key_event, keymap, false, false, false, false)
+    }
+
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
@@ -429,6 +506,19 @@ mod tests {
     use crate::config::RuntimeKeymap;
 
     use super::{Action, KeyBinding, MenuId};
+
+    #[test]
+    fn from_palette_key_event_handles_esc() {
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(Action::from_palette_key_event(key), Some(Action::CloseCommandPalette));
+    }
+
+    #[test]
+    fn from_pane_key_event_handles_quit() {
+        let keymap = RuntimeKeymap::default();
+        let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
+        assert_eq!(Action::from_pane_key_event(key, &keymap), Some(Action::Quit));
+    }
 
     #[test]
     fn configured_keymap_drives_actions() {
