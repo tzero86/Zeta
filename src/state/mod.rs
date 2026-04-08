@@ -1,6 +1,7 @@
 mod dialog;
 mod menu;
 pub mod editor_state;
+pub mod overlay;
 pub mod pane_set;
 pub mod preview_state;
 mod prompt;
@@ -8,6 +9,7 @@ mod settings;
 mod types;
 
 pub use editor_state::EditorState;
+pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
 

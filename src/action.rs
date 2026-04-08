@@ -99,6 +99,7 @@ pub enum Action {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
+    DispatchAction(Action),
     OpenEditor {
         path: PathBuf,
     },

@@ -175,6 +175,9 @@ impl App {
                 .job_requests
                 .send(JobRequest::ScanDirectory { pane, path })
                 .context("failed to queue background scan job")?,
+            Command::DispatchAction(action) => {
+                self.dispatch(action)?;
+            }
             Command::SaveEditor => {
                 if let Some(editor) = self.state.editor_mut() {
                     match editor.save() {
