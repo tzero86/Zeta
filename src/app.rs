@@ -17,7 +17,7 @@ use crate::config::{AppConfig, RuntimeKeymap};
 use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
 use crate::jobs::{self, FileOpRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
-use crate::state::AppState;
+use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::LayoutCache;
 
@@ -109,23 +109,11 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
-                let action = route_key_event(
-                    key_event,
-                    &self.keymap,
-                    RouteContext {
-                        is_collision_open: self.state.is_collision_open(),
-                        is_prompt_open: self.state.is_prompt_open(),
-                        is_dialog_open: self.state.is_dialog_open(),
-                        is_menu_open: self.state.is_menu_open(),
-                        is_editor_focused: self.state.is_editor_focused(),
-                        is_preview_open: self.state.is_preview_panel_open(),
-                        is_preview_focused: self.state.is_preview_focused(),
-                        is_palette_open: self.state.is_palette_open(),
-                        is_settings_open: self.state.is_settings_open(),
-                    },
-                );
-
-                if let Some(action) = action {
+                let focus = self.state.focus_layer();
+                let is_preview_open = self.state.is_preview_panel_open();
+                if let Some(action) =
+                    route_key_event(key_event, &self.keymap, focus, is_preview_open)
+                {
                     self.dispatch(action)?;
                 }
             }
@@ -136,7 +124,6 @@ impl App {
                 self.state.apply_job_result(result);
             }
         }
-
         Ok(())
     }
 
@@ -199,79 +186,39 @@ impl App {
     }
 }
 
-#[derive(Clone, Copy)]
-struct RouteContext {
-    is_collision_open: bool,
-    is_prompt_open: bool,
-    is_dialog_open: bool,
-    is_menu_open: bool,
-    is_editor_focused: bool,
-    is_preview_open: bool,
-    is_preview_focused: bool,
-    is_palette_open: bool,
-    is_settings_open: bool,
-}
-
 fn route_key_event(
     key_event: crossterm::event::KeyEvent,
     keymap: &RuntimeKeymap,
-    context: RouteContext,
+    focus: FocusLayer,
+    is_preview_open: bool,
 ) -> Option<Action> {
-    if context.is_palette_open {
-        return Action::from_key_event_with_settings(
-            key_event,
-            keymap,
-            context.is_editor_focused,
-            context.is_preview_focused,
-            true,
-            context.is_settings_open,
-        );
-    }
+    use crossterm::event::{KeyCode, KeyModifiers};
 
-    if context.is_collision_open {
-        return Action::from_collision_key_event(key_event);
-    }
+    let alt_f3 = key_event.code == KeyCode::F(3)
+        && key_event.modifiers == KeyModifiers::ALT;
 
-    if context.is_prompt_open {
-        return Action::from_prompt_key_event(key_event);
+    match focus {
+        FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Collision) => Action::from_collision_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Prompt) => Action::from_prompt_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
+        FocusLayer::Preview => Action::from_preview_key_event(key_event),
+        FocusLayer::Editor => {
+            if is_preview_open && alt_f3 {
+                return Some(Action::FocusPreviewPanel);
+            }
+            Action::from_editor_key_event(key_event)
+                .or_else(|| Action::from_pane_key_event(key_event, keymap))
+        }
+        FocusLayer::Pane => {
+            if is_preview_open && alt_f3 {
+                return Some(Action::FocusPreviewPanel);
+            }
+            Action::from_pane_key_event(key_event, keymap)
+        }
     }
-
-    if context.is_dialog_open {
-        return Action::from_dialog_key_event(key_event);
-    }
-
-    if context.is_menu_open {
-        return Action::from_menu_key_event(key_event);
-    }
-
-    if context.is_preview_open
-        && key_event.code == crossterm::event::KeyCode::F(3)
-        && key_event.modifiers == crossterm::event::KeyModifiers::ALT
-    {
-        return Some(Action::FocusPreviewPanel);
-    }
-
-    if context.is_editor_focused {
-        return Action::from_editor_key_event(key_event).or_else(|| {
-            Action::from_key_event_with_settings(
-                key_event,
-                keymap,
-                false,
-                context.is_preview_focused,
-                false,
-                context.is_settings_open,
-            )
-        });
-    }
-
-    Action::from_key_event_with_settings(
-        key_event,
-        keymap,
-        context.is_editor_focused,
-        context.is_preview_focused,
-        false,
-        context.is_settings_open,
-    )
 }
 
 struct TerminalSession {
@@ -317,75 +264,79 @@ mod tests {
 
     use crate::action::Action;
     use crate::config::RuntimeKeymap;
+    use crate::state::{FocusLayer, ModalKind};
 
-    use super::{route_key_event, RouteContext};
+    use super::route_key_event;
 
     #[test]
     fn command_palette_remains_available_while_editor_is_open() {
         let keymap = RuntimeKeymap::default();
-
         let action = route_key_event(
             KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             &keymap,
-            RouteContext {
-                is_collision_open: false,
-                is_prompt_open: false,
-                is_dialog_open: false,
-                is_menu_open: false,
-                is_editor_focused: true,
-                is_preview_open: false,
-                is_preview_focused: false,
-                is_palette_open: false,
-                is_settings_open: false,
-            },
+            FocusLayer::Editor, // editor focused, palette NOT open
+            false,
         );
-
         assert_eq!(action, Some(Action::OpenCommandPalette));
     }
 
     #[test]
     fn editor_shortcuts_still_take_priority_over_global_fallbacks() {
         let keymap = RuntimeKeymap::default();
-
         let action = route_key_event(
             KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
             &keymap,
-            RouteContext {
-                is_collision_open: false,
-                is_prompt_open: false,
-                is_dialog_open: false,
-                is_menu_open: false,
-                is_editor_focused: true,
-                is_preview_open: false,
-                is_preview_focused: false,
-                is_palette_open: false,
-                is_settings_open: false,
-            },
+            FocusLayer::Editor,
+            false,
         );
-
         assert_eq!(action, Some(Action::EditorOpenSearch));
     }
 
     #[test]
     fn palette_open_state_blocks_lower_priority_input_paths() {
         let keymap = RuntimeKeymap::default();
-
         let action = route_key_event(
             KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
             &keymap,
-            RouteContext {
-                is_collision_open: false,
-                is_prompt_open: false,
-                is_dialog_open: false,
-                is_menu_open: false,
-                is_editor_focused: true,
-                is_preview_open: false,
-                is_preview_focused: false,
-                is_palette_open: true,
-                is_settings_open: false,
-            },
+            FocusLayer::Modal(ModalKind::Palette),
+            false,
         );
-
         assert_eq!(action, None);
+    }
+
+    #[test]
+    fn palette_layer_routes_esc_to_close_palette() {
+        let keymap = RuntimeKeymap::default();
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &keymap,
+            FocusLayer::Modal(ModalKind::Palette),
+            false,
+        );
+        assert_eq!(action, Some(Action::CloseCommandPalette));
+    }
+
+    #[test]
+    fn pane_layer_ctrl_q_quits() {
+        let keymap = RuntimeKeymap::default();
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            &keymap,
+            FocusLayer::Pane,
+            false,
+        );
+        assert_eq!(action, Some(Action::Quit));
+    }
+
+    #[test]
+    fn editor_layer_ctrl_f_opens_search() {
+        let keymap = RuntimeKeymap::default();
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+            &keymap,
+            FocusLayer::Editor,
+            false,
+        );
+        assert_eq!(action, Some(Action::EditorOpenSearch));
     }
 }
