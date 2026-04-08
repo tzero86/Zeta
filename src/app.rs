@@ -282,12 +282,20 @@ fn route_mouse_event(
         // Left click
         // -------------------------------------------------------------------
         MouseEventKind::Down(MouseButton::Left) => {
-            // When a menu is already open, still allow clicks on the menu bar
-            // so the user can switch menus naturally by clicking.
-            if matches!(focus, FocusLayer::Modal(ModalKind::Menu))
-                && rect_contains(cache.menu_bar, col, row)
-            {
-                return route_menu_bar_click(col, cache.menu_bar.x);
+            // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
+                if rect_contains(cache.menu_bar, col, row) {
+                    return route_menu_bar_click(col, cache.menu_bar.x);
+                }
+                if let Some(popup) = cache.menu_popup {
+                    if rect_contains(popup, col, row) {
+                        // Row 0 of the popup is the top border; items start at row 1.
+                        let item_row = row.saturating_sub(popup.y + 1);
+                        return Some(Action::MenuClickItem(item_row as usize));
+                    }
+                }
+                // Click outside menu — close it.
+                return Some(Action::CloseMenu);
             }
 
             // All other modal states absorb left clicks.
@@ -409,6 +417,7 @@ mod tests {
             right_pane: Rect { x: 40, y: 1,  width: 40, height: 20 },
             tools_panel: None,
             status_bar: Rect { x: 0,  y: 21, width: 80, height: 1  },
+            menu_popup: None,
         }
     }
 

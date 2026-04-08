@@ -11,7 +11,7 @@ mod styles;
 pub mod layout_cache;
 pub use layout_cache::LayoutCache;
 
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
@@ -135,7 +135,22 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         }
     }
 
+    let mut menu_popup_rect: Option<Rect> = None;
     if let Some(menu) = state.active_menu() {
+        let item_count = state.menu_items().len();
+        let popup_x = match menu {
+            crate::action::MenuId::File     => areas[0].x + 1,
+            crate::action::MenuId::Navigate => areas[0].x + 8,
+            crate::action::MenuId::View     => areas[0].x + 19,
+            crate::action::MenuId::Help     => areas[0].x + 26,
+        };
+        let rect = Rect {
+            x: popup_x,
+            y: areas[0].y,
+            width: 28,
+            height: item_count as u16 + 2,
+        };
+        menu_popup_rect = Some(rect);
         render_menu_popup(
             frame,
             areas[1],
@@ -180,6 +195,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         right_pane: panes[1],
         tools_panel: tools_area_opt,
         status_bar: areas[2],
+        menu_popup: menu_popup_rect,
     }
 }
 

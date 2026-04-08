@@ -47,6 +47,8 @@ pub enum Action {
     ScrollPreviewPageDown,
     ScrollPreviewPageUp,
     MenuActivate,
+    /// Mouse click on a menu item — set selection to `index` and activate.
+    MenuClickItem(usize),
     MenuMnemonic(char),
     MenuMoveDown,
     MenuMoveUp,

@@ -194,6 +194,17 @@ impl OverlayState {
                     }
                 }
             }
+            Action::MenuClickItem(index) => {
+                if let Some(ModalState::Menu { id, .. }) = &self.modal {
+                    let id = *id;
+                    let items = menu_items_for(id);
+                    if *index < items.len() {
+                        let item = items[*index].clone();
+                        self.close_all();
+                        commands.push(Command::DispatchAction(item.action.clone()));
+                    }
+                }
+            }
             Action::MenuMnemonic(ch) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;
