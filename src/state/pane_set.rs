@@ -1,9 +1,6 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 
-use crate::action::{Action, Command, RefreshTarget};
-use crate::fs::EntryKind;
+use crate::action::{Action, Command};
 use crate::pane::{PaneId, PaneState};
 use crate::state::types::{PaneFocus, PaneLayout};
 

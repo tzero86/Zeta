@@ -1,10 +1,12 @@
 mod dialog;
 mod menu;
+pub mod editor_state;
 pub mod pane_set;
 mod prompt;
 mod settings;
 mod types;
 
+pub use editor_state::EditorState;
 pub use pane_set::PaneSetState;
 
 use std::path::{Path, PathBuf};
