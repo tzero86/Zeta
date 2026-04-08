@@ -19,6 +19,7 @@ use crate::event::AppEvent;
 use crate::jobs::{self, JobRequest, JobResult};
 use crate::state::AppState;
 use crate::ui;
+use crate::ui::LayoutCache;
 
 type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
 
@@ -27,6 +28,7 @@ pub struct App {
     job_results: Receiver<JobResult>,
     keymap: RuntimeKeymap,
     state: AppState,
+    pub layout_cache: LayoutCache,
 }
 
 impl App {
@@ -46,6 +48,7 @@ impl App {
             job_results,
             keymap,
             state,
+            layout_cache: LayoutCache::default(),
         };
 
         for command in app.state.initial_commands() {
@@ -59,7 +62,11 @@ impl App {
         let mut terminal = TerminalSession::enter()?;
 
         while !self.state.should_quit() {
-            terminal.draw(|frame| ui::render(frame, &mut self.state))?;
+            let mut cache = LayoutCache::default();
+            terminal.draw(|frame| {
+                cache = ui::render(frame, &mut self.state);
+            })?;
+            self.layout_cache = cache;
             self.state.mark_drawn();
             self.process_next_event()?;
         }
