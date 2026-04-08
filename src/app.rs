@@ -3,7 +3,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, Sender, TryRecvError};
+use crossbeam_channel::{Receiver, TryRecvError};
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -16,7 +16,7 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
-use crate::jobs::{self, JobRequest, JobResult};
+use crate::jobs::{self, FileOpRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
 use crate::state::AppState;
 use crate::ui;
 use crate::ui::LayoutCache;
@@ -24,7 +24,7 @@ use crate::ui::LayoutCache;
 type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
 
 pub struct App {
-    job_requests: Sender<JobRequest>,
+    workers: WorkerChannels,
     job_results: Receiver<JobResult>,
     keymap: RuntimeKeymap,
     state: AppState,
@@ -40,11 +40,11 @@ impl App {
             .config
             .compile_keymap()
             .context("failed to compile configured key bindings")?;
-        let (job_requests, job_results) = jobs::spawn_scan_worker();
+        let (workers, job_results) = jobs::spawn_workers();
         let state = AppState::bootstrap(loaded_config, started_at)
             .context("failed to bootstrap application state")?;
         let mut app = Self {
-            job_requests,
+            workers,
             job_results,
             keymap,
             state,
@@ -157,8 +157,9 @@ impl App {
                     .set_error_status(format!("failed to open editor buffer: {error}")),
             },
             Command::PreviewFile { path } => self
-                .job_requests
-                .send(JobRequest::PreviewFile {
+                .workers
+                .preview_tx
+                .send(PreviewRequest {
                     path,
                     syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
                 })
@@ -168,16 +169,14 @@ impl App {
                 refresh,
                 collision,
             } => self
-                .job_requests
-                .send(JobRequest::FileOperation {
-                    operation,
-                    refresh,
-                    collision,
-                })
+                .workers
+                .file_op_tx
+                .send(FileOpRequest { operation, refresh, collision })
                 .context("failed to queue background file operation")?,
             Command::ScanPane { pane, path } => self
-                .job_requests
-                .send(JobRequest::ScanDirectory { pane, path })
+                .workers
+                .scan_tx
+                .send(ScanRequest { pane, path })
                 .context("failed to queue background scan job")?,
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
