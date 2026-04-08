@@ -841,10 +841,8 @@ mod tests {
     #[test]
     fn save_editor_enqueues_save_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer {
-            path: Some(PathBuf::from("./note.txt")),
-            ..EditorBuffer::default()
-        };
+        let mut editor = EditorBuffer::default();
+        editor.path = Some(PathBuf::from("./note.txt"));
         editor.insert(0, "hello");
         state.editor.buffer = Some(editor);
 
@@ -858,10 +856,8 @@ mod tests {
     #[test]
     fn close_editor_is_guarded_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer {
-            path: Some(PathBuf::from("./note.txt")),
-            ..EditorBuffer::default()
-        };
+        let mut editor = EditorBuffer::default();
+        editor.path = Some(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
@@ -876,10 +872,8 @@ mod tests {
     #[test]
     fn discard_editor_changes_closes_dirty_buffer() {
         let mut state = test_state();
-        let mut editor = EditorBuffer {
-            path: Some(PathBuf::from("./note.txt")),
-            ..EditorBuffer::default()
-        };
+        let mut editor = EditorBuffer::default();
+        editor.path = Some(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
