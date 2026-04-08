@@ -4,8 +4,6 @@ use crate::action::{Action, Command};
 use crate::editor::EditorBuffer;
 
 /// Owns the optional editor buffer and routes editor actions.
-/// Wave 1C will replace EditorBuffer with tui-textarea::TextArea;
-/// only this file needs updating at that point.
 #[derive(Clone, Debug, Default)]
 pub struct EditorState {
     pub buffer: Option<EditorBuffer>,
