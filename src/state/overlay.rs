@@ -205,6 +205,11 @@ impl OverlayState {
                     }
                 }
             }
+            Action::MenuSetSelection(index) => {
+                if let Some(ModalState::Menu { selection, .. }) = &mut self.modal {
+                    *selection = *index;
+                }
+            }
             Action::MenuMnemonic(ch) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;

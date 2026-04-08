@@ -49,6 +49,8 @@ pub enum Action {
     MenuActivate,
     /// Mouse click on a menu item — set selection to `index` and activate.
     MenuClickItem(usize),
+    /// Mouse hover over a menu item — update the highlighted selection.
+    MenuSetSelection(usize),
     MenuMnemonic(char),
     MenuMoveDown,
     MenuMoveUp,

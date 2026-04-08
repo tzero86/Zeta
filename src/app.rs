@@ -331,6 +331,19 @@ fn route_mouse_event(
             None
         }
 
+        // Mouse move — update menu selection on hover.
+        MouseEventKind::Moved => {
+            if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
+                if let Some(popup) = cache.menu_popup {
+                    if rect_contains(popup, col, row) {
+                        let item_row = row.saturating_sub(popup.y + 1);
+                        return Some(Action::MenuSetSelection(item_row as usize));
+                    }
+                }
+            }
+            None
+        }
+
         _ => None,
     }
 }

@@ -146,7 +146,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         };
         let rect = Rect {
             x: popup_x,
-            y: areas[0].y,
+            y: areas[1].y,
             width: 28,
             height: item_count as u16 + 2,
         };
