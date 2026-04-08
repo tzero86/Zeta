@@ -4,11 +4,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, TryRecvError};
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::{
-    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-};
+use crossterm::terminal::
+    {disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
 use ratatui::backend::CrosstermBackend;
 use ratatui::{Frame, Terminal};
 
@@ -19,7 +18,7 @@ use crate::event::AppEvent;
 use crate::jobs::{self, FileOpRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
-use crate::ui::LayoutCache;
+use crate::ui::layout_cache::{rect_contains, LayoutCache};
 
 type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
 
@@ -101,7 +100,8 @@ impl App {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 Ok(Some(AppEvent::Input(key_event)))
             }
-            Event::Resize(width, height) => Ok(Some(AppEvent::Resize { width, height })),
+            Event::Mouse(mouse_event) => Ok(Some(AppEvent::Mouse(mouse_event))),
+        Event::Resize(width, height) => Ok(Some(AppEvent::Resize { width, height })),
             _ => Ok(None),
         }
     }
@@ -113,6 +113,14 @@ impl App {
                 let is_preview_open = self.state.is_preview_panel_open();
                 if let Some(action) =
                     route_key_event(key_event, &self.keymap, focus, is_preview_open)
+                {
+                    self.dispatch(action)?;
+                }
+            }
+            AppEvent::Mouse(mouse_event) => {
+                let focus = self.state.focus_layer();
+                if let Some(action) =
+                    route_mouse_event(mouse_event, &self.layout_cache, focus)
                 {
                     self.dispatch(action)?;
                 }
@@ -221,6 +229,115 @@ fn route_key_event(
     }
 }
 
+/// Translate a raw mouse event into an `Action` using the last-rendered
+/// `LayoutCache` for hit-testing. Returns `None` for unhandled events.
+fn route_mouse_event(
+    event: crossterm::event::MouseEvent,
+    cache: &LayoutCache,
+    focus: FocusLayer,
+) -> Option<Action> {
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let col = event.column;
+    let row = event.row;
+
+    match event.kind {
+        // -------------------------------------------------------------------
+        // Scroll wheel
+        // -------------------------------------------------------------------
+        MouseEventKind::ScrollUp => {
+            if focus == FocusLayer::Preview
+                || cache.tools_panel.is_some_and(|r| rect_contains(r, col, row))
+            {
+                return Some(Action::ScrollPreviewUp);
+            }
+            if focus == FocusLayer::Editor {
+                return Some(Action::EditorMoveUp);
+            }
+            if rect_contains(cache.left_pane, col, row)
+                || rect_contains(cache.right_pane, col, row)
+            {
+                return Some(Action::MoveSelectionUp);
+            }
+            None
+        }
+        MouseEventKind::ScrollDown => {
+            if focus == FocusLayer::Preview
+                || cache.tools_panel.is_some_and(|r| rect_contains(r, col, row))
+            {
+                return Some(Action::ScrollPreviewDown);
+            }
+            if focus == FocusLayer::Editor {
+                return Some(Action::EditorMoveDown);
+            }
+            if rect_contains(cache.left_pane, col, row)
+                || rect_contains(cache.right_pane, col, row)
+            {
+                return Some(Action::MoveSelectionDown);
+            }
+            None
+        }
+
+        // -------------------------------------------------------------------
+        // Left click
+        // -------------------------------------------------------------------
+        MouseEventKind::Down(MouseButton::Left) => {
+            // Modals absorb all clicks — don't route through layout.
+            if matches!(focus, FocusLayer::Modal(_)) {
+                return None;
+            }
+
+            // Click on menu bar item.
+            if rect_contains(cache.menu_bar, col, row) {
+                return route_menu_bar_click(col, cache.menu_bar.x);
+            }
+
+            // Click on the tools panel (editor or preview).
+            if let Some(tools_rect) = cache.tools_panel {
+                if rect_contains(tools_rect, col, row) {
+                    if focus != FocusLayer::Editor {
+                        return Some(Action::FocusPreviewPanel);
+                    }
+                    return None; // editor already focused
+                }
+            }
+
+            // Click on left or right pane — switch focus if coming from tools.
+            if rect_contains(cache.left_pane, col, row)
+                || rect_contains(cache.right_pane, col, row)
+            {
+                if focus == FocusLayer::Editor || focus == FocusLayer::Preview {
+                    return Some(Action::CycleFocus);
+                }
+                return Some(Action::FocusNextPane);
+            }
+
+            None
+        }
+
+        _ => None,
+    }
+}
+
+/// Map an x-coordinate in the menu bar to an `OpenMenu` action.
+/// Layout (0-indexed from bar_x):
+///   0-7   " [Z]eta "  (logo — ignored)
+///   8-13  " File "
+///   14-23 " Navigate "
+///   24-29 " View "
+///   30-35 " Help "
+fn route_menu_bar_click(col: u16, bar_x: u16) -> Option<Action> {
+    use crate::action::MenuId;
+    let offset = col.saturating_sub(bar_x);
+    match offset {
+        8..=13 => Some(Action::OpenMenu(MenuId::File)),
+        14..=23 => Some(Action::OpenMenu(MenuId::Navigate)),
+        24..=29 => Some(Action::OpenMenu(MenuId::View)),
+        30..=35 => Some(Action::OpenMenu(MenuId::Help)),
+        _ => None,
+    }
+}
+
 struct TerminalSession {
     terminal: TuiTerminal,
 }
@@ -230,7 +347,8 @@ impl TerminalSession {
         enable_raw_mode().context("failed to enable raw mode")?;
 
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen).context("failed to enter alternate screen")?;
+        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+                .context("failed to enter alternate screen and enable mouse")?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
@@ -253,20 +371,112 @@ impl TerminalSession {
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = execute!(
+            self.terminal.backend_mut(),
+            LeaveAlternateScreen,
+            DisableMouseCapture
+        );
         let _ = self.terminal.show_cursor();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    use ratatui::layout::Rect;
 
     use crate::action::Action;
     use crate::config::RuntimeKeymap;
     use crate::state::{FocusLayer, ModalKind};
+    use crate::ui::layout_cache::LayoutCache;
 
-    use super::route_key_event;
+    use super::{route_key_event, route_mouse_event};
+
+    fn test_cache() -> LayoutCache {
+        LayoutCache {
+            menu_bar:   Rect { x: 0,  y: 0,  width: 80, height: 1  },
+            left_pane:  Rect { x: 0,  y: 1,  width: 40, height: 20 },
+            right_pane: Rect { x: 40, y: 1,  width: 40, height: 20 },
+            tools_panel: None,
+            status_bar: Rect { x: 0,  y: 21, width: 80, height: 1  },
+        }
+    }
+
+    #[test]
+    fn mouse_event_variant_exists_in_app_event() {
+        let ev = MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 5, row: 3,
+            modifiers: KeyModifiers::NONE,
+        };
+        let app_event = crate::event::AppEvent::Mouse(ev);
+        assert!(matches!(app_event, crate::event::AppEvent::Mouse(_)));
+    }
+
+    #[test]
+    fn route_mouse_scroll_up_in_pane_produces_move_selection_up() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Pane,
+        );
+        assert_eq!(action, Some(Action::MoveSelectionUp));
+    }
+
+    #[test]
+    fn route_mouse_scroll_down_in_pane_produces_move_selection_down() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Pane,
+        );
+        assert_eq!(action, Some(Action::MoveSelectionDown));
+    }
+
+    #[test]
+    fn route_mouse_left_click_on_pane_produces_action() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Pane,
+        );
+        assert!(action.is_some(), "expected an action for left-pane click");
+    }
+
+    #[test]
+    fn route_mouse_left_click_on_file_menu_opens_file_menu() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 0, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Pane,
+        );
+        assert_eq!(action, Some(Action::OpenMenu(crate::action::MenuId::File)));
+    }
+
+    #[test]
+    fn route_mouse_modal_absorbs_left_click() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Modal(ModalKind::Dialog),
+        );
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn route_mouse_scroll_in_preview_layer_scrolls_preview() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Preview,
+        );
+        assert_eq!(action, Some(Action::ScrollPreviewDown));
+    }
+
+    #[test]
+    fn route_mouse_scroll_in_editor_layer_moves_cursor() {
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Editor,
+        );
+        assert_eq!(action, Some(Action::EditorMoveUp));
+    }
 
     #[test]
     fn command_palette_remains_available_while_editor_is_open() {
