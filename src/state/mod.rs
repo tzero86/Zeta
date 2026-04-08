@@ -29,7 +29,7 @@ use crate::pane::{PaneId, PaneState};
 pub use dialog::{CollisionState, DialogState};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{SettingsEntry, SettingsField, SettingsState};
-pub use types::{MenuItem, PaneFocus, PaneLayout};
+pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
 
 #[derive(Clone, Debug)]
 pub struct AppState {
@@ -516,6 +516,36 @@ impl AppState {
         self.editor.is_open() && self.panes.focus != PaneFocus::Preview
     }
 
+    /// Derive the current input focus layer from state.
+    /// Priority (highest → lowest): Palette > Collision > Prompt > Dialog > Menu > Settings > Editor > Preview > Pane.
+    pub fn focus_layer(&self) -> FocusLayer {
+        if self.is_palette_open() {
+            return FocusLayer::Modal(ModalKind::Palette);
+        }
+        if self.is_collision_open() {
+            return FocusLayer::Modal(ModalKind::Collision);
+        }
+        if self.is_prompt_open() {
+            return FocusLayer::Modal(ModalKind::Prompt);
+        }
+        if self.is_dialog_open() {
+            return FocusLayer::Modal(ModalKind::Dialog);
+        }
+        if self.is_menu_open() {
+            return FocusLayer::Modal(ModalKind::Menu);
+        }
+        if self.is_settings_open() {
+            return FocusLayer::Modal(ModalKind::Settings);
+        }
+        if self.is_editor_focused() {
+            return FocusLayer::Editor;
+        }
+        if self.is_preview_focused() {
+            return FocusLayer::Preview;
+        }
+        FocusLayer::Pane
+    }
+
     // Overlay accessors — delegate to OverlayState
     pub fn active_menu(&self) -> Option<MenuId> { self.overlay.active_menu() }
     pub fn menu_items(&self) -> Vec<MenuItem> { self.overlay.menu_items() }
@@ -734,8 +764,9 @@ mod tests {
     use crate::pane::{PaneId, PaneState, SortMode};
 
     use super::{
-        resolve_prompt_target, AppState, CollisionState, EditorState, ModalState, OverlayState,
-        PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
+        resolve_prompt_target, AppState, CollisionState, EditorState, FocusLayer, ModalKind,
+        ModalState, OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind,
+        PromptState,
     };
 
     fn pane_with_file(path: &str) -> PaneState {
@@ -765,6 +796,19 @@ mod tests {
             .expect("clock should be after unix epoch")
             .as_nanos();
         std::env::temp_dir().join(format!("zeta-state-test-{unique}"))
+    }
+
+    #[test]
+    fn focus_layer_returns_pane_when_nothing_open() {
+        let state = test_state();
+        assert!(matches!(state.focus_layer(), FocusLayer::Pane));
+    }
+
+    #[test]
+    fn focus_layer_returns_palette_when_palette_open() {
+        let mut state = test_state();
+        state.apply(Action::OpenCommandPalette).unwrap();
+        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::Palette)));
     }
 
     fn test_state() -> AppState {
