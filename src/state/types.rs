@@ -26,9 +26,9 @@ pub struct MenuItem {
 /// Which input layer currently has keyboard focus.
 ///
 /// Derived from `AppState::focus_layer()` — do not store separately.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum FocusLayer {
-    /// No overlay open; directional keys navigate pane entries.
+    #[default]
     Pane,
     /// The editor panel is focused.
     Editor,
@@ -36,12 +36,6 @@ pub enum FocusLayer {
     Preview,
     /// A modal overlay is open; only modal-specific keys are processed.
     Modal(ModalKind),
-}
-
-impl Default for FocusLayer {
-    fn default() -> Self {
-        Self::Pane
-    }
 }
 
 /// Identifies which modal overlay is currently active.

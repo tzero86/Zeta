@@ -156,59 +156,13 @@ pub struct RefreshTarget {
 }
 
 impl Action {
-    pub fn from_key_event(
-        key_event: KeyEvent,
-        keymap: &RuntimeKeymap,
-        is_editor_focused: bool,
-        is_preview_focused: bool,
-        is_palette_open: bool,
-    ) -> Option<Self> {
-        Self::from_key_event_with_settings(
-            key_event,
-            keymap,
-            is_editor_focused,
-            is_preview_focused,
-            is_palette_open,
-            false,
-        )
-    }
-
+    /// Low-priority fallback key handler for Pane and Editor contexts.
+    /// Palette, settings, preview, collision, prompt, dialog, and menu
+    /// are handled by their dedicated `from_*_key_event` helpers.
     pub fn from_key_event_with_settings(
         key_event: KeyEvent,
         keymap: &RuntimeKeymap,
-        is_editor_focused: bool,
-        is_preview_focused: bool,
-        is_palette_open: bool,
-        is_settings_open: bool,
     ) -> Option<Self> {
-        // Palette has highest priority — consume all input when open.
-        if is_palette_open {
-            return match key_event.code {
-                KeyCode::Esc => Some(Self::CloseCommandPalette),
-                KeyCode::Enter => Some(Self::PaletteConfirm),
-                KeyCode::Up => Some(Self::PaletteMoveUp),
-                KeyCode::Down => Some(Self::PaletteMoveDown),
-                KeyCode::Backspace => Some(Self::PaletteBackspace),
-                KeyCode::Char(c)
-                    if key_event.modifiers == KeyModifiers::NONE
-                        || key_event.modifiers == KeyModifiers::SHIFT =>
-                {
-                    Some(Self::PaletteInput(c))
-                }
-                _ => None,
-            };
-        }
-
-        if is_settings_open {
-            return match key_event.code {
-                KeyCode::Esc => Some(Self::CloseSettingsPanel),
-                KeyCode::Enter | KeyCode::Char(' ') => Some(Self::SettingsToggleCurrent),
-                KeyCode::Up => Some(Self::SettingsMoveUp),
-                KeyCode::Down => Some(Self::SettingsMoveDown),
-                _ => None,
-            };
-        }
-
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -220,22 +174,6 @@ impl Action {
                 _ => None,
             };
         }
-
-        if is_preview_focused {
-            return match key_event.code {
-                KeyCode::Up => Some(Self::ScrollPreviewUp),
-                KeyCode::Down => Some(Self::ScrollPreviewDown),
-                KeyCode::PageUp => Some(Self::ScrollPreviewPageUp),
-                KeyCode::PageDown => Some(Self::ScrollPreviewPageDown),
-                KeyCode::Esc => Some(Self::FocusPreviewPanel),
-                KeyCode::Char('w') if key_event.modifiers == KeyModifiers::CONTROL => {
-                    Some(Self::CycleFocus)
-                }
-                _ => None,
-            };
-        }
-
-        let _ = is_editor_focused;
 
         if key_event.code == KeyCode::Char('q') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::Quit);
@@ -375,7 +313,7 @@ impl Action {
             return Some(Self::FocusNextPane);
         }
         // Delegate remaining keys to the comprehensive fallback handler.
-        Self::from_key_event_with_settings(key_event, keymap, false, false, false, false)
+        Self::from_key_event_with_settings(key_event, keymap)
     }
 
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
@@ -538,36 +476,15 @@ mod tests {
         };
 
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &keymap),
             Some(Action::Quit)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE), &keymap),
             Some(Action::FocusNextPane)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &keymap),
             Some(Action::Refresh)
         );
     }
@@ -577,69 +494,27 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE), &keymap),
             Some(Action::MoveSelectionDown)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &keymap),
             Some(Action::MoveSelectionUp)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &keymap),
             Some(Action::EnterSelection)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &keymap),
             Some(Action::NavigateToParent)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE), &keymap),
             Some(Action::ToggleMark)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('M'), KeyModifiers::SHIFT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('M'), KeyModifiers::SHIFT), &keymap),
             Some(Action::ClearMarks)
         );
     }
@@ -649,91 +524,35 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE), &keymap),
             Some(Action::OpenSelectedInEditor)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE), &keymap),
             Some(Action::OpenCopyPrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE), &keymap),
             Some(Action::OpenRenamePrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(6), KeyModifiers::SHIFT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(6), KeyModifiers::SHIFT), &keymap),
             Some(Action::OpenMovePrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE), &keymap),
             Some(Action::OpenDeletePrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE), &keymap),
             Some(Action::OpenNewFilePrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(7), KeyModifiers::SHIFT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(7), KeyModifiers::SHIFT), &keymap),
             Some(Action::OpenNewDirectoryPrompt)
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL), &keymap),
             Some(Action::SaveEditor)
         );
     }
@@ -763,36 +582,15 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT), &keymap),
             Some(Action::OpenMenu(MenuId::File))
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT), &keymap),
             Some(Action::OpenMenu(MenuId::View))
         );
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT), &keymap),
             Some(Action::OpenMenu(MenuId::Help))
         );
         assert_eq!(
@@ -818,14 +616,7 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_key_event_with_settings(
-                KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
-                &keymap,
-                false,
-                false,
-                false,
-                false,
-            ),
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE), &keymap),
             Some(Action::OpenHelpDialog)
         );
         assert_eq!(
