@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
@@ -210,12 +210,25 @@ pub fn render_preview_panel(
             inner,
         ),
         Some(v) => {
-            let height = inner.height as usize;
-            let (first_line_num, window) = v.visible_window(height);
-            if window.is_empty() {
-                return;
+            if v.is_markdown() {
+                // TODO: replace with tui-markdown AST rendering once a version
+                // compatible with ratatui 0.29 is available (tui-markdown 0.2
+                // targets ratatui 0.28; 0.3 targets ratatui-core which ratatui
+                // 0.29 does not depend on). Raw source is still readable markdown.
+                if let Some(source) = v.markdown_source() {
+                    let widget = Paragraph::new(source)
+                        .style(Style::default().bg(palette.tools_bg))
+                        .wrap(Wrap { trim: false });
+                    frame.render_widget(widget, inner);
+                }
+            } else {
+                let height = inner.height as usize;
+                let (first_line_num, window) = v.visible_window(height);
+                if window.is_empty() {
+                    return;
+                }
+                render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
             }
-            render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
         }
     }
 }

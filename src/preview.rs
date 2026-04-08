@@ -11,9 +11,36 @@ pub struct ViewBuffer {
     pub lines: Vec<HighlightedLine>,
     pub scroll_row: usize,
     pub total_lines: usize,
+    /// Raw Markdown source. When `Some`, the buffer represents a markdown
+    /// document to be rendered by `tui_markdown` at display time.
+    /// `lines` is empty for markdown buffers.
+    pub markdown_source: Option<String>,
 }
 
 impl ViewBuffer {
+    /// Build from a raw Markdown string — rendered as wrapped plain text in the
+    /// preview panel. Kept as a distinct variant so the renderer can apply
+    /// markdown-specific layout (no gutter, word-wrap) and a future tui-markdown
+    /// integration can be dropped in with a one-line change.
+    pub fn from_markdown(source: String) -> Self {
+        Self {
+            lines: Vec::new(),
+            scroll_row: 0,
+            total_lines: 0,
+            markdown_source: Some(source),
+        }
+    }
+
+    /// Returns `true` if this buffer holds raw Markdown source.
+    pub fn is_markdown(&self) -> bool {
+        self.markdown_source.is_some()
+    }
+
+    /// Returns the raw Markdown source, or `None` for non-markdown buffers.
+    pub fn markdown_source(&self) -> Option<&str> {
+        self.markdown_source.as_deref()
+    }
+
     /// Build a sanitized read-only preview buffer from raw text.
     pub fn from_render_text(text: &str) -> Self {
         Self::from_plain(text)
@@ -26,6 +53,7 @@ impl ViewBuffer {
             lines,
             scroll_row: 0,
             total_lines,
+            markdown_source: None,
         }
     }
 
@@ -41,6 +69,7 @@ impl ViewBuffer {
             lines,
             scroll_row: 0,
             total_lines,
+            markdown_source: None,
         }
     }
 
@@ -78,6 +107,20 @@ mod tests {
         (0..n)
             .map(|i| vec![(Color::White, Modifier::empty(), format!("line {i}"))])
             .collect()
+    }
+
+    #[test]
+    fn markdown_variant_stores_raw_text() {
+        let vb = ViewBuffer::from_markdown("# Hello\n\nWorld".to_string());
+        assert!(vb.is_markdown());
+        assert_eq!(vb.markdown_source(), Some("# Hello\n\nWorld"));
+    }
+
+    #[test]
+    fn non_markdown_variant_returns_none_for_markdown_source() {
+        let vb = ViewBuffer::from_plain("hello");
+        assert!(!vb.is_markdown());
+        assert_eq!(vb.markdown_source(), None);
     }
 
     #[test]
