@@ -289,9 +289,10 @@ fn route_mouse_event(
                 }
                 if let Some(popup) = cache.menu_popup {
                     if rect_contains(popup, col, row) {
-                        // Row 0 of the popup is the top border; items start at row 1.
-                        let item_row = row.saturating_sub(popup.y + 1);
-                        return Some(Action::MenuClickItem(item_row as usize));
+                        // Use same menu_bar anchor as hover for consistency.
+                        let popup_top = cache.menu_bar.y + cache.menu_bar.height;
+                        let item_row = row.saturating_sub(popup_top + 1) as usize;
+                        return Some(Action::MenuClickItem(item_row));
                     }
                 }
                 // Click outside menu — close it.
@@ -331,14 +332,17 @@ fn route_mouse_event(
             None
         }
 
-        // Mouse move — update menu selection on hover.
-        MouseEventKind::Moved => {
+        // Mouse move / drag — update menu selection highlight on hover.
+        // We use the menu bar y-position to anchor the calculation rather than
+        // the cached popup rect so coordinate drift can't cause silent misses.
+        MouseEventKind::Moved | MouseEventKind::Drag(_) => {
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
-                if let Some(popup) = cache.menu_popup {
-                    if rect_contains(popup, col, row) {
-                        let item_row = row.saturating_sub(popup.y + 1);
-                        return Some(Action::MenuSetSelection(item_row as usize));
-                    }
+                // Popup top border sits one row below the menu bar.
+                let popup_top = cache.menu_bar.y + cache.menu_bar.height;
+                if row > popup_top {
+                    // row - popup_top gives 1-based item row (1 = first item).
+                    let item_row = (row - popup_top).saturating_sub(1) as usize;
+                    return Some(Action::MenuSetSelection(item_row));
                 }
             }
             None
