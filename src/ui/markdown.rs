@@ -51,7 +51,7 @@ pub fn parse_markdown_lines(source: &str) -> Vec<Line<'static>> {
 }
 
 fn default_palette() -> ThemePalette {
-    crate::config::ResolvedTheme::from_preset(crate::config::ThemePreset::Oxide).palette
+    crate::config::ThemePalette::from_preset(crate::config::ThemePreset::Oxide).palette
 }
 
 pub fn parse_markdown_lines_with_palette(
