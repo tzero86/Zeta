@@ -1098,9 +1098,10 @@ mod tests {
             .apply(Action::OpenCopyPrompt)
             .expect("copy prompt should open");
 
+        let expected = PathBuf::from("/tmp/target").join("note.txt").display().to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Copy");
-        assert_eq!(prompt.value, "/tmp/target/note.txt");
+        assert_eq!(prompt.value, expected);
     }
 
     #[test]
@@ -1175,9 +1176,10 @@ mod tests {
             .apply(Action::OpenMovePrompt)
             .expect("move prompt should open");
 
+        let expected = PathBuf::from("/tmp/target").join("note.txt").display().to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Move");
-        assert_eq!(prompt.value, "/tmp/target/note.txt");
+        assert_eq!(prompt.value, expected);
     }
 
     #[test]
