@@ -7,6 +7,15 @@ use crate::config::ThemePalette;
 use crate::editor::{EditorBuffer, EditorRenderState};
 use crate::ui::code_view::{render_code_view, CodeViewRenderArgs};
 
+/// Returns `true` when the editor has a `.md` file open.
+pub fn is_markdown_file(editor: &EditorBuffer) -> bool {
+    editor
+        .path
+        .as_ref()
+        .and_then(|p| p.extension())
+        .map_or(false, |ext| ext.eq_ignore_ascii_case("md"))
+}
+
 pub fn editor_render_state(
     editor: &mut EditorBuffer,
     area: Rect,

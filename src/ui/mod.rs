@@ -1,6 +1,7 @@
 mod code_view;
 mod editor;
 mod menu_bar;
+pub mod markdown;
 mod overlay;
 mod palette;
 mod pane;
@@ -19,7 +20,8 @@ use ratatui::Frame;
 
 use crate::pane::PaneId;
 use crate::state::{AppState, PaneLayout};
-use crate::ui::editor::{editor_render_state, render_editor};
+use crate::ui::editor::{editor_render_state, is_markdown_file, render_editor};
+use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
@@ -112,16 +114,37 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         if has_editor {
             let syntect_theme = state.theme().palette.syntect_theme;
             if let Some(editor) = state.editor_mut() {
-                let editor_view = editor_render_state(editor, tools_area, true);
+                // If editing a markdown file, split the tools panel: editor
+                // on the left half, live markdown preview on the right.
+                let show_md_preview = is_markdown_file(editor);
+                let (editor_area, md_area_opt) = if show_md_preview {
+                    let halves = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([
+                            Constraint::Percentage(50),
+                            Constraint::Percentage(50),
+                        ])
+                        .split(tools_area);
+                    (halves[0], Some(halves[1]))
+                } else {
+                    (tools_area, None)
+                };
+
+                let editor_view = editor_render_state(editor, editor_area, true);
                 render_editor(
                     frame,
-                    tools_area,
+                    editor_area,
                     editor,
                     &editor_view,
                     true,
                     palette,
                     syntect_theme,
                 );
+
+                if let Some(md_area) = md_area_opt {
+                    let source = editor.contents();
+                    render_markdown_preview(frame, md_area, &source, palette);
+                }
             }
         } else if is_preview_open {
             let preview_view = state.preview_view().map(|(_, view)| view);
