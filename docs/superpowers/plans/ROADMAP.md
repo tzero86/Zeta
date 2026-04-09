@@ -53,32 +53,29 @@ a wave ships.
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz like directories | 📋 |
+| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz / .tar.bz2 / .tar.xz like directories | 📋 |
 | 6B | `2026-04-08-wave6b-directory-diff.md` | Left/right pane diff mode — colour-code unique/matching/different entries | 📋 |
 
 ### Phase 7 — Remote filesystems
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP remote pane via ssh2 crate (requires fs abstraction redesign) | 📋 |
+| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP remote pane via ssh2 + FsBackend trait refactor | 📋 |
 
 ---
 
 ## Jira epic mapping
 
-| Epic | Waves |
+| Epic | Wave |
 |---|---|
-| ZTA-80 — Input routing | 2A |
-| ZTA-81/83/84 — Worker/editor/markdown | 1C |
-| ZTA-85/86 — Mouse support | 2B |
-| ZTA-87 — Editor performance | 3A |
-| ZTA-88 — Git integration | 4A |
-| ZTA-89 — Markdown live preview | 4B |
-| ZTA-90 — Editor fullscreen + sync | 4C |
-| ZTA-91 — Quick filter + fuzzy find | 4D |
-| ZTA-92 — Find & Replace + watcher | 5A |
-| ZTA-93 — Bookmarks + trash | 5B |
-| ZTA-94 — Shell integration | 5C |
-| ZTA-95 — Archive browsing | 6A |
-| ZTA-96 — Directory diff | 6B |
-| ZTA-97 — SSH/SFTP | 7A |
+| ZTA-122 — Wave 1C: Multi-Worker Jobs + Editor + Markdown Preview | 1C |
+| ZTA-123 — Wave 2A: FocusLayer + Input Routing Redesign | 2A |
+| ZTA-124 — Wave 2B: Full Mouse Support | 2B |
+| ZTA-125 — Wave 3A: Editor Rope Backend + Lightweight Undo Stack | 3A |
+| ZTA-126 — Wave 4A: Git Integration | 4A |
+| ZTA-127 — Wave 4B: Markdown Live Preview | 4B |
+| ZTA-128 — Wave 4C: Editor Fullscreen + Scroll Sync + Preview Focus/Toggle | 4C |
+| ZTA-129 — Wave 4D: In-Pane Quick Filter + Fuzzy File Find | 4D |
+| ZTA-130 — Wave 5A: Find & Replace in Editor + Directory Watcher | 5A |
+| ZTA-131 — Wave 5B: Bookmarks + Trash | 5B |
+| ZTA-132 — Wave 5C: Shell Integration | 5C |
