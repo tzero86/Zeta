@@ -51,7 +51,7 @@ impl FileStatus {
 }
 
 /// Snapshot of `git status` for one repository.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepoStatus {
     /// Absolute path to the repository root.
     pub root: PathBuf,
