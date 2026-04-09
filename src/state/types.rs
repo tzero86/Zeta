@@ -34,6 +34,8 @@ pub enum FocusLayer {
     Editor,
     /// The preview panel is focused.
     Preview,
+    /// Keyboard focus is on the markdown preview split within the editor panel.
+    MarkdownPreview,
     /// A modal overlay is open; only modal-specific keys are processed.
     Modal(ModalKind),
 }

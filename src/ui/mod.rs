@@ -20,7 +20,7 @@ use ratatui::Frame;
 
 use crate::pane::PaneId;
 use crate::state::{AppState, PaneLayout};
-use crate::ui::editor::{editor_render_state, is_markdown_file, render_editor};
+use crate::ui::editor::{editor_render_state, render_editor};
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
@@ -55,12 +55,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     let is_preview_open = state.is_preview_panel_open();
     let has_editor = state.editor().is_some();
+    let editor_fullscreen = has_editor && state.is_editor_fullscreen();
+    let show_md_preview = has_editor && state.is_markdown_preview_visible();
     let show_tools = has_editor || is_preview_open;
 
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
     let panes_pct = 100 - tools_pct;
 
-    let (pane_area, tools_area_opt) = if show_tools {
+    let (pane_area, tools_area_opt) = if editor_fullscreen {
+        (Rect::default(), Some(areas[1]))
+    } else if show_tools {
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -73,82 +77,103 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         (areas[1], None)
     };
 
-    let panes = Layout::default()
-        .direction(pane_direction)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(pane_area);
+    let mut left_pane_rect = Rect::default();
+    let mut right_pane_rect = Rect::default();
+    let mut editor_panel_rect = None;
+    let mut file_preview_panel_rect = None;
+    let mut markdown_preview_panel_rect = None;
 
-    let left_focused = state.focus() == PaneId::Left;
-    let right_focused = state.focus() == PaneId::Right;
+    if !editor_fullscreen {
+        let panes = Layout::default()
+            .direction(pane_direction)
+            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(pane_area);
 
-    let is_stacked = state.pane_layout() == PaneLayout::Stacked;
-    let (first_label, second_label) = if is_stacked {
-        ("Top", "Bottom")
-    } else {
-        ("Left", "Right")
-    };
+        left_pane_rect = panes[0];
+        right_pane_rect = panes[1];
 
-    render_pane(
-        frame,
-        panes[0],
-        state.left_pane(),
-        first_label,
-        left_focused,
-        Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-        state,
-        state.git_status(PaneId::Left),
-    );
+        let left_focused = state.focus() == PaneId::Left;
+        let right_focused = state.focus() == PaneId::Right;
 
-    render_pane(
-        frame,
-        panes[1],
-        state.right_pane(),
-        second_label,
-        right_focused,
-        Borders::ALL,
-        state,
-        state.git_status(PaneId::Right),
-    );
+        let is_stacked = state.pane_layout() == PaneLayout::Stacked;
+        let (first_label, second_label) = if is_stacked {
+            ("Top", "Bottom")
+        } else {
+            ("Left", "Right")
+        };
+
+        render_pane(
+            frame,
+            panes[0],
+            state.left_pane(),
+            first_label,
+            left_focused,
+            Borders::TOP | Borders::LEFT | Borders::BOTTOM,
+            state,
+            state.git_status(PaneId::Left),
+        );
+
+        render_pane(
+            frame,
+            panes[1],
+            state.right_pane(),
+            second_label,
+            right_focused,
+            Borders::ALL,
+            state,
+            state.git_status(PaneId::Right),
+        );
+    }
 
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
+            let editor_focused = state.is_editor_focused();
+            let md_focused = state.is_markdown_preview_focused();
+            let md_scroll = state.markdown_preview_scroll();
             let syntect_theme = state.theme().palette.syntect_theme;
-            if let Some(editor) = state.editor_mut() {
-                // If editing a markdown file, split the tools panel: editor
-                // on the left half, live markdown preview on the right.
-                let show_md_preview = is_markdown_file(editor);
-                let (editor_area, md_area_opt) = if show_md_preview {
-                    let halves = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Percentage(50),
-                            Constraint::Percentage(50),
-                        ])
-                        .split(tools_area);
-                    (halves[0], Some(halves[1]))
-                } else {
-                    (tools_area, None)
-                };
+            let (editor_area, md_area_opt) = if show_md_preview {
+                let halves = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Percentage(50),
+                        Constraint::Percentage(50),
+                    ])
+                    .split(tools_area);
+                (halves[0], Some(halves[1]))
+            } else {
+                (tools_area, None)
+            };
+            editor_panel_rect = Some(editor_area);
+            markdown_preview_panel_rect = md_area_opt;
 
-                let editor_view = editor_render_state(editor, editor_area, true);
+            if let Some(editor) = state.editor_mut() {
+                let editor_view = editor_render_state(editor, editor_area, editor_focused);
                 render_editor(
                     frame,
                     editor_area,
                     editor,
                     &editor_view,
-                    true,
+                    editor_focused,
                     palette,
                     syntect_theme,
                 );
 
                 if let Some(md_area) = md_area_opt {
                     let source = editor.contents();
-                    render_markdown_preview(frame, md_area, &source, palette);
+                    render_markdown_preview(
+                        frame,
+                        md_area,
+                        &source,
+                        palette,
+                        md_scroll,
+                        md_focused,
+                    );
                 }
             }
         } else if is_preview_open {
             let preview_view = state.preview_view().map(|(_, view)| view);
             let filename = state.active_pane_title().to_string();
+            file_preview_panel_rect = Some(tools_area);
             render_preview_panel(
                 frame,
                 tools_area,
@@ -216,9 +241,12 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     LayoutCache {
         menu_bar: areas[0],
-        left_pane: panes[0],
-        right_pane: panes[1],
+        left_pane: left_pane_rect,
+        right_pane: right_pane_rect,
         tools_panel: tools_area_opt,
+        editor_panel: editor_panel_rect,
+        file_preview_panel: file_preview_panel_rect,
+        markdown_preview_panel: markdown_preview_panel_rect,
         status_bar: areas[2],
         menu_popup: menu_popup_rect,
     }

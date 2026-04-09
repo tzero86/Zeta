@@ -49,6 +49,9 @@ pub struct AppState {
     last_scan_time_ms: Option<u128>,
     file_operation_status: Option<FileOperationStatus>,
     should_quit: bool,
+    /// Full-window editor mode hides the pane browser and lets the editor own
+    /// the full content area.
+    editor_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
 }
@@ -87,6 +90,7 @@ impl AppState {
             last_scan_time_ms: None,
             file_operation_status: None,
             should_quit: false,
+            editor_fullscreen: false,
             git: [None, None],
         })
     }
@@ -143,6 +147,25 @@ impl AppState {
                 self.config.preview_panel_open = self.preview.panel_open;
                 let _ = self.config.save(Path::new(&self.config_path));
             }
+            Action::ToggleEditorFullscreen => {
+                if self.editor.is_open() {
+                    self.editor_fullscreen = !self.editor_fullscreen;
+                    self.status_message = if self.editor_fullscreen {
+                        String::from("editor fullscreen enabled")
+                    } else {
+                        String::from("editor fullscreen disabled")
+                    };
+                }
+            }
+            Action::ToggleMarkdownPreview => {
+                if self.editor.is_markdown_file() {
+                    self.status_message = if self.editor.markdown_preview_visible {
+                        String::from("markdown preview shown")
+                    } else {
+                        String::from("markdown preview hidden")
+                    };
+                }
+            }
             Action::ToggleHiddenFiles => {
                 self.status_message = if self.panes.active_pane().show_hidden {
                     String::from("showing hidden files")
@@ -151,6 +174,7 @@ impl AppState {
                 };
             }
             Action::CycleFocus => {
+                self.editor.markdown_preview_focused = false;
                 let preview_available = self.preview.panel_open && self.preview.view.is_some();
                 self.panes.focus = match self.panes.focus {
                     PaneFocus::Left => {
@@ -170,8 +194,12 @@ impl AppState {
                     }
                 };
             }
+            Action::FocusNextPane => {
+                self.editor.markdown_preview_focused = false;
+            }
             Action::FocusPreviewPanel => {
                 if self.preview.panel_open {
+                    self.editor.markdown_preview_focused = false;
                     self.panes.focus = if self.panes.focus == PaneFocus::Preview {
                         self.status_message = String::from("preview focus returned to file pane");
                         PaneFocus::Left
@@ -179,6 +207,21 @@ impl AppState {
                         self.status_message = String::from("preview panel focused");
                         PaneFocus::Preview
                     };
+                }
+            }
+            Action::FocusMarkdownPreview => {
+                if self.editor.is_markdown_file() && self.editor.markdown_preview_visible {
+                    if self.editor.markdown_preview_focused {
+                        self.status_message = String::from(
+                            "markdown preview focused  (Tab/Esc to return, Ctrl+M to hide)",
+                        );
+                    } else {
+                        self.status_message =
+                            String::from("editor focused  (Tab to focus markdown preview)");
+                    }
+                    if self.panes.focus == PaneFocus::Preview {
+                        self.panes.focus = PaneFocus::Left;
+                    }
                 }
             }
             Action::Quit => {
@@ -356,8 +399,12 @@ impl AppState {
                     self.status_message =
                         String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
                 } else if !self.editor.is_open() {
-                    // already closed — nothing to report
+                    self.editor_fullscreen = false;
                 }
+            }
+            Action::DiscardEditorChanges => {
+                self.editor_fullscreen = false;
+                self.status_message = String::from("discarded editor changes");
             }
             Action::SettingsToggleCurrent => {
                 if let Some(ModalState::Settings(s)) = &self.overlay.modal {
@@ -385,6 +432,27 @@ impl AppState {
             }
             _ => {}
         }
+
+        if matches!(
+            action,
+            Action::EditorMoveUp
+                | Action::EditorMoveDown
+                | Action::EditorMoveLeft
+                | Action::EditorMoveRight
+                | Action::EditorInsert(_)
+                | Action::EditorBackspace
+                | Action::EditorNewline
+                | Action::EditorSearchNext
+                | Action::EditorSearchPrev
+                | Action::ToggleMarkdownPreview
+        ) {
+            let preview_height = self
+                .last_size
+                .map(|(_, h)| usize::from(h.saturating_sub(6) / 2).max(1))
+                .unwrap_or(12);
+            self.editor.sync_markdown_preview_to_cursor(preview_height);
+        }
+
         Ok(commands)
     }
 
@@ -522,8 +590,18 @@ impl AppState {
     }
     pub fn pane_layout(&self) -> PaneLayout { self.panes.pane_layout }
     pub fn is_editor_focused(&self) -> bool {
-        self.editor.is_open() && self.panes.focus != PaneFocus::Preview
+        self.editor.is_open()
+            && self.panes.focus != PaneFocus::Preview
+            && !self.editor.markdown_preview_focused
     }
+
+    pub fn is_markdown_preview_focused(&self) -> bool {
+        self.editor.is_open()
+            && self.editor.markdown_preview_visible
+            && self.editor.markdown_preview_focused
+    }
+
+    pub fn is_editor_fullscreen(&self) -> bool { self.editor_fullscreen }
 
     /// Returns the cached git status for the given pane, if available.
     pub fn git_status(&self, pane: crate::pane::PaneId) -> Option<&crate::git::RepoStatus> {
@@ -531,7 +609,7 @@ impl AppState {
     }
 
     /// Derive the current input focus layer from state.
-    /// Priority (highest → lowest): Palette > Collision > Prompt > Dialog > Menu > Settings > Editor > Preview > Pane.
+    /// Priority (highest → lowest): Palette > Collision > Prompt > Dialog > Menu > Settings > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
@@ -550,6 +628,9 @@ impl AppState {
         }
         if self.is_settings_open() {
             return FocusLayer::Modal(ModalKind::Settings);
+        }
+        if self.is_markdown_preview_focused() {
+            return FocusLayer::MarkdownPreview;
         }
         if self.is_editor_focused() {
             return FocusLayer::Editor;
@@ -586,6 +667,10 @@ impl AppState {
     // Editor accessor — delegate to EditorState
     pub fn editor(&self) -> Option<&EditorBuffer> { self.editor.buffer.as_ref() }
     pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> { self.editor.buffer.as_mut() }
+    pub fn is_markdown_preview_visible(&self) -> bool {
+        self.editor.is_markdown_file() && self.editor.markdown_preview_visible
+    }
+    pub fn markdown_preview_scroll(&self) -> usize { self.editor.markdown_preview_scroll }
 
     pub fn open_editor(&mut self, buffer: EditorBuffer) {
         let path = buffer
@@ -596,7 +681,9 @@ impl AppState {
         if self.panes.focus == PaneFocus::Preview {
             self.panes.focus = PaneFocus::Left;
         }
+        self.editor_fullscreen = false;
         self.editor.open(buffer);
+        self.editor.sync_markdown_preview_to_cursor(12);
         self.status_message = format!("opened editor for {path}");
     }
 
@@ -897,6 +984,17 @@ mod tests {
         assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::Palette)));
     }
 
+    #[test]
+    fn focus_layer_returns_markdown_preview_when_split_preview_is_focused() {
+        let mut state = test_state();
+        state.open_editor(EditorBuffer {
+            path: Some(PathBuf::from("note.md")),
+            ..EditorBuffer::default()
+        });
+        state.apply(Action::FocusMarkdownPreview).unwrap();
+        assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
+    }
+
     fn test_state() -> AppState {
         let right = PaneState {
             title: String::from("right"),
@@ -930,6 +1028,7 @@ mod tests {
             last_scan_time_ms: None,
             file_operation_status: None,
             should_quit: false,
+            editor_fullscreen: false,
             git: [None, None],
         }
     }

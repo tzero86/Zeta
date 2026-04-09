@@ -85,6 +85,13 @@ pub enum Action {
     ClearMarks,
     ToggleHiddenFiles,
     TogglePreviewPanel,
+    ToggleEditorFullscreen,
+    ToggleMarkdownPreview,
+    FocusMarkdownPreview,
+    ScrollMarkdownPreviewUp,
+    ScrollMarkdownPreviewDown,
+    ScrollMarkdownPreviewPageUp,
+    ScrollMarkdownPreviewPageDown,
     Quit,
     Resize { width: u16, height: u16 },
     OpenCommandPalette,
@@ -291,6 +298,19 @@ impl Action {
         }
     }
 
+    /// Keys when the markdown preview split has keyboard focus.
+    pub fn from_markdown_preview_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Up       => Some(Self::ScrollMarkdownPreviewUp),
+            KeyCode::Down     => Some(Self::ScrollMarkdownPreviewDown),
+            KeyCode::PageUp   => Some(Self::ScrollMarkdownPreviewPageUp),
+            KeyCode::PageDown => Some(Self::ScrollMarkdownPreviewPageDown),
+            // Esc or Tab returns focus to the editor.
+            KeyCode::Esc | KeyCode::Tab => Some(Self::FocusMarkdownPreview),
+            _ => None,
+        }
+    }
+
     /// Global keys available in Pane context (and as lower-priority fallback from Editor).
     pub fn from_pane_key_event(
         key_event: KeyEvent,
@@ -343,6 +363,11 @@ impl Action {
             KeyCode::Char('f') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorOpenSearch)
             }
+            KeyCode::F(11) => Some(Self::ToggleEditorFullscreen),
+            KeyCode::Char('m') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::ToggleMarkdownPreview)
+            }
+            KeyCode::Tab => Some(Self::FocusMarkdownPreview),
             KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
             KeyCode::Backspace => Some(Self::EditorBackspace),
             KeyCode::Enter => Some(Self::EditorNewline),
@@ -350,7 +375,6 @@ impl Action {
             KeyCode::Right => Some(Self::EditorMoveRight),
             KeyCode::Up => Some(Self::EditorMoveUp),
             KeyCode::Down => Some(Self::EditorMoveDown),
-            KeyCode::Tab => Some(Self::FocusNextPane),
             KeyCode::F(3) if key_event.modifiers == KeyModifiers::SHIFT => {
                 Some(Self::EditorSearchPrev)
             }

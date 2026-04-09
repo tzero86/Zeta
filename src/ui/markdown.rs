@@ -24,11 +24,20 @@ pub fn render_markdown_preview(
     area: Rect,
     source: &str,
     palette: ThemePalette,
+    scroll: usize,
+    is_focused: bool,
 ) {
+    let border_style = if is_focused {
+        Style::default()
+            .fg(palette.border_focus)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(palette.text_muted)
+    };
     let block = Block::default()
-        .title(" Preview ")
+        .title(" Markdown Preview ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(palette.text_muted))
+        .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -36,6 +45,7 @@ pub fn render_markdown_preview(
     let lines = parse_markdown_lines_with_palette(source, palette);
     let paragraph = Paragraph::new(lines)
         .style(Style::default().bg(palette.tools_bg))
+        .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
 }

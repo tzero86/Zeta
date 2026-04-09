@@ -219,6 +219,14 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
         FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
+        FocusLayer::MarkdownPreview => {
+            if is_preview_open && alt_f3 {
+                return Some(Action::FocusPreviewPanel);
+            }
+            Action::from_markdown_preview_key_event(key_event)
+                .or_else(|| Action::from_editor_key_event(key_event))
+                .or_else(|| Action::from_pane_key_event(key_event, keymap))
+        }
         FocusLayer::Editor => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
@@ -253,11 +261,22 @@ fn route_mouse_event(
         // -------------------------------------------------------------------
         MouseEventKind::ScrollUp => {
             if focus == FocusLayer::Preview
-                || cache.tools_panel.is_some_and(|r| rect_contains(r, col, row))
+                || cache
+                    .file_preview_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::ScrollPreviewUp);
             }
-            if focus == FocusLayer::Editor {
+            if focus == FocusLayer::MarkdownPreview
+                || cache
+                    .markdown_preview_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
+            {
+                return Some(Action::ScrollMarkdownPreviewUp);
+            }
+            if focus == FocusLayer::Editor
+                || cache.editor_panel.is_some_and(|r| rect_contains(r, col, row))
+            {
                 return Some(Action::EditorMoveUp);
             }
             if rect_contains(cache.left_pane, col, row)
@@ -269,11 +288,22 @@ fn route_mouse_event(
         }
         MouseEventKind::ScrollDown => {
             if focus == FocusLayer::Preview
-                || cache.tools_panel.is_some_and(|r| rect_contains(r, col, row))
+                || cache
+                    .file_preview_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::ScrollPreviewDown);
             }
-            if focus == FocusLayer::Editor {
+            if focus == FocusLayer::MarkdownPreview
+                || cache
+                    .markdown_preview_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
+            {
+                return Some(Action::ScrollMarkdownPreviewDown);
+            }
+            if focus == FocusLayer::Editor
+                || cache.editor_panel.is_some_and(|r| rect_contains(r, col, row))
+            {
                 return Some(Action::EditorMoveDown);
             }
             if rect_contains(cache.left_pane, col, row)
@@ -315,13 +345,30 @@ fn route_mouse_event(
                 return route_menu_bar_click(col, cache.menu_bar.x);
             }
 
-            // Click on the tools panel (editor or preview).
-            if let Some(tools_rect) = cache.tools_panel {
-                if rect_contains(tools_rect, col, row) {
-                    if focus != FocusLayer::Editor {
+            if let Some(md_rect) = cache.markdown_preview_panel {
+                if rect_contains(md_rect, col, row) {
+                    if focus != FocusLayer::MarkdownPreview {
+                        return Some(Action::FocusMarkdownPreview);
+                    }
+                    return None;
+                }
+            }
+
+            if let Some(editor_rect) = cache.editor_panel {
+                if rect_contains(editor_rect, col, row) {
+                    if focus == FocusLayer::MarkdownPreview {
+                        return Some(Action::FocusMarkdownPreview);
+                    }
+                    return None;
+                }
+            }
+
+            if let Some(preview_rect) = cache.file_preview_panel {
+                if rect_contains(preview_rect, col, row) {
+                    if focus != FocusLayer::Preview {
                         return Some(Action::FocusPreviewPanel);
                     }
-                    return None; // editor already focused
+                    return None;
                 }
             }
 
@@ -329,7 +376,10 @@ fn route_mouse_event(
             if rect_contains(cache.left_pane, col, row)
                 || rect_contains(cache.right_pane, col, row)
             {
-                if focus == FocusLayer::Editor || focus == FocusLayer::Preview {
+                if focus == FocusLayer::Editor
+                    || focus == FocusLayer::Preview
+                    || focus == FocusLayer::MarkdownPreview
+                {
                     return Some(Action::CycleFocus);
                 }
                 return Some(Action::FocusNextPane);
@@ -439,6 +489,9 @@ mod tests {
             left_pane:  Rect { x: 0,  y: 1,  width: 40, height: 20 },
             right_pane: Rect { x: 40, y: 1,  width: 40, height: 20 },
             tools_panel: None,
+            editor_panel: None,
+            file_preview_panel: None,
+            markdown_preview_panel: None,
             status_bar: Rect { x: 0,  y: 21, width: 80, height: 1  },
             menu_popup: None,
         }

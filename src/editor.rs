@@ -354,6 +354,10 @@ impl EditorBuffer {
         (line, safe.saturating_sub(line_start))
     }
 
+    pub fn line_count(&self) -> usize {
+        self.text.len_lines()
+    }
+
     pub fn clamp_horizontal_scroll(&mut self, viewport_cols: usize) {
         let (_, col) = self.cursor_line_col();
         if col < self.scroll_col {

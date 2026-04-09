@@ -10,6 +10,12 @@ pub struct LayoutCache {
     pub right_pane: Rect,
     /// Present when the editor or preview panel is visible.
     pub tools_panel: Option<Rect>,
+    /// Exact editor viewport rect when the editor is visible.
+    pub editor_panel: Option<Rect>,
+    /// Exact file preview panel rect when the standalone preview is visible.
+    pub file_preview_panel: Option<Rect>,
+    /// Exact markdown preview split rect when editing markdown with live preview.
+    pub markdown_preview_panel: Option<Rect>,
     pub status_bar: Rect,
     /// Bounding box of the open menu popup (border included), or `None`.
     pub menu_popup: Option<Rect>,
