@@ -259,10 +259,8 @@ mod tests {
     #[test]
     fn open_markdown_file_enables_live_preview() {
         let mut s = EditorState::default();
-        let buf = EditorBuffer {
-            path: Some(std::path::PathBuf::from("note.md")),
-            ..EditorBuffer::default()
-        };
+        let mut buf = EditorBuffer::default();
+        buf.path = Some(std::path::PathBuf::from("note.md"));
         s.open(buf);
         assert!(s.markdown_preview_visible);
         assert!(!s.markdown_preview_focused);
@@ -272,10 +270,8 @@ mod tests {
     #[test]
     fn toggle_markdown_preview_changes_visibility_for_markdown_buffers() {
         let mut s = EditorState::default();
-        let buf = EditorBuffer {
-            path: Some(std::path::PathBuf::from("note.md")),
-            ..EditorBuffer::default()
-        };
+        let mut buf = EditorBuffer::default();
+        buf.path = Some(std::path::PathBuf::from("note.md"));
         s.open(buf);
         s.apply(&Action::ToggleMarkdownPreview).unwrap();
         assert!(!s.markdown_preview_visible);

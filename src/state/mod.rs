@@ -418,7 +418,6 @@ impl AppState {
             // Auto-preview after navigation
             Action::MoveSelectionDown
             | Action::MoveSelectionUp
-            | Action::FocusNextPane
             | Action::EnterSelection => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
@@ -987,10 +986,9 @@ mod tests {
     #[test]
     fn focus_layer_returns_markdown_preview_when_split_preview_is_focused() {
         let mut state = test_state();
-        state.open_editor(EditorBuffer {
-            path: Some(PathBuf::from("note.md")),
-            ..EditorBuffer::default()
-        });
+        let mut editor = EditorBuffer::default();
+        editor.path = Some(PathBuf::from("note.md"));
+        state.open_editor(editor);
         state.apply(Action::FocusMarkdownPreview).unwrap();
         assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
     }

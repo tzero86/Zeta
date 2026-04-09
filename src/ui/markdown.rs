@@ -68,6 +68,10 @@ pub fn parse_markdown_lines_with_palette(
     source: &str,
     palette: ThemePalette,
 ) -> Vec<Line<'static>> {
+    if source.is_empty() {
+        return vec![Line::from("")];
+    }
+
     let mut output: Vec<Line<'static>> = Vec::new();
     let mut in_fence = false;
 
