@@ -94,6 +94,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         left_focused,
         Borders::TOP | Borders::LEFT | Borders::BOTTOM,
         state,
+        state.git_status(PaneId::Left),
     );
 
     render_pane(
@@ -104,6 +105,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         right_focused,
         Borders::ALL,
         state,
+        state.git_status(PaneId::Right),
     );
 
     if let Some(tools_area) = tools_area_opt {

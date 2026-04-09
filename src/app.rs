@@ -15,7 +15,7 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
-use crate::jobs::{self, FileOpRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
+use crate::jobs::{self, FileOpRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::layout_cache::{rect_contains, LayoutCache};
@@ -168,11 +168,17 @@ impl App {
                 .file_op_tx
                 .send(FileOpRequest { operation, refresh, collision })
                 .context("failed to queue background file operation")?,
-            Command::ScanPane { pane, path } => self
-                .workers
-                .scan_tx
-                .send(ScanRequest { pane, path })
-                .context("failed to queue background scan job")?,
+            Command::ScanPane { pane, path } => {
+                self.workers
+                    .scan_tx
+                    .send(ScanRequest { pane, path: path.clone() })
+                    .context("failed to queue background scan job")?;
+                // Fire a git status refresh alongside every directory scan.
+                self.workers
+                    .git_tx
+                    .send(GitStatusRequest { pane, path })
+                    .context("failed to queue git status job")?;
+            }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
             }

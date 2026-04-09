@@ -4,6 +4,7 @@ pub mod config;
 pub mod editor;
 pub mod event;
 pub mod fs;
+pub mod git;
 pub mod highlight;
 pub mod icon;
 pub mod jobs;

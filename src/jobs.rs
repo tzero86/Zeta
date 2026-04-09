@@ -34,6 +34,12 @@ pub struct PreviewRequest {
     pub syntect_theme: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct GitStatusRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
+}
+
 // ---------------------------------------------------------------------------
 // Result types (unchanged public surface)
 // ---------------------------------------------------------------------------
@@ -70,6 +76,15 @@ pub enum JobResult {
         path: PathBuf,
         view: crate::preview::ViewBuffer,
     },
+    /// Git status fetched successfully for a pane's working directory.
+    GitStatusLoaded {
+        pane: PaneId,
+        status: crate::git::RepoStatus,
+    },
+    /// The path is not inside a git repository (or git is not available).
+    GitStatusAbsent {
+        pane: PaneId,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,9 +108,10 @@ pub struct FileOperationStatus {
 
 /// Three typed senders — one per dedicated worker thread.
 pub struct WorkerChannels {
-    pub scan_tx: Sender<ScanRequest>,
+    pub scan_tx:    Sender<ScanRequest>,
     pub file_op_tx: Sender<FileOpRequest>,
     pub preview_tx: Sender<PreviewRequest>,
+    pub git_tx:     Sender<GitStatusRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -163,13 +179,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     // --- Preview worker ---
     let (preview_tx, preview_rx) = bounded::<PreviewRequest>(8);
     {
-        // Last clone — move ownership.
+        // Clone for preview — git worker gets the final move below.
+        let result_tx_preview = result_tx.clone();
         thread::Builder::new()
             .name("zeta-preview".into())
             .spawn(move || {
                 for req in preview_rx {
                     let view = load_preview_content(&req.path, &req.syntect_theme);
-                    if result_tx
+                    if result_tx_preview
                         .send(JobResult::PreviewLoaded { path: req.path, view })
                         .is_err()
                     {
@@ -180,7 +197,27 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn preview worker");
     }
 
-    (WorkerChannels { scan_tx, file_op_tx, preview_tx }, result_rx)
+    // --- Git status worker ---
+    let (git_tx, git_rx) = bounded::<GitStatusRequest>(16);
+    {
+        let result_tx = result_tx; // move — last sender clone
+        thread::Builder::new()
+            .name("zeta-git".into())
+            .spawn(move || {
+                for req in git_rx {
+                    let result = match crate::git::fetch_status(&req.path) {
+                        Some(status) => JobResult::GitStatusLoaded { pane: req.pane, status },
+                        None         => JobResult::GitStatusAbsent { pane: req.pane },
+                    };
+                    if result_tx.send(result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn git worker");
+    }
+
+    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx }, result_rx)
 }
 
 // ---------------------------------------------------------------------------
@@ -411,6 +448,27 @@ fn describe_operation(operation: &FileOperation) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_worker_responds_to_request() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .git_tx
+            .send(GitStatusRequest { pane: PaneId::Left, path: tmp })
+            .unwrap();
+        let result = results
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                JobResult::GitStatusLoaded { pane: PaneId::Left, .. }
+                    | JobResult::GitStatusAbsent { pane: PaneId::Left }
+            ),
+            "unexpected result: {result:?}"
+        );
+    }
 
     #[test]
     fn worker_channels_can_send_and_receive_scan_request() {

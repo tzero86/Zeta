@@ -49,6 +49,8 @@ pub struct AppState {
     last_scan_time_ms: Option<u128>,
     file_operation_status: Option<FileOperationStatus>,
     should_quit: bool,
+    /// Cached git status for [Left=0, Right=1] pane working directories.
+    git: [Option<crate::git::RepoStatus>; 2],
 }
 
 impl AppState {
@@ -85,6 +87,7 @@ impl AppState {
             last_scan_time_ms: None,
             file_operation_status: None,
             should_quit: false,
+            git: [None, None],
         })
     }
 
@@ -430,6 +433,12 @@ impl AppState {
             JobResult::PreviewLoaded { path, view } => {
                 self.preview.apply_job_loaded(path, view);
             }
+            JobResult::GitStatusLoaded { pane, status } => {
+                self.git[pane as usize] = Some(status);
+            }
+            JobResult::GitStatusAbsent { pane } => {
+                self.git[pane as usize] = None;
+            }
         }
     }
 
@@ -514,6 +523,11 @@ impl AppState {
     pub fn pane_layout(&self) -> PaneLayout { self.panes.pane_layout }
     pub fn is_editor_focused(&self) -> bool {
         self.editor.is_open() && self.panes.focus != PaneFocus::Preview
+    }
+
+    /// Returns the cached git status for the given pane, if available.
+    pub fn git_status(&self, pane: crate::pane::PaneId) -> Option<&crate::git::RepoStatus> {
+        self.git[pane as usize].as_ref()
     }
 
     /// Derive the current input focus layer from state.
@@ -639,10 +653,20 @@ impl AppState {
                 )
             })
             .unwrap_or_default();
+        let branch = {
+            let active_pane_id = match self.panes.focus {
+                PaneFocus::Left | PaneFocus::Preview => crate::pane::PaneId::Left,
+                PaneFocus::Right => crate::pane::PaneId::Right,
+            };
+            self.git_status(active_pane_id)
+                .map(|g| format!(" ⎇ {}", g.branch))
+                .unwrap_or_default()
+        };
         format!(
-            "{} | {} | {} | up:{}ms {}{}{} | d:{}",
+            "{} | {}{} | {} | up:{}ms {}{}{} | d:{}",
             self.config.theme.status_bar_label,
             self.status_message,
+            branch,
             self.theme.preset,
             self.startup_time_ms,
             scan,
@@ -799,6 +823,68 @@ mod tests {
     }
 
     #[test]
+    fn git_status_defaults_to_none_for_both_panes() {
+        let state = test_state();
+        assert!(state.git_status(crate::pane::PaneId::Left).is_none());
+        assert!(state.git_status(crate::pane::PaneId::Right).is_none());
+    }
+
+    #[test]
+    fn git_status_loaded_result_stores_status_for_correct_pane() {
+        use crate::git::RepoStatus;
+        use std::collections::HashMap;
+        let mut state = test_state();
+        state.apply_job_result(JobResult::GitStatusLoaded {
+            pane: crate::pane::PaneId::Left,
+            status: RepoStatus {
+                root: PathBuf::from("/tmp/repo"),
+                branch: String::from("main"),
+                file_statuses: HashMap::new(),
+            },
+        });
+        assert!(state.git_status(crate::pane::PaneId::Left).is_some());
+        assert_eq!(state.git_status(crate::pane::PaneId::Left).unwrap().branch, "main");
+        assert!(state.git_status(crate::pane::PaneId::Right).is_none());
+    }
+
+    #[test]
+    fn git_status_absent_clears_status() {
+        use crate::git::RepoStatus;
+        use std::collections::HashMap;
+        let mut state = test_state();
+        state.apply_job_result(JobResult::GitStatusLoaded {
+            pane: crate::pane::PaneId::Left,
+            status: RepoStatus {
+                root: PathBuf::from("/tmp/repo"),
+                branch: String::from("main"),
+                file_statuses: HashMap::new(),
+            },
+        });
+        state.apply_job_result(JobResult::GitStatusAbsent { pane: crate::pane::PaneId::Left });
+        assert!(state.git_status(crate::pane::PaneId::Left).is_none());
+    }
+
+    #[test]
+    fn status_line_includes_branch_name_when_git_loaded() {
+        use crate::git::RepoStatus;
+        use std::collections::HashMap;
+        let mut state = test_state();
+        state.apply_job_result(JobResult::GitStatusLoaded {
+            pane: crate::pane::PaneId::Left,
+            status: RepoStatus {
+                root: PathBuf::from("/tmp/repo"),
+                branch: String::from("feature/cool"),
+                file_statuses: HashMap::new(),
+            },
+        });
+        assert!(
+            state.status_line().contains("feature/cool"),
+            "status line should contain branch name, got: {}",
+            state.status_line()
+        );
+    }
+
+    #[test]
     fn focus_layer_returns_pane_when_nothing_open() {
         let state = test_state();
         assert!(matches!(state.focus_layer(), FocusLayer::Pane));
@@ -844,6 +930,7 @@ mod tests {
             last_scan_time_ms: None,
             file_operation_status: None,
             should_quit: false,
+            git: [None, None],
         }
     }
 

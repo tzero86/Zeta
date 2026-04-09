@@ -6,6 +6,7 @@ use ratatui::Frame;
 
 use crate::config::{IconMode, ThemePalette};
 use crate::fs::{EntryInfo, EntryKind};
+use crate::git::{FileStatus, RepoStatus};
 use crate::icon::icon_for_kind;
 use crate::pane::PaneState;
 use crate::state::AppState;
@@ -44,6 +45,7 @@ pub fn render_pane(
     is_focused: bool,
     borders: Borders,
     state: &AppState,
+    git: Option<&RepoStatus>,
 ) {
     let palette = state.theme().palette;
     let icon_mode = state.icon_mode();
@@ -82,6 +84,7 @@ pub fn render_pane(
                     list_area.width as usize,
                     palette,
                     icon_mode,
+                    git.and_then(|g| g.status_for(&entry.path)),
                 )
             })
             .collect()
@@ -112,6 +115,7 @@ pub fn render_item(
     available_width: usize,
     palette: ThemePalette,
     icon_mode: IconMode,
+    git_status: Option<FileStatus>,
 ) -> ListItem<'static> {
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
@@ -125,7 +129,12 @@ pub fn render_item(
     let meta = format_entry_meta(entry);
     let icon_slot = format_icon_slot(icon, icon_mode);
     let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);
-    let prefix_width = display_width(&prefix);
+    let prefix_width = display_width(&prefix) + 2; // +2 for git indicator + space
+    // Git status indicator — always 1 char wide so column alignment is stable.
+    let (git_char, git_colour) = match git_status {
+        Some(s) => (s.symbol(), s.colour()),
+        None    => (' ', palette.text_muted),
+    };
     let meta_width = display_width(&meta);
     let content_width = available_width.saturating_sub(2);
     let name_width = content_width
@@ -145,6 +154,8 @@ pub fn render_item(
         Span::styled(format!("{} ", branch), row_styles.branch),
         Span::styled(mark_prefix.to_string(), row_styles.mark),
         Span::styled(format!("{} ", icon_slot), row_styles.icon),
+        Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+        Span::raw(" "),
         Span::styled(name, row_styles.name),
         Span::styled(" ".repeat(spacer_width), Style::default()),
         Span::styled(meta, row_styles.meta),
