@@ -1,94 +1,210 @@
 # Zeta
 
-```text
- ____  ________  ____             __               
-|    \|        \|    \           |  \              
-| $$$$ \$$$$$$$$ \$$$$  ______  _| $$_     ______  
-| $$      /  $$   | $$ /      \|   $$ \   |      \ 
-| $$     /  $$    | $$|  $$$$$$\\$$$$$$    \$$$$$$\
-| $$    /  $$     | $$| $$    $$ | $$ __  /      $$
-| $$_  /  $$___  _| $$| $$$$$$$$ | $$|  \|  $$$$$$$
+```
+ ____  ________  ____             __
+|    \|        \|    \           |  \
+| $$$$ \$$$$$$$$ \$$$$  ______  _| $$_     ______
+| $$      /  $$   | $$ /      \|   $$ \   |      \
+| $$     /  $$    | $$ |  $$$$$$\\$$$$$$    \$$$$$$\
+| $$    /  $$     | $$ | $$    $$ | $$ __  /      $$
+| $$_  /  $$___  _| $$ | $$$$$$$$ | $$|  \|  $$$$$$$
 | $$ \|  $$    \|   $$ \$$     \  \$$  $$ \$$    $$
  \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
 ```
 
-Zeta is a keyboard-first terminal file manager and lightweight editor written in Rust.
-It aims for a classic Norton Commander workflow with a cleaner modern TUI, low overhead, and fast local filesystem operations.
+A keyboard-first terminal file manager and embedded editor for developers —
+Norton Commander workflow, modern TUI, written in Rust.
 
-## Current Status
+---
 
-This project is in active early development.
+## Features
 
-Implemented core features:
+### File management
+- Dual-pane browser with side-by-side and stacked layouts
+- Create, copy, move, rename, and delete files and directories
+- Collision resolution dialog (skip, overwrite, rename)
+- Background workers — file operations, directory scans, and previews never block each other
+- Mark multiple files for batch operations
+- Hidden file toggle, sort by name / size / extension / modified date
+- Navigate history (Alt+Left / Alt+Right)
 
-- dual-pane file browser
-- side-by-side and stacked pane layouts
-- embedded text editor with save/discard flow
-- top menu bar, prompts, and dialogs
-- theme switching
-- Unicode icons by default with ASCII fallback in config
-- optional custom icon mode via bundled font asset
-- in-app settings panel for theme, icons, layout, and preview preferences
-- create, rename, delete, copy, and move flows
-- background jobs for scans and file operations
-- GitHub Actions builds for Linux and Windows artifacts
+### Editor
+- Embedded text editor with syntax highlighting (via syntect)
+- Undo / redo with delta-based history (O(log n), handles large files)
+- In-editor search with match count and wrap-around
+- Save / discard flow with dirty-state guard
 
-## Tech Stack
+### Markdown live preview
+- When editing a `.md` file the tools panel splits vertically — editor on the left, rendered preview on the right
+- Native ratatui 0.29 renderer: headings, bold, italic, inline code, fenced blocks, bullets, ordered lists, blockquotes, horizontal rules
+- Preview updates on every keystroke — no background job, zero latency
 
-- Rust stable
-- `crossterm` for terminal I/O
-- `ratatui` for rendering
-- `ropey` for editor buffers
-- `crossbeam-channel` for background job messaging
-- `serde` + `toml` for config
+### Preview panel
+- Syntax-highlighted file preview for source files (F3)
+- Markdown files rendered as formatted text
+- Binary file detection with size display
 
-## Run Locally
+### Git integration
+- Per-file status indicators in both panes (`M` modified, `A` added, `?` untracked, `D` deleted, `R` renamed, `U` conflicted)
+- Current branch name in the status bar
+- Refreshes automatically alongside every directory scan
+- No git crate dependency — shells out to `git` on PATH; absent or non-repo paths are silently skipped
+
+### Navigation & UX
+- Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
+- Command palette (`Ctrl+P`)
+- In-app settings panel for theme, icon mode, layout, and preview preferences (`Ctrl+O`)
+- Full mouse support: click to focus panes, scroll to navigate, click menu items, hover highlights
+- Three built-in themes: Oxide (default), Fjord, Sandbar
+- Unicode icons by default, ASCII fallback, custom icon font mode
+
+---
+
+## Key bindings (defaults)
+
+| Key | Action |
+|---|---|
+| `F4` | Open selected file in editor |
+| `F3` | Toggle file preview panel |
+| `F5` | Copy |
+| `F6` | Rename / `Shift+F6` Move |
+| `F7` | New directory |
+| `F8` | Delete |
+| `Ins` | New file |
+| `Tab` | Switch active pane |
+| `Ctrl+P` | Command palette |
+| `Ctrl+O` | Settings |
+| `Ctrl+Q` | Quit |
+| `Alt+F/N/V/H` | Open menu |
+| `Alt+←/→` | Navigate directory history |
+| `F3` (Alt) | Focus preview panel |
+
+---
+
+## Tech stack
+
+| Crate | Purpose |
+|---|---|
+| `crossterm 0.28` | Terminal I/O, raw mode, mouse capture |
+| `ratatui 0.29` | Rendering and layout |
+| `ropey 1.6` | O(log n) editor buffer |
+| `syntect 5.3` | Syntax highlighting |
+| `crossbeam-channel 0.5` | Background worker messaging |
+| `serde` + `toml` | Config serialisation |
+| `thiserror` | Typed error handling |
+
+---
+
+## Architecture
+
+```
+App (event loop)
+├── AppState (single source of truth)
+│   ├── PaneSetState    — dual-pane navigation and selection
+│   ├── EditorState     — editor buffer + search + preview state
+│   ├── PreviewState    — preview panel content and scroll
+│   ├── OverlayState    — menus, prompts, dialogs, palette
+│   └── git: [RepoStatus; 2]  — per-pane git status cache
+├── WorkerChannels (four dedicated background threads)
+│   ├── ScanWorker      — directory listing
+│   ├── FileOpWorker    — copy / move / delete / rename
+│   ├── PreviewWorker   — file content + syntax highlighting
+│   └── GitWorker       — git status + branch detection
+└── FocusLayer          — compiler-enforced input routing
+    (Pane | Editor | Preview | MarkdownPreview | Modal(…))
+```
+
+Key design decisions:
+- One UI thread + four bounded worker threads. No async runtime.
+- `FocusLayer` enum makes illegal input-routing states unrepresentable.
+- Editor uses `ropey::Rope` (B-tree) for O(log n) insert/delete on large files.
+- Highlight cache keyed by `edit_version` — syntect runs once per edit, not per frame.
+- Git status is a fire-and-forget background job triggered alongside every scan.
+
+Full ADR: [`docs/adr-0001-architecture.md`](docs/adr-0001-architecture.md)
+
+---
+
+## Project layout
+
+```
+src/
+  app.rs              — event loop, command dispatch, mouse routing
+  state/              — AppState and all sub-states
+  ui/                 — rendering modules (pane, editor, preview, markdown, …)
+  editor.rs           — EditorBuffer (ropey backend, delta undo)
+  jobs.rs             — WorkerChannels, four background workers
+  git.rs              — RepoStatus, parse_porcelain, detect_repo
+  fs.rs               — filesystem operations
+  highlight.rs        — syntect wrapper
+  action.rs           — Action enum, FocusLayer-aware key routing
+  config.rs           — AppConfig, ThemePalette, keymaps
+docs/
+  superpowers/plans/  — wave-by-wave development plans and ROADMAP.md
+  adr-0001-architecture.md
+assets/
+  fonts/              — bundled zeta-icons.ttf (custom icon mode)
+```
+
+---
+
+## Running locally
 
 ```bash
 cargo run --
 ```
 
-Useful commands:
-
 ```bash
-cargo fmt --all
+cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
+cargo build --release
 ```
 
-## Project Layout
+---
 
-- `src/app.rs` - event loop and orchestration
-- `src/state.rs` - canonical app state and reducers
-- `src/ui.rs` - rendering and layout
-- `src/fs.rs` - filesystem operations
-- `src/jobs.rs` - background workers
-- `src/editor.rs` - embedded editor logic
-- `docs/adr-0001-architecture.md` - architecture decision record
+## Configuration
 
-Config note:
+Config is loaded from (in order of preference):
+
+1. `ZETA_CONFIG` environment variable path
+2. `%APPDATA%\zeta\config.toml` (Windows)
+3. `~/.config/zeta/config.toml` (Linux/macOS)
 
 ```toml
-# icon_mode = "unicode"  # default
-# icon_mode = "ascii"    # safe fallback for limited terminals
-# icon_mode = "custom"   # requires selecting the bundled icon font in your terminal
-# preview_panel_open = false
-# preview_on_selection = true
+# Theme: "oxide" (default) | "fjord" | "sandbar"
+theme = "oxide"
+
+# Icon mode: "unicode" (default) | "ascii" | "custom"
+# For "custom", install assets/fonts/zeta-icons.ttf in your terminal first.
+icon_mode = "unicode"
+
+# Open preview panel on startup
+preview_panel_open = false
+
+# Auto-preview on cursor move
+preview_on_selection = true
 ```
 
-If you enable `custom`, install and select `assets/fonts/zeta-icons.ttf` in your terminal emulator first.
+Access settings at runtime with `Ctrl+O` or via the View menu.
 
-Access settings with `Ctrl+O` or via the View menu / command palette.
+---
 
-## Direction
+## Roadmap
 
-Near-term priorities:
+See [`docs/superpowers/plans/ROADMAP.md`](docs/superpowers/plans/ROADMAP.md) for the full wave-by-wave development plan.
 
-- mature filesystem UX around collisions and overwrite flows
-- keep file operations non-blocking
-- improve test coverage for filesystem and render behavior
-- continue refining the commander-style interaction model
+Upcoming highlights:
+- **Wave 4C** — full-window editor mode, markdown preview scroll sync, preview focus/toggle
+- **Wave 4D** — in-pane quick filter (`/`), `Ctrl+P` fuzzy file find
+- **Wave 5A** — Find & Replace in editor, directory auto-refresh watcher
+- **Wave 5B** — bookmarks (persisted), trash/recycle bin (recoverable delete)
+- **Wave 5C** — shell drop-in (`F2` opens shell in current directory)
+- **Wave 6A/6B** — archive browsing, directory diff mode
+- **Wave 7A** — SSH/SFTP remote filesystems
+
+---
 
 ## License
 
-Currently unlicensed unless a project license file is added explicitly.
+Currently unlicensed. A license will be added explicitly before any public release.
