@@ -1438,6 +1438,8 @@ mod tests {
             editor_fullscreen: false,
             git: [None, None],
             pending_reveal: None,
+            diff_mode: false,
+            diff_map: std::collections::HashMap::new(),
         }
     }
 

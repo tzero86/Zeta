@@ -36,6 +36,7 @@ struct RenderItemArgs<'a> {
     palette: ThemePalette,
     icon_mode: IconMode,
     git_status: Option<FileStatus>,
+    diff_colour: Option<ratatui::style::Color>,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -63,6 +64,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
         pane,
         label,
         is_focused,
+        is_left,
         borders,
         state,
         git,
@@ -72,12 +74,18 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     let chrome = pane_chrome_style(is_focused, palette);
 
     let branch = git.map(|g| format!("  ⎇ {}", g.branch)).unwrap_or_default();
+    let diff_legend = if state.diff_mode {
+        format!("  | {}", crate::diff::diff_summary(&state.diff_map))
+    } else {
+        String::new()
+    };
     let title = format!(
-        "{} [{}]  {}{}  ({})",
+        "{} [{}]  {}{}{}  ({})",
         label,
         pane.entries.len(),
         pane.cwd.display(),
         branch,
+        diff_legend,
         pane.sort_mode.label()
     );
     let block = Block::default()
@@ -106,6 +114,12 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
             .iter()
             .enumerate()
             .map(|(index, entry)| {
+                let diff_colour = if state.diff_mode {
+                    state.diff_map.get(&entry.name)
+                        .map(|s| s.colour(is_left))
+                } else {
+                    None
+                };
                 render_item(RenderItemArgs {
                     entry,
                     is_focused,
@@ -115,6 +129,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                     palette,
                     icon_mode,
                     git_status: git.and_then(|g| g.status_for(&entry.path)),
+                    diff_colour,
                 })
             })
             .collect()
@@ -156,6 +171,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         palette,
         icon_mode,
         git_status,
+        diff_colour,
     } = args;
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
@@ -196,7 +212,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         Span::styled(format!("{} ", icon_slot), row_styles.icon),
         Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
         Span::raw(" "),
-        Span::styled(name, row_styles.name),
+        Span::styled(name, if let Some(dc) = diff_colour { row_styles.name.fg(dc) } else { row_styles.name }),
         Span::styled(" ".repeat(spacer_width), Style::default()),
         Span::styled(meta, row_styles.meta),
     ]))

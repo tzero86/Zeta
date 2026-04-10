@@ -53,8 +53,8 @@ a wave ships.
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz / .tar.bz2 / .tar.xz like directories | 📋 |
-| 6B | `2026-04-08-wave6b-directory-diff.md` | Left/right pane diff mode — colour-code unique/matching/different entries | 📋 |
+| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz / .tar.bz2 / .tar.xz like directories | ✅ |
+| 6B | `2026-04-08-wave6b-directory-diff.md` | Left/right pane diff mode — colour-code unique/matching/different entries | ✅ |
 
 ### Phase 7 — Remote filesystems
 
