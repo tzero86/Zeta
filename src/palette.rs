@@ -163,6 +163,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         // Editor
         PaletteEntry {
+            category: "System",
+            label: "Open shell in current directory",
+            hint: "F2",
+            action: Action::OpenShell,
+        },
+        PaletteEntry {
             category: "Editor",
             label: "Open file in editor",
             hint: "F4",
@@ -237,6 +243,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::SetTheme(ThemePreset::Oxide),
         },
         // System
+        PaletteEntry {
+            category: "System",
+            label: "Command palette",
+            hint: "Shift+P",
+            action: Action::OpenCommandPalette,
+        },
         PaletteEntry {
             category: "System",
             label: "Help",

@@ -8,7 +8,7 @@ This is the simplest and most reliable approach — no terminal emulator embeddi
 
 **No new dependencies.** Uses `std::process::Command`.
 
-**Jira:** ZTA-94 (ZTA-164 through ZTA-168)
+**Jira:** ZTA-132 (ZTA-151 through ZTA-155)
 
 **Wave dependency:** Starts AFTER Wave 5B.
 

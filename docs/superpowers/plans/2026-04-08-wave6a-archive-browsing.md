@@ -20,7 +20,7 @@
 
 > **Binary size note:** `zip` and `tar` + `flate2` are pure Rust and add ~200 KB to the release binary. `bzip2` and `xz2` link C libraries; if binary size is a concern, skip those formats initially and add them later.
 
-**Jira:** ZTA-95 (ZTA-169 through ZTA-177)
+**Jira:** ZTA-156 (ZTA-158 through ZTA-163)
 
 **Wave dependency:** Starts AFTER Wave 5C. No other waves depend on this.
 

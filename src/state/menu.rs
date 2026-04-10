@@ -67,6 +67,7 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
 
     match menu {
         MenuId::File => vec![
+            MenuItem { label: "Open Shell", shortcut: "F2", mnemonic: 's', action: Action::OpenShell },
             MenuItem { label: "Open in Editor", shortcut: "F4", mnemonic: 'o', action: Action::OpenSelectedInEditor },
             MenuItem { label: "Copy", shortcut: "F5", mnemonic: 'c', action: Action::OpenCopyPrompt },
             MenuItem { label: "Move", shortcut: "Shift+F6", mnemonic: 'v', action: Action::OpenMovePrompt },

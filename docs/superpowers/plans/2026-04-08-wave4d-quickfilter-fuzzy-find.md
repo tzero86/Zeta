@@ -20,7 +20,7 @@
 
 **No new dependencies.** Walk uses `std::fs::read_dir` recursively (bounded to 5 levels by default to avoid very deep trees).
 
-**Jira:** ZTA-91 (ZTA-144 through ZTA-150)
+**Jira:** ZTA-129 (ZTA-138 through ZTA-142)
 
 **Wave dependency:** Starts AFTER Wave 4C. Requires `FocusLayer`, `WorkerChannels`, `ModalKind`.
 

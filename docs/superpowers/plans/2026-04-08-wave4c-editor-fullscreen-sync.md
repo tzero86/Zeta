@@ -17,7 +17,7 @@
 
 **No new dependencies.**
 
-**Jira:** ZTA-90 (ZTA-136 through ZTA-143)
+**Jira:** ZTA-128 (ZTA-133 through ZTA-137)
 
 **Wave dependency:** Starts AFTER Wave 4B. Requires `is_markdown_file`, `render_markdown_preview`, `EditorState`.
 

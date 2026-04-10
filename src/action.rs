@@ -50,6 +50,7 @@ pub enum Action {
     FocusNextPane,
     CycleFocus,
     FocusPreviewPanel,
+    OpenShell,
     AddBookmark,
     OpenBookmarks,
     BookmarkConfirm,
@@ -159,6 +160,9 @@ pub enum Command {
         root: PathBuf,
         max_depth: usize,
     },
+    OpenShell {
+        path: PathBuf,
+    },
     SaveEditor,
 }
 
@@ -246,6 +250,8 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
+            KeyCode::F(2) => Some(Self::OpenShell),
+            KeyCode::Char('P') if key_event.modifiers == KeyModifiers::SHIFT => Some(Self::OpenCommandPalette),
             KeyCode::F(3) if key_event.modifiers == KeyModifiers::ALT => {
                 Some(Self::FocusPreviewPanel)
             }

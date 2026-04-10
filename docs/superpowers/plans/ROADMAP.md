@@ -79,3 +79,6 @@ a wave ships.
 | ZTA-130 — Wave 5A: Find & Replace in Editor + Directory Watcher | 5A |
 | ZTA-131 — Wave 5B: Bookmarks + Trash | 5B |
 | ZTA-132 — Wave 5C: Shell Integration | 5C |
+| ZTA-156 — Wave 6A: Archive Browsing | 6A |
+| ZTA-157 — Wave 6B: Directory Diff Mode | 6B |
+| ZTA-168 — Wave 7A: SSH/SFTP Remote Filesystems | 7A |

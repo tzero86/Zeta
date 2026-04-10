@@ -222,6 +222,35 @@ impl App {
                     .send(FindRequest { pane, root, max_depth })
                     .context("failed to queue background file finder job")?;
             }
+            Command::OpenShell { path } => {
+                // Drop out of TUI, spawn shell process, then re-enter.
+                use std::process::Command as StdCommand;
+                use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen};
+                use crossterm::execute;
+                use std::io::{self};
+
+                // Leave alternate screen, restore terminal, spawn shell
+                disable_raw_mode().ok();
+                let mut stdout = io::stdout();
+                execute!(stdout, LeaveAlternateScreen).ok();
+
+                // Pick a shell (Windows/cmd, others/sh)
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| {
+                    if cfg!(windows) {
+                        std::env::var("COMSPEC").unwrap_or_else(|_| String::from("cmd.exe"))
+                    } else {
+                        String::from("/bin/sh")
+                    }
+                });
+
+                let _ = StdCommand::new(shell)
+                    .current_dir(path)
+                    .status();
+
+                // Wait for shell to exit, then re-enter alternate screen and raw mode
+                execute!(stdout, EnterAlternateScreen).ok();
+                enable_raw_mode().ok();
+            }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
             }

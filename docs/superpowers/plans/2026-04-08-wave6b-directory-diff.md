@@ -13,7 +13,7 @@
 
 **No new dependencies.**
 
-**Jira:** ZTA-96 (ZTA-178 through ZTA-183)
+**Jira:** ZTA-157 (ZTA-164 through ZTA-167)
 
 **Wave dependency:** Starts AFTER Wave 6A. No other waves depend on this.
 

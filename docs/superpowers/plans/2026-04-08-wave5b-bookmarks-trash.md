@@ -4,7 +4,7 @@
 
 **Goal:** Bookmarks let you save and instantly jump to frequently visited directories, persisted in the config file. Trash replaces permanent deletion with an OS recycle-bin send, making F8 recoverable.
 
-**Jira:** ZTA-93 (ZTA-158 through ZTA-163)
+**Jira:** ZTA-131 (ZTA-147 through ZTA-150)
 
 **Wave dependency:** Starts AFTER Wave 5A.
 

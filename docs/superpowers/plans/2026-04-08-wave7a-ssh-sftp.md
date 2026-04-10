@@ -11,7 +11,7 @@ This is the most complex wave. It requires a proper filesystem abstraction trait
 
 > **Binary size note:** `ssh2` adds ~500 KB to the release binary and requires libssl. On Windows the build script downloads and links libssh2 statically. Accept this cost; SFTP is a meaningful feature for remote developer workflows.
 
-**Jira:** ZTA-97 (ZTA-184 through ZTA-196)
+**Jira:** ZTA-168 (ZTA-169 through ZTA-174)
 
 **Wave dependency:** Starts AFTER Wave 6B. This is the most architecturally invasive wave. Allow extra implementation time.
 

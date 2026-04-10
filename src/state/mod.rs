@@ -346,6 +346,11 @@ impl AppState {
                     self.status_message = String::from("no file selected for editor");
                 }
             }
+            Action::OpenShell => {
+                let path = self.panes.active_pane().cwd.clone();
+                commands.push(Command::OpenShell { path: path.clone() });
+                self.status_message = format!("opening shell in {}", path.display());
+            }
             Action::AddBookmark => {
                 let cwd = self.panes.active_pane().cwd.clone();
                 if self.config.bookmarks.contains(&cwd) {

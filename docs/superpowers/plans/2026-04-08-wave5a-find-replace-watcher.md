@@ -4,7 +4,7 @@
 
 **Goal:** Two quality-of-life improvements. Find & Replace adds a replace bar below the existing search bar in the editor (`Ctrl+H`). Directory watcher auto-refreshes panes when the filesystem changes externally, using the `notify` crate.
 
-**Jira:** ZTA-92 (ZTA-151 through ZTA-157)
+**Jira:** ZTA-130 (ZTA-143 through ZTA-146)
 
 **Wave dependency:** Starts AFTER Wave 4D.
 
