@@ -227,6 +227,7 @@ pub fn pane_row_styles(
             .add_modifier(Modifier::BOLD),
         EntryKind::Symlink => Style::default().fg(palette.symlink_fg),
         EntryKind::File => Style::default().fg(palette.file_fg),
+        EntryKind::Archive => Style::default().fg(palette.file_fg),
         EntryKind::Other => Style::default().fg(text_tone),
     };
 
@@ -246,6 +247,7 @@ pub fn pane_row_styles(
                 EntryKind::Directory => palette.directory_fg,
                 EntryKind::Symlink => palette.symlink_fg,
                 EntryKind::File => palette.file_fg,
+                EntryKind::Archive => palette.file_fg,
                 EntryKind::Other => text_tone,
             })
         },
@@ -284,6 +286,7 @@ pub fn format_entry_meta(entry: &EntryInfo) -> String {
     match entry.kind {
         EntryKind::Directory => String::from("dir"),
         EntryKind::Symlink => String::from("link"),
+        EntryKind::Archive => String::from("archive"),
         EntryKind::Other => String::from("other"),
         EntryKind::File => {
             let ext = entry

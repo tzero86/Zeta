@@ -6,6 +6,7 @@ pub enum IconKind {
     Directory,
     File,
     Symlink,
+    Archive,
     Other,
 }
 
@@ -15,6 +16,7 @@ impl From<EntryKind> for IconKind {
             EntryKind::Directory => Self::Directory,
             EntryKind::File => Self::File,
             EntryKind::Symlink => Self::Symlink,
+            EntryKind::Archive => Self::Archive,
             EntryKind::Other => Self::Other,
         }
     }
@@ -33,6 +35,7 @@ fn unicode_icon(kind: EntryKind) -> &'static str {
         EntryKind::Directory => "▣",
         EntryKind::File => "•",
         EntryKind::Symlink => "↗",
+        EntryKind::Archive => "🗜", // archive box
         EntryKind::Other => "◦",
     }
 }
@@ -42,6 +45,7 @@ fn custom_icon(kind: EntryKind) -> &'static str {
         IconKind::Directory => "\u{e001}",
         IconKind::File => "\u{e002}",
         IconKind::Symlink => "\u{e003}",
+        IconKind::Archive => "\u{e005}",
         IconKind::Other => "\u{e004}",
     }
 }

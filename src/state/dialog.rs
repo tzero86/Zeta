@@ -180,6 +180,13 @@ impl CollisionState {
                 Some(source),
                 value,
             ),
+            FileOperation::ExtractArchive { archive, .. } => PromptState::with_value(
+                PromptKind::Copy,
+                "Copy",
+                prompt_base_path(&suggested),
+                Some(archive.clone()),
+                value,
+            ),
         }
     }
 
@@ -192,6 +199,7 @@ impl CollisionState {
             FileOperation::Trash { path } => format!("trash {}", path.display()),
             FileOperation::Move { source, .. } => format!("move {}", source.display()),
             FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
+            FileOperation::ExtractArchive { archive, .. } => format!("extract {}", archive.display()),
         }
     }
 
@@ -204,6 +212,7 @@ impl CollisionState {
             FileOperation::Trash { path } => path,
             FileOperation::Move { destination, .. } => destination,
             FileOperation::Rename { destination, .. } => destination,
+            FileOperation::ExtractArchive { destination, .. } => destination,
         }
     }
 }

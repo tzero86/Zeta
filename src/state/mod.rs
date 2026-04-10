@@ -338,18 +338,33 @@ impl AppState {
                     if entry.kind == EntryKind::File {
                         commands.push(Command::OpenEditor { path: entry.path.clone() });
                         self.status_message = format!("opening {}", entry.path.display());
+                    } else if entry.kind == EntryKind::Archive {
+                        commands.push(Command::OpenArchive { path: entry.path.clone(), inner: std::path::PathBuf::new() });
+                        self.status_message = format!("opening archive {}", entry.path.display());
                     } else {
                         self.status_message =
-                            String::from("only files can be opened in the editor");
+                            String::from("only files and archives can be opened");
                     }
                 } else {
-                    self.status_message = String::from("no file selected for editor");
+                    self.status_message = String::from("no file selected for editor or archive");
                 }
             }
             Action::OpenShell => {
                 let path = self.panes.active_pane().cwd.clone();
                 commands.push(Command::OpenShell { path: path.clone() });
                 self.status_message = format!("opening shell in {}", path.display());
+            }
+            Action::OpenArchive { path } => {
+                commands.push(Command::OpenArchive { path: path.clone(), inner: std::path::PathBuf::new() });
+                self.status_message = format!("opening archive {}", path.display());
+            }
+            Action::ExitArchive => {
+                self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
+                commands.push(Command::ScanPane {
+                    pane: self.panes.focused_pane_id(),
+                    path: self.panes.active_pane().cwd.clone(),
+                });
+                self.status_message = String::from("exited archive");
             }
             Action::AddBookmark => {
                 let cwd = self.panes.active_pane().cwd.clone();
@@ -501,12 +516,49 @@ impl AppState {
                         let target_path = resolve_prompt_target(&prompt, &value);
                         let refresh = self.refresh_targets_for_prompt(kind, &target_path);
                         let operation = match kind {
-                            PromptKind::Copy => prompt.source_path.as_ref().map(|s| {
-                                FileOperation::Copy {
-                                    source: s.clone(),
-                                    destination: target_path.clone(),
-                                }
-                            }),
+                            PromptKind::Copy => {
+                                // If the source is inside a recognized archive, create an ExtractArchive op
+                                prompt.source_path.as_ref().map(|s| {
+                                    // Try to find an ancestor path that is an archive file
+                                    let mut candidate = s.clone();
+                                    let mut found: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
+                                    loop {
+                                        if candidate.exists() && candidate.is_file() {
+                                            if let Some(name) = candidate.file_name().and_then(|n| n.to_str()) {
+                                                let lower = name.to_lowercase();
+                                                if lower.ends_with(".zip")
+                                                    || lower.ends_with(".tar")
+                                                    || lower.ends_with(".tar.gz")
+                                                    || lower.ends_with(".tgz")
+                                                    || lower.ends_with(".tar.bz2")
+                                                    || lower.ends_with(".tbz2")
+                                                    || lower.ends_with(".tar.xz")
+                                                    || lower.ends_with(".txz")
+                                                {
+                                                    // compute inner path relative to archive file
+                                                    if let Ok(inner) = s.strip_prefix(&candidate) {
+                                                        found = Some((candidate.clone(), inner.to_path_buf()));
+                                                    } else {
+                                                        found = Some((candidate.clone(), std::path::PathBuf::new()));
+                                                    }
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        if !candidate.pop() { break; }
+                                    }
+                                    if let Some((archive_path, inner_path)) = found {
+                                        FileOperation::ExtractArchive {
+                                            archive: archive_path,
+                                            inner_path,
+                                            destination: target_path.clone(),
+                                        }
+                                    } else {
+                                        FileOperation::Copy { source: s.clone(), destination: target_path.clone() }
+                                    }
+                                })
+                            },
+
                             PromptKind::Trash => prompt.source_path.as_ref().map(|p| {
                                 FileOperation::Trash { path: p.clone() }
                             }),
@@ -716,6 +768,15 @@ impl AppState {
             }
             JobResult::DirectoryChanged { path } => {
                 self.status_message = format!("filesystem changed: {}", path.display());
+            }
+            JobResult::ArchiveListed { pane, archive_path, inner_path, entries, elapsed_ms } => {
+                // Enter archive mode for the pane and populate entries
+                let pane_mut = self.panes.pane_mut(pane);
+                pane_mut.mode = crate::pane::PaneMode::Archive { source: archive_path.clone(), inner_path: inner_path.clone() };
+                pane_mut.set_entries(entries);
+                pane_mut.refresh_filter();
+                self.status_message = format!("opened archive {} in {elapsed_ms} ms", archive_path.display());
+                self.last_scan_time_ms = Some(elapsed_ms);
             }
         }
     }
@@ -1142,6 +1203,7 @@ mod tests {
             cache_sort_mode: std::cell::Cell::new(SortMode::Name),
             cache_filter_active: std::cell::Cell::new(false),
             cache_filter_query: std::cell::RefCell::new(String::new()),
+            mode: crate::pane::PaneMode::Real,
         }
     }
 
@@ -1280,6 +1342,7 @@ mod tests {
             cache_sort_mode: std::cell::Cell::new(SortMode::Name),
             cache_filter_active: std::cell::Cell::new(false),
             cache_filter_query: std::cell::RefCell::new(String::new()),
+            mode: crate::pane::PaneMode::Real,
         };
         AppState {
             panes: PaneSetState::new(pane_with_file("./note.txt"), right),

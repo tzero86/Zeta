@@ -49,6 +49,12 @@ impl SortMode {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PaneMode {
+    Real,
+    Archive { source: PathBuf, inner_path: PathBuf },
+}
+
 #[derive(Clone, Debug)]
 pub struct PaneState {
     pub title: String,
@@ -70,14 +76,25 @@ pub struct PaneState {
     pub(crate) cache_sort_mode: Cell<SortMode>,
     pub(crate) cache_filter_active: Cell<bool>,
     pub(crate) cache_filter_query: RefCell<String>,
+    pub mode: PaneMode, // New: real fs or archive mode
 }
 
 impl PaneState {
+    pub fn in_archive(&self) -> bool {
+        matches!(self.mode, PaneMode::Archive { .. })
+    }
+    pub fn archive_source(&self) -> Option<&PathBuf> {
+        match &self.mode {
+            PaneMode::Archive { source, .. } => Some(source),
+            _ => None,
+        }
+    }
     pub fn empty(title: impl Into<String>, cwd: PathBuf) -> Self {
         Self {
             title: title.into(),
             cwd,
             entries: Vec::new(),
+            mode: PaneMode::Real,
             selection: 0,
             scroll_offset: 0,
             show_hidden: false,
@@ -331,6 +348,10 @@ impl PaneState {
     pub fn refresh_filter(&mut self) {
         self.invalidate_cache();
         self.clamp_selection();
+    }
+
+    pub fn filtered_len_pub(&self) -> usize {
+        self.filtered_len()
     }
 
     fn filtered_len(&self) -> usize {

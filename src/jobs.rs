@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
+use std::io::Read;
 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -16,6 +17,13 @@ use crate::pane::PaneId;
 // ---------------------------------------------------------------------------
 // Public request types — one per worker
 // ---------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct ArchiveListRequest {
+    pub pane: PaneId,
+    pub archive_path: PathBuf,
+    pub inner_path: PathBuf, // for navigating inside nested directories in the archive
+}
 
 #[derive(Clone, Debug)]
 pub struct ScanRequest {
@@ -34,6 +42,8 @@ pub struct FileOpRequest {
 pub struct PreviewRequest {
     pub path: PathBuf,
     pub syntect_theme: String,
+    pub archive: Option<PathBuf>,
+    pub inner_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +78,13 @@ pub enum JobResult {
     DirectoryScanned {
         pane: PaneId,
         path: PathBuf,
+        entries: Vec<EntryInfo>,
+        elapsed_ms: u128,
+    },
+    ArchiveListed {
+        pane: PaneId,
+        archive_path: PathBuf,
+        inner_path: PathBuf,
         entries: Vec<EntryInfo>,
         elapsed_ms: u128,
     },
@@ -150,6 +167,7 @@ pub struct WorkerChannels {
     pub git_tx:     Sender<GitStatusRequest>,
     pub find_tx:    Sender<FindRequest>,
     pub watch_tx:   Sender<WatchRequest>,
+    pub archive_tx: Sender<ArchiveListRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -222,7 +240,62 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .name("zeta-preview".into())
             .spawn(move || {
                 for req in preview_rx {
-                    let view = load_preview_content(&req.path, &req.syntect_theme);
+                    let view = if req.archive.is_none() {
+                        load_preview_content(&req.path, &req.syntect_theme)
+                    } else if let (Some(archive_path), Some(inner_path)) = (req.archive.clone(), req.inner_path.clone()) {
+                        // Attempt to extract single file from archive into memory
+                        match std::fs::File::open(&archive_path) {
+                            Ok(f) => {
+                                let name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                if name.ends_with(".zip") {
+                                    match zip::ZipArchive::new(f) {
+                                        Ok(mut za) => {
+                                            let inner_name = inner_path.to_string_lossy();
+                                            match za.by_name(&inner_name) {
+                                                Ok(mut entry) => {
+                                                    let mut buf = Vec::new();
+                                                    use std::io::Read;
+                                                    let _ = entry.read_to_end(&mut buf);
+                                                    load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme)
+                                                }
+                                                Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                            }
+                                        }
+                                        Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                    }
+                                } else {
+                                    // Try tar variants with decompression based on extension
+                                    let archive_reader: Box<dyn std::io::Read> = if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+                                        Box::new(flate2::read::GzDecoder::new(f))
+                                    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+                                        Box::new(bzip2::read::BzDecoder::new(f))
+                                    } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+                                        Box::new(xz2::read::XzDecoder::new(f))
+                                    } else {
+                                        Box::new(f)
+                                    };
+                                    let mut ar = tar::Archive::new(archive_reader);
+                                    let mut found = None;
+                                    if let Ok(entries) = ar.entries() {
+                                        for mut e in entries.flatten() {
+                                            if let Ok(path) = e.path() {
+                                                if path == inner_path {
+                                                    let mut buf = Vec::new();
+                                                    let _ = e.read_to_end(&mut buf);
+                                                    found = Some(buf);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(buf) = found { load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme) } else { crate::preview::ViewBuffer::from_plain("[empty file]") }
+                                }
+                            }
+                            Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                        }
+                    } else {
+                        load_preview_content(&req.path, &req.syntect_theme)
+                    };
                     if result_tx_preview
                         .send(JobResult::PreviewLoaded { path: req.path, view })
                         .is_err()
@@ -307,11 +380,116 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     // --- Watcher worker ---
     let (watch_tx, watch_rx) = bounded::<WatchRequest>(8);
     {
-        let result_tx = result_tx;
+        let result_tx = result_tx.clone();
         thread::Builder::new()
             .name("zeta-watch".into())
             .spawn(move || run_watcher_worker(watch_rx, result_tx))
             .expect("failed to spawn watcher worker");
+    }
+
+    // --- Archive worker ---
+    let (archive_tx, archive_rx) = bounded::<ArchiveListRequest>(4);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-archive".into())
+            .spawn(move || {
+                for req in archive_rx {
+                    let started_at = std::time::Instant::now();
+                    let archive_path = req.archive_path.clone();
+
+                    // Try ZIP first (open a fresh file handle by path).
+                    if let Ok(zip_file) = std::fs::File::open(&archive_path) {
+                        if let Ok(mut archive) = zip::ZipArchive::new(zip_file) {
+                            let mut seen = std::collections::BTreeSet::new();
+                            let mut entries: Vec<EntryInfo> = Vec::new();
+                            let inner = req.inner_path.to_string_lossy().replace("\\", "/");
+                            let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+
+                            for i in 0..archive.len() {
+                                if let Ok(file) = archive.by_index(i) {
+                                    let name = file.name().to_string();
+                                    let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
+                                    if rest.is_empty() { continue; }
+                                    let first = rest.split('/').next().unwrap().to_string();
+                                    if !seen.insert(first.clone()) { continue; }
+                                    let is_dir = rest.contains('/') || name.ends_with('/');
+                                    let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
+                                    let size_bytes = if kind == crate::fs::EntryKind::File { Some(file.size()) } else { None };
+                                    entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                                }
+                            }
+
+                            entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                            let _ = result_tx.send(JobResult::ArchiveListed {
+                                pane: req.pane,
+                                archive_path: archive_path.clone(),
+                                inner_path: req.inner_path,
+                                entries,
+                                elapsed_ms: started_at.elapsed().as_millis(),
+                            });
+                            continue; // done for this request
+                        }
+                    }
+
+                    // Fall back to tar variants (plain tar, tar.gz, tar.bz2, tar.xz).
+                    let ext_name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                    let tar_file = match std::fs::File::open(&archive_path) {
+                        Ok(f) => f,
+                        Err(err) => {
+                            let _ = result_tx.send(JobResult::JobFailed {
+                                pane: req.pane,
+                                path: archive_path,
+                                message: format!("failed to open archive: {err}"),
+                                elapsed_ms: started_at.elapsed().as_millis(),
+                            });
+                            continue;
+                        }
+                    };
+
+                    let reader: Box<dyn std::io::Read> = if ext_name.ends_with(".tar.gz") || ext_name.ends_with(".tgz") {
+                        Box::new(flate2::read::GzDecoder::new(tar_file))
+                    } else if ext_name.ends_with(".tar.bz2") || ext_name.ends_with(".tbz2") {
+                        Box::new(bzip2::read::BzDecoder::new(tar_file))
+                    } else if ext_name.ends_with(".tar.xz") || ext_name.ends_with(".txz") {
+                        Box::new(xz2::read::XzDecoder::new(tar_file))
+                    } else {
+                        Box::new(tar_file)
+                    };
+
+                    let mut ar = tar::Archive::new(reader);
+                    let mut seen = std::collections::BTreeSet::new();
+                    let mut entries: Vec<EntryInfo> = Vec::new();
+                    let inner = req.inner_path.to_string_lossy().replace("\\", "/");
+                    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+
+                    if let Ok(entries_iter) = ar.entries() {
+                        for entry in entries_iter.flatten() {
+                            if let Ok(path) = entry.path() {
+                                let name = path.to_string_lossy().to_string();
+                                let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
+                                if rest.is_empty() { continue; }
+                                let first = rest.split('/').next().unwrap().to_string();
+                                if !seen.insert(first.clone()) { continue; }
+                                let is_dir = rest.contains('/');
+                                let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
+                                let size_bytes = if kind == crate::fs::EntryKind::File { Some(entry.size()) } else { None };
+                                entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                            }
+                        }
+                    }
+
+                    entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                    let _ = result_tx.send(JobResult::ArchiveListed {
+                        pane: req.pane,
+                        archive_path,
+                        inner_path: req.inner_path,
+                        entries,
+                        elapsed_ms: started_at.elapsed().as_millis(),
+                    });
+                }
+            })
+            .expect("failed to spawn archive worker");
     }
 
     (
@@ -323,6 +501,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             git_tx,
             find_tx,
             watch_tx,
+            archive_tx,
         },
         result_rx,
     )
@@ -412,12 +591,15 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
         Ok(b) => b,
         Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
     };
+    load_preview_from_bytes(&bytes, path, syntect_theme)
+}
 
+fn load_preview_from_bytes(bytes: &[u8], path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     if bytes.is_empty() {
         return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
 
-    if looks_like_binary(&bytes) {
+    if looks_like_binary(bytes) {
         let size_bytes = std::fs::metadata(path)
             .map(|m| m.len())
             .unwrap_or(bytes.len() as u64);
@@ -425,7 +607,7 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
         return crate::preview::ViewBuffer::from_plain(&label);
     }
 
-    let text = String::from_utf8_lossy(&bytes);
+    let text = String::from_utf8_lossy(bytes);
     let extension = path.extension().and_then(|e| e.to_str());
 
     // Markdown: store raw text for AST rendering at display time.
@@ -477,6 +659,9 @@ fn run_file_operation(
             run_move_with_progress(source, destination, collision, result_tx)
         }
         FileOperation::Rename { source, destination } => rename_path(source, destination, collision),
+        FileOperation::ExtractArchive { archive, inner_path, destination } => {
+            run_extract_archive(archive, inner_path, destination, result_tx)
+        }
     };
 
     if let Err(error) = op_result {
@@ -614,6 +799,7 @@ fn primary_path(operation: &FileOperation) -> PathBuf {
         FileOperation::Trash { path } => path.clone(),
         FileOperation::Move { source, .. } => source.clone(),
         FileOperation::Rename { source, .. } => source.clone(),
+        FileOperation::ExtractArchive { archive, .. } => archive.clone(),
     }
 }
 
@@ -628,6 +814,152 @@ fn describe_operation(operation: &FileOperation) -> String {
         FileOperation::Rename { destination, .. } => {
             format!("renamed to {}", destination.display())
         }
+        FileOperation::ExtractArchive { destination, .. } => {
+            format!("extracted to {}", destination.display())
+        }
+    }
+}
+
+fn run_extract_archive(
+    archive: &Path,
+    inner_path: &Path,
+    destination: &Path,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    use std::io::Read;
+
+    // Open archive file
+    let file = std::fs::File::open(archive).map_err(|source| FileSystemError::CopyPath {
+        from: archive.display().to_string(),
+        to: destination.display().to_string(),
+        source,
+    })?;
+
+    // Normalize inner path prefix with forward slashes
+    let inner = inner_path.to_string_lossy().replace("\\", "/");
+    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+
+    let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let lower = name.to_lowercase();
+
+    if lower.ends_with(".zip") {
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
+
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let entry_name = entry.name().to_string();
+            if !prefix.is_empty() && !entry_name.starts_with(&prefix) {
+                continue;
+            }
+            let rel = if prefix.is_empty() { entry_name.as_str() } else { &entry_name[prefix.len()..] };
+            if rel.is_empty() { continue; }
+
+            let out_path = destination.join(rel);
+            if entry.name().ends_with('/') {
+                std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: parent.display().to_string(),
+                        source,
+                    })?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            }
+            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+        }
+
+        Ok(())
+    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        // support gzipped tars
+        let archive_reader: Box<dyn Read> = if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+            Box::new(flate2::read::GzDecoder::new(file))
+        } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
+            Box::new(bzip2::read::BzDecoder::new(file))
+        } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+            Box::new(xz2::read::XzDecoder::new(file))
+        } else {
+            Box::new(file)
+        };
+        let mut ar = tar::Archive::new(archive_reader);
+        for entry in ar.entries().map_err(|e| FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })? {
+            let mut entry = entry.map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let path = entry.path().map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let path_str = path.to_string_lossy();
+            if !prefix.is_empty() && !path_str.starts_with(&prefix) {
+                continue;
+            }
+            let rel = if prefix.is_empty() { path_str.as_ref() } else { &path_str[prefix.len()..] };
+            if rel.is_empty() { continue; }
+            let out_path = destination.join(rel);
+            if entry.header().entry_type().is_dir() {
+                std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: parent.display().to_string(),
+                        source,
+                    })?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            }
+            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+        }
+        Ok(())
+    } else {
+        Err(FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other("unsupported archive format"),
+        })
     }
 }
 
@@ -698,6 +1030,82 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn archive_worker_lists_zip_and_tar() {
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let tmpdir = tempfile::tempdir().unwrap();
+        let archive_path = tmpdir.path().join("test.zip");
+
+        {
+            let file = std::fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"hello").unwrap();
+            zip.add_directory("dir/", FileOptions::default()).unwrap();
+            zip.start_file("dir/b.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"world").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let (workers, results) = spawn_workers();
+        workers
+            .archive_tx
+            .send(ArchiveListRequest { pane: PaneId::Left, archive_path: archive_path.clone(), inner_path: std::path::PathBuf::new() })
+            .unwrap();
+
+        loop {
+            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            if let JobResult::ArchiveListed { pane, archive_path:ap, entries, .. } = res {
+                assert_eq!(pane, PaneId::Left);
+                assert_eq!(ap, archive_path);
+                let names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
+                assert!(names.contains(&"a.txt".to_string()));
+                assert!(names.contains(&"dir".to_string()));
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn file_op_extracts_zip_contents() {
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let tmpdir = tempfile::tempdir().unwrap();
+        let archive_path = tmpdir.path().join("test2.zip");
+        let outdir = tmpdir.path().join("out");
+
+        {
+            let file = std::fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"hello").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let (workers, results) = spawn_workers();
+        workers.file_op_tx.send(FileOpRequest {
+            operation: FileOperation::ExtractArchive { archive: archive_path.clone(), inner_path: std::path::PathBuf::new(), destination: outdir.clone() },
+            refresh: vec![],
+            collision: CollisionPolicy::Fail,
+        }).unwrap();
+
+        loop {
+            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            match res {
+                JobResult::FileOperationCompleted { .. } => break,
+                JobResult::JobFailed { .. } => panic!("extract failed"),
+                _ => {}
+            }
+        }
+
+        assert!(outdir.join("a.txt").exists());
+        let contents = std::fs::read_to_string(outdir.join("a.txt")).unwrap();
+        assert_eq!(contents, "hello");
     }
 
     #[test]

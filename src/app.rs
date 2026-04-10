@@ -1,6 +1,7 @@
 use std::io::{self, Stdout};
 use std::time::Duration;
 use std::time::Instant;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, TryRecvError};
@@ -27,6 +28,7 @@ pub struct App {
     keymap: RuntimeKeymap,
     state: AppState,
     pub layout_cache: LayoutCache,
+    last_pane_click: Option<(bool, usize, std::time::Instant)>, // (left_pane, row, time)
 }
 
 impl App {
@@ -47,6 +49,7 @@ impl App {
             keymap,
             state,
             layout_cache: LayoutCache::default(),
+            last_pane_click: None,
         };
 
         for command in app.state.initial_commands() {
@@ -125,6 +128,21 @@ impl App {
                 if let Some(action) =
                     route_mouse_event(mouse_event, &self.layout_cache, focus, editor_menu_mode)
                 {
+                    // Intercept PaneClick to detect double-clicks.
+                    let action = if let Action::PaneClick { left_pane, row } = action {
+                        let now = std::time::Instant::now();
+                        let double = self.last_pane_click
+                            .is_some_and(|(lp, r, t)| lp == left_pane && r == row && now.duration_since(t).as_millis() < 400);
+                        if double {
+                            self.last_pane_click = None;
+                            Action::PaneDoubleClick { left_pane, row }
+                        } else {
+                            self.last_pane_click = Some((left_pane, row, now));
+                            Action::PaneClick { left_pane, row }
+                        }
+                    } else {
+                        action
+                    };
                     self.dispatch(action)?;
                 }
             }
@@ -188,14 +206,34 @@ impl App {
                     .send(EditorLoadRequest { path })
                     .context("failed to queue background editor load job")?;
             }
-            Command::PreviewFile { path } => self
-                .workers
-                .preview_tx
-                .send(PreviewRequest {
-                    path,
-                    syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
-                })
-                .context("failed to queue background preview job")?,
+            Command::PreviewFile { path } => {
+                // If the active pane is in archive mode, include archive metadata so the
+                // preview worker can extract the archived file contents.
+                let mut archive = None;
+                let mut inner = None;
+                if self.state.panes.active_pane().in_archive() {
+                    if let crate::pane::PaneMode::Archive { source, inner_path } = &self.state.panes.active_pane().mode {
+                        archive = Some(source.clone());
+                        if let Some(name) = path.file_name() {
+                            if inner_path.as_os_str().is_empty() {
+                                inner = Some(PathBuf::from(name));
+                            } else {
+                                inner = Some(inner_path.join(name));
+                            }
+                        }
+                    }
+                }
+                self.workers
+                    .preview_tx
+                    .send(PreviewRequest {
+                        path,
+                        syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
+                        archive,
+                        inner_path: inner,
+                    })
+                    .context("failed to queue background preview job")?;
+            },
+
             Command::RunFileOperation {
                 operation,
                 refresh,
@@ -221,6 +259,15 @@ impl App {
                     .find_tx
                     .send(FindRequest { pane, root, max_depth })
                     .context("failed to queue background file finder job")?;
+            }
+            Command::OpenArchive { path, inner } => {
+                // Request archive listing for the active pane with provided inner path.
+                let pane = self.state.panes.focused_pane_id();
+                let req = jobs::ArchiveListRequest { pane, archive_path: path.clone(), inner_path: inner.clone() };
+                self.workers
+                    .archive_tx
+                    .send(req)
+                    .context("failed to queue archive listing job")?;
             }
             Command::OpenShell { path } => {
                 // Drop out of TUI, spawn shell process, then re-enter.
@@ -452,17 +499,25 @@ fn route_mouse_event(
                 }
             }
 
-            // Click on left or right pane — switch focus if coming from tools.
+            // Click on left or right pane.
             if rect_contains(cache.left_pane, col, row)
                 || rect_contains(cache.right_pane, col, row)
             {
+                let clicked_left = rect_contains(cache.left_pane, col, row);
+
+                // If focus is on a tool (editor/preview), return to pane layer first.
                 if focus == FocusLayer::Editor
                     || focus == FocusLayer::Preview
                     || focus == FocusLayer::MarkdownPreview
                 {
                     return Some(Action::CycleFocus);
                 }
-                return Some(Action::FocusNextPane);
+
+                // Calculate which entry row was clicked (subtract 1 for top border).
+                let pane_rect = if clicked_left { cache.left_pane } else { cache.right_pane };
+                let entry_row = (row as usize).saturating_sub((pane_rect.y + 1) as usize);
+
+                return Some(Action::PaneClick { left_pane: clicked_left, row: entry_row });
             }
 
             None
@@ -609,11 +664,22 @@ mod tests {
 
     #[test]
     fn route_mouse_left_click_on_pane_produces_action() {
+        // col=10, row=5 → left pane (x:0..40, y:1..21); entry_row = 5 - (1+1) = 3
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
             &test_cache(), FocusLayer::Pane, false,
         );
-        assert!(action.is_some(), "expected an action for left-pane click");
+        assert_eq!(action, Some(Action::PaneClick { left_pane: true, row: 3 }));
+    }
+
+    #[test]
+    fn route_mouse_left_click_on_right_pane_produces_right_pane_click() {
+        // col=50, row=3 → right pane (x:40..80, y:1..21); entry_row = 3 - (1+1) = 1
+        let action = route_mouse_event(
+            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 50, row: 3, modifiers: KeyModifiers::NONE },
+            &test_cache(), FocusLayer::Pane, false,
+        );
+        assert_eq!(action, Some(Action::PaneClick { left_pane: false, row: 1 }));
     }
 
     #[test]

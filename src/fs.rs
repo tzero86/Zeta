@@ -20,6 +20,7 @@ pub enum EntryKind {
     Directory,
     File,
     Symlink,
+    Archive, // ← new for archive browsing
     Other,
 }
 
@@ -29,6 +30,7 @@ impl EntryKind {
             Self::Directory => 'd',
             Self::File => 'f',
             Self::Symlink => 'l',
+            Self::Archive => 'a',
             Self::Other => '?',
         }
     }
@@ -38,6 +40,7 @@ impl EntryKind {
             Self::Directory => "[D]",
             Self::File => "[F]",
             Self::Symlink => "[L]",
+            Self::Archive => "[A]",
             Self::Other => "[?]",
         }
     }
@@ -108,8 +111,12 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
                 source,
             })?;
 
+        // Archive detection (by extension)
+        let name = entry.file_name().to_string_lossy().into_owned();
         let kind = if file_type.is_dir() {
             EntryKind::Directory
+        } else if file_type.is_file() && is_archive_extension(&name) {
+            EntryKind::Archive
         } else if file_type.is_file() {
             EntryKind::File
         } else if file_type.is_symlink() {
@@ -126,13 +133,27 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());
 
         results.push(EntryInfo {
-            name: entry.file_name().to_string_lossy().into_owned(),
+            name,
             path: entry_path,
             kind,
             size_bytes,
             modified,
         });
     }
+
+// Helper function for archive extension detection
+fn is_archive_extension(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower.ends_with(".zip")
+        || lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".tar.bz2")
+        || lower.ends_with(".tbz2")
+        || lower.ends_with(".tar.xz")
+        || lower.ends_with(".txz")
+}
+
 
     results.sort_by(|left, right| {
         left.kind

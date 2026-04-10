@@ -51,6 +51,8 @@ pub enum Action {
     CycleFocus,
     FocusPreviewPanel,
     OpenShell,
+    OpenArchive { path: std::path::PathBuf },
+    ExitArchive,
     AddBookmark,
     OpenBookmarks,
     BookmarkConfirm,
@@ -135,6 +137,10 @@ pub enum Action {
     SettingsMoveUp,
     SettingsToggleCurrent,
     CycleSortMode,
+    /// Mouse click on a pane entry row.
+    PaneClick { left_pane: bool, row: usize },
+    /// Mouse double-click on a pane entry row (enter dir / open file).
+    PaneDoubleClick { left_pane: bool, row: usize },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -159,6 +165,10 @@ pub enum Command {
         pane: PaneId,
         root: PathBuf,
         max_depth: usize,
+    },
+    OpenArchive {
+        path: PathBuf,
+        inner: PathBuf,
     },
     OpenShell {
         path: PathBuf,
@@ -196,6 +206,12 @@ pub enum FileOperation {
     },
     Rename {
         source: PathBuf,
+        destination: PathBuf,
+    },
+    /// Extract files or directories from an archive into a destination directory.
+    ExtractArchive {
+        archive: PathBuf,
+        inner_path: PathBuf,
         destination: PathBuf,
     },
 }
@@ -733,6 +749,10 @@ mod tests {
                 &keymap,
             ),
             Some(Action::OpenBookmarks)
+        );
+        assert_eq!(
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE), &keymap),
+            Some(Action::OpenShell)
         );
     }
 
