@@ -3,6 +3,7 @@ pub mod app;
 pub mod config;
 pub mod editor;
 pub mod event;
+pub mod finder;
 pub mod fs;
 pub mod git;
 pub mod highlight;

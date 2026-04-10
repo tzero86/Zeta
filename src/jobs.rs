@@ -40,6 +40,13 @@ pub struct GitStatusRequest {
     pub path: PathBuf,
 }
 
+#[derive(Clone, Debug)]
+pub struct FindRequest {
+    pub pane: PaneId,
+    pub root: PathBuf,
+    pub max_depth: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Result types (unchanged public surface)
 // ---------------------------------------------------------------------------
@@ -85,6 +92,11 @@ pub enum JobResult {
     GitStatusAbsent {
         pane: PaneId,
     },
+    FindResults {
+        pane: PaneId,
+        root: PathBuf,
+        entries: Vec<PathBuf>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -112,6 +124,7 @@ pub struct WorkerChannels {
     pub file_op_tx: Sender<FileOpRequest>,
     pub preview_tx: Sender<PreviewRequest>,
     pub git_tx:     Sender<GitStatusRequest>,
+    pub find_tx:    Sender<FindRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -200,7 +213,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     // --- Git status worker ---
     let (git_tx, git_rx) = bounded::<GitStatusRequest>(16);
     {
-        let result_tx = result_tx; // move — last sender clone
+        let result_tx = result_tx.clone();
         thread::Builder::new()
             .name("zeta-git".into())
             .spawn(move || {
@@ -217,12 +230,65 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn git worker");
     }
 
-    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx }, result_rx)
+    // --- Finder worker ---
+    let (find_tx, find_rx) = bounded::<FindRequest>(8);
+    {
+        let result_tx = result_tx;
+        thread::Builder::new()
+            .name("zeta-find".into())
+            .spawn(move || {
+                for req in find_rx {
+                    let entries = walk_for_files(&req.root, req.max_depth);
+                    if result_tx
+                        .send(JobResult::FindResults {
+                            pane: req.pane,
+                            root: req.root,
+                            entries,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn finder worker");
+    }
+
+    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx, find_tx }, result_rx)
 }
 
 // ---------------------------------------------------------------------------
 // Internal worker logic
 // ---------------------------------------------------------------------------
+
+fn walk_for_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    walk_recursive(root, max_depth, &mut results);
+    results
+}
+
+fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth == 0 {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') || matches!(name, "target" | "node_modules" | "__pycache__" | ".git") {
+            continue;
+        }
+        if path.is_dir() {
+            walk_recursive(&path, depth - 1, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
 
 fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
@@ -492,26 +558,56 @@ mod tests {
     }
 
     #[test]
-    fn three_workers_process_requests_independently() {
+    fn finder_worker_returns_find_results() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .find_tx
+            .send(FindRequest {
+                pane: PaneId::Left,
+                root: tmp,
+                max_depth: 2,
+            })
+            .unwrap();
+
+        loop {
+            let result = results
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            if matches!(result, JobResult::FindResults { pane: PaneId::Left, .. }) {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn workers_process_requests_independently() {
         let (workers, results) = spawn_workers();
         let tmp = std::env::temp_dir();
 
-        // Send two scan requests — both should complete.
         workers
             .scan_tx
             .send(ScanRequest { pane: PaneId::Left, path: tmp.clone() })
             .unwrap();
         workers
             .scan_tx
-            .send(ScanRequest { pane: PaneId::Right, path: tmp })
+            .send(ScanRequest { pane: PaneId::Right, path: tmp.clone() })
+            .unwrap();
+        workers
+            .find_tx
+            .send(FindRequest {
+                pane: PaneId::Left,
+                root: tmp,
+                max_depth: 1,
+            })
             .unwrap();
 
         let mut received = 0usize;
-        for _ in 0..2 {
+        for _ in 0..3 {
             if results.recv_timeout(std::time::Duration::from_secs(5)).is_ok() {
                 received += 1;
             }
         }
-        assert_eq!(received, 2);
+        assert_eq!(received, 3);
     }
 }

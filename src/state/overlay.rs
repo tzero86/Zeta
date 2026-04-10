@@ -1,6 +1,7 @@
 use anyhow::Result;
 
 use crate::action::{Action, CollisionPolicy, Command, MenuId};
+use crate::finder::FileFinderState;
 use crate::palette::PaletteState;
 use crate::state::dialog::{CollisionState, DialogState};
 use crate::state::menu::menu_items_for;
@@ -18,6 +19,7 @@ pub enum ModalState {
     Collision(CollisionState),
     Palette(PaletteState),
     Settings(SettingsState),
+    FileFinder(FileFinderState),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -89,6 +91,25 @@ impl OverlayState {
             Some(ModalState::Settings(s)) => Some(s),
             _ => None,
         }
+    }
+
+    pub fn file_finder(&self) -> Option<&FileFinderState> {
+        match &self.modal {
+            Some(ModalState::FileFinder(f)) => Some(f),
+            _ => None,
+        }
+    }
+
+    pub fn file_finder_mut(&mut self) -> Option<&mut FileFinderState> {
+        match &mut self.modal {
+            Some(ModalState::FileFinder(f)) => Some(f),
+            _ => None,
+        }
+    }
+
+    pub fn open_file_finder(&mut self, state: FileFinderState) {
+        self.close_all();
+        self.modal = Some(ModalState::FileFinder(state));
     }
 
     pub fn apply(&mut self, action: &Action) -> Result<Vec<Command>> {

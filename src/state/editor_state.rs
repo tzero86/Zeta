@@ -29,7 +29,7 @@ impl EditorState {
             .path
             .as_ref()
             .and_then(|p| p.extension())
-            .map_or(false, |e| e.eq_ignore_ascii_case("md"));
+            .is_some_and(|e| e.eq_ignore_ascii_case("md"));
         self.markdown_preview_visible = is_md;
         self.markdown_preview_focused = false;
         self.markdown_preview_scroll = 0;

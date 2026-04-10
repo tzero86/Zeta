@@ -1,7 +1,7 @@
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use crate::config::{IconMode, ThemePalette};
@@ -15,6 +15,26 @@ pub struct PaneChrome {
     pub border: Style,
     pub title: Style,
     pub surface: Style,
+}
+
+pub struct RenderPaneArgs<'a> {
+    pub pane: &'a PaneState,
+    pub label: &'a str,
+    pub is_focused: bool,
+    pub borders: Borders,
+    pub state: &'a AppState,
+    pub git: Option<&'a RepoStatus>,
+}
+
+struct RenderItemArgs<'a> {
+    entry: &'a EntryInfo,
+    is_focused: bool,
+    is_marked: bool,
+    is_last: bool,
+    available_width: usize,
+    palette: ThemePalette,
+    icon_mode: IconMode,
+    git_status: Option<FileStatus>,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -37,16 +57,15 @@ pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome 
     }
 }
 
-pub fn render_pane(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    pane: &PaneState,
-    label: &str,
-    is_focused: bool,
-    borders: Borders,
-    state: &AppState,
-    git: Option<&RepoStatus>,
-) {
+pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) {
+    let RenderPaneArgs {
+        pane,
+        label,
+        is_focused,
+        borders,
+        state,
+        git,
+    } = args;
     let palette = state.theme().palette;
     let icon_mode = state.icon_mode();
     let chrome = pane_chrome_style(is_focused, palette);
@@ -66,7 +85,15 @@ pub fn render_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let list_area = inner;
+    let (list_area, filter_area) = if pane.filter_active {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(inner);
+        (chunks[0], Some(chunks[1]))
+    } else {
+        (inner, None)
+    };
     let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
@@ -76,16 +103,16 @@ pub fn render_pane(
             .iter()
             .enumerate()
             .map(|(index, entry)| {
-                render_item(
+                render_item(RenderItemArgs {
                     entry,
                     is_focused,
-                    pane.is_marked(&entry.path),
-                    index + 1 == visible_entries.len(),
-                    list_area.width as usize,
+                    is_marked: pane.is_marked(&entry.path),
+                    is_last: index + 1 == visible_entries.len(),
+                    available_width: list_area.width as usize,
                     palette,
                     icon_mode,
-                    git.and_then(|g| g.status_for(&entry.path)),
-                )
+                    git_status: git.and_then(|g| g.status_for(&entry.path)),
+                })
             })
             .collect()
     };
@@ -105,18 +132,28 @@ pub fn render_pane(
     }
 
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
+
+    if let Some(filter_area) = filter_area {
+        let filter = Paragraph::new(format!(" Filter: {}_", pane.filter_query)).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.selection_bg),
+        );
+        frame.render_widget(filter, filter_area);
+    }
 }
 
-pub fn render_item(
-    entry: &EntryInfo,
-    is_focused: bool,
-    is_marked: bool,
-    is_last: bool,
-    available_width: usize,
-    palette: ThemePalette,
-    icon_mode: IconMode,
-    git_status: Option<FileStatus>,
-) -> ListItem<'static> {
+fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
+    let RenderItemArgs {
+        entry,
+        is_focused,
+        is_marked,
+        is_last,
+        available_width,
+        palette,
+        icon_mode,
+        git_status,
+    } = args;
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };

@@ -1,5 +1,6 @@
 mod code_view;
 mod editor;
+mod finder;
 mod menu_bar;
 pub mod markdown;
 mod overlay;
@@ -21,13 +22,14 @@ use ratatui::Frame;
 use crate::pane::PaneId;
 use crate::state::{AppState, PaneLayout};
 use crate::ui::editor::{editor_render_state, render_editor};
+use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
 };
 use crate::ui::palette::render_command_palette;
-use crate::ui::pane::render_pane;
+use crate::ui::pane::{render_pane, RenderPaneArgs};
 use crate::ui::preview::render_preview_panel;
 use crate::ui::settings::render_settings_panel;
 
@@ -105,23 +107,27 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         render_pane(
             frame,
             panes[0],
-            state.left_pane(),
-            first_label,
-            left_focused,
-            Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-            state,
-            state.git_status(PaneId::Left),
+            RenderPaneArgs {
+                pane: state.left_pane(),
+                label: first_label,
+                is_focused: left_focused,
+                borders: Borders::TOP | Borders::LEFT | Borders::BOTTOM,
+                state,
+                git: state.git_status(PaneId::Left),
+            },
         );
 
         render_pane(
             frame,
             panes[1],
-            state.right_pane(),
-            second_label,
-            right_focused,
-            Borders::ALL,
-            state,
-            state.git_status(PaneId::Right),
+            RenderPaneArgs {
+                pane: state.right_pane(),
+                label: second_label,
+                is_focused: right_focused,
+                borders: Borders::ALL,
+                state,
+                git: state.git_status(PaneId::Right),
+            },
         );
     }
 
@@ -229,6 +235,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some(settings_state) = state.settings() {
         render_settings_panel(frame, areas[1], settings_state, state, palette);
+    }
+
+    if let Some(finder_state) = state.file_finder() {
+        render_file_finder(frame, areas[1], finder_state, palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(

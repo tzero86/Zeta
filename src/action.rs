@@ -42,6 +42,10 @@ pub enum Action {
     FocusNextPane,
     CycleFocus,
     FocusPreviewPanel,
+    OpenPaneFilter,
+    PaneFilterInput(char),
+    PaneFilterBackspace,
+    ClosePaneFilter,
     ScrollPreviewDown,
     ScrollPreviewUp,
     ScrollPreviewPageDown,
@@ -96,6 +100,13 @@ pub enum Action {
     Resize { width: u16, height: u16 },
     OpenCommandPalette,
     CloseCommandPalette,
+    OpenFileFinder,
+    CloseFileFinder,
+    FileFinderInput(char),
+    FileFinderBackspace,
+    FileFinderConfirm,
+    FileFinderMoveDown,
+    FileFinderMoveUp,
     CloseSettingsPanel,
     PaletteInput(char),
     PaletteBackspace,
@@ -125,6 +136,11 @@ pub enum Command {
     ScanPane {
         pane: PaneId,
         path: PathBuf,
+    },
+    FindFiles {
+        pane: PaneId,
+        root: PathBuf,
+        max_depth: usize,
     },
     SaveEditor,
 }
@@ -233,11 +249,17 @@ impl Action {
                 Some(Self::SaveEditor)
             }
             KeyCode::Char('p') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenFileFinder)
+            }
+            KeyCode::Char('p') | KeyCode::Char('P')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
                 Some(Self::OpenCommandPalette)
             }
             KeyCode::Char('o') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenSettingsPanel)
             }
+            KeyCode::Char('/') => Some(Self::OpenPaneFilter),
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
             KeyCode::Char('s') | KeyCode::Char('S')
@@ -279,6 +301,37 @@ impl Action {
             KeyCode::Enter | KeyCode::Char(' ') => Some(Self::SettingsToggleCurrent),
             KeyCode::Up => Some(Self::SettingsMoveUp),
             KeyCode::Down => Some(Self::SettingsMoveDown),
+            _ => None,
+        }
+    }
+
+    /// Keys when the active pane quick-filter is open. Consumes ALL input.
+    pub fn from_pane_filter_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::Enter => Some(Self::ClosePaneFilter),
+            KeyCode::Backspace => Some(Self::PaneFilterBackspace),
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::PaneFilterInput(ch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys when the file finder modal is open. Consumes ALL input.
+    pub fn from_file_finder_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseFileFinder),
+            KeyCode::Enter => Some(Self::FileFinderConfirm),
+            KeyCode::Up => Some(Self::FileFinderMoveUp),
+            KeyCode::Down => Some(Self::FileFinderMoveDown),
+            KeyCode::Backspace => Some(Self::FileFinderBackspace),
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::FileFinderInput(ch))
+            }
             _ => None,
         }
     }

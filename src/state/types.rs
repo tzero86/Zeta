@@ -30,6 +30,8 @@ pub struct MenuItem {
 pub enum FocusLayer {
     #[default]
     Pane,
+    /// One-line quick-filter input is active for the focused pane.
+    PaneFilter,
     /// The editor panel is focused.
     Editor,
     /// The preview panel is focused.
@@ -49,6 +51,7 @@ pub enum ModalKind {
     Collision,
     Palette,
     Settings,
+    FileFinder,
 }
 
 #[cfg(test)]

@@ -58,6 +58,8 @@ pub struct PaneState {
     pub show_hidden: bool,
     pub sort_mode: SortMode,
     pub marked: BTreeSet<PathBuf>,
+    pub filter_query: String,
+    pub filter_active: bool,
     // Navigation history
     pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
     pub history_forward: Vec<PathBuf>, // dirs we can go forward to
@@ -74,6 +76,8 @@ impl PaneState {
             show_hidden: false,
             sort_mode: SortMode::Name,
             marked: BTreeSet::new(),
+            filter_query: String::new(),
+            filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
         }
@@ -130,13 +134,7 @@ impl PaneState {
             .collect();
         self.marked.retain(|path| entry_paths.contains(path));
 
-        if self.selection >= self.entries.len() {
-            self.selection = self.entries.len().saturating_sub(1);
-        }
-
-        if self.scroll_offset > self.selection {
-            self.scroll_offset = self.selection;
-        }
+        self.clamp_selection();
     }
 
     pub fn set_show_hidden(&mut self, show_hidden: bool) -> Result<(), FileSystemError> {
@@ -147,7 +145,7 @@ impl PaneState {
     }
 
     pub fn move_selection_down(&mut self) {
-        if self.selection + 1 < self.entries.len() {
+        if self.selection + 1 < self.filtered_len() {
             self.selection += 1;
         }
     }
@@ -157,8 +155,7 @@ impl PaneState {
     }
 
     pub fn selected_entry(&self) -> Option<&EntryInfo> {
-        // Selection index follows the sorted view order.
-        self.sorted_entries().into_iter().nth(self.selection)
+        self.filtered_entries().into_iter().nth(self.selection)
     }
 
     pub fn selected_path(&self) -> Option<PathBuf> {
@@ -257,19 +254,32 @@ impl PaneState {
         entries
     }
 
-    pub fn visible_entries(&self, height: usize) -> Vec<EntryInfo> {
+    pub fn filtered_entries(&self) -> Vec<&EntryInfo> {
         let sorted = self.sorted_entries();
-        if height == 0 || sorted.is_empty() {
+        if self.filter_active && !self.filter_query.is_empty() {
+            let query = self.filter_query.to_lowercase();
+            sorted
+                .into_iter()
+                .filter(|entry| entry.name.to_lowercase().contains(&query))
+                .collect()
+        } else {
+            sorted
+        }
+    }
+
+    pub fn visible_entries(&self, height: usize) -> Vec<EntryInfo> {
+        let filtered = self.filtered_entries();
+        if height == 0 || filtered.is_empty() {
             return Vec::new();
         }
 
-        let start = self.visible_start_for(height, sorted.len());
-        let end = (start + height).min(sorted.len());
-        sorted[start..end].iter().map(|e| (*e).clone()).collect()
+        let start = self.visible_start_for(height, filtered.len());
+        let end = (start + height).min(filtered.len());
+        filtered[start..end].iter().map(|e| (*e).clone()).collect()
     }
 
     pub fn visible_selection(&self, height: usize) -> Option<usize> {
-        let count = self.entries.len();
+        let count = self.filtered_len();
         if count == 0 || height == 0 {
             return None;
         }
@@ -278,6 +288,45 @@ impl PaneState {
             self.selection
                 .saturating_sub(self.visible_start_for(height, count)),
         )
+    }
+
+    pub fn select_path(&mut self, path: &std::path::Path) -> bool {
+        if let Some(index) = self
+            .filtered_entries()
+            .iter()
+            .position(|entry| entry.path == path)
+        {
+            self.selection = index;
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn clear_filter(&mut self) {
+        self.filter_active = false;
+        self.filter_query.clear();
+        self.selection = 0;
+        self.scroll_offset = 0;
+    }
+
+    pub fn refresh_filter(&mut self) {
+        self.clamp_selection();
+    }
+
+    fn filtered_len(&self) -> usize {
+        self.filtered_entries().len()
+    }
+
+    fn clamp_selection(&mut self) {
+        let count = self.filtered_len();
+        if self.selection >= count {
+            self.selection = count.saturating_sub(1);
+        }
+
+        if self.scroll_offset > self.selection {
+            self.scroll_offset = self.selection;
+        }
     }
 
     fn visible_start_for(&self, height: usize, count: usize) -> usize {
@@ -309,32 +358,47 @@ mod tests {
 
     use super::{PaneState, SortMode};
 
+    fn file(name: &str) -> EntryInfo {
+        EntryInfo {
+            name: name.to_string(),
+            path: PathBuf::from(format!("./{name}")),
+            kind: EntryKind::File,
+            size_bytes: Some(1),
+            modified: None,
+        }
+    }
+
+    fn dir(name: &str) -> EntryInfo {
+        EntryInfo {
+            name: name.to_string(),
+            path: PathBuf::from(format!("./{name}")),
+            kind: EntryKind::Directory,
+            size_bytes: None,
+            modified: None,
+        }
+    }
+
+    fn pane_with_entries(entries: Vec<EntryInfo>) -> PaneState {
+        let mut pane = PaneState::empty("left", PathBuf::from("."));
+        pane.entries = entries;
+        pane
+    }
+
+    fn empty_pane(cwd: &str) -> PaneState {
+        PaneState::empty("test", PathBuf::from(cwd))
+    }
+
     #[test]
     fn clamps_selection_at_zero() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: Vec::new(),
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let mut pane = empty_pane(".");
         pane.move_selection_up();
-
         assert_eq!(pane.selection, 0);
     }
 
     #[test]
     fn visible_selection_tracks_scrolled_window() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: (0..10)
+        let mut pane = pane_with_entries(
+            (0..10)
                 .map(|index| EntryInfo {
                     name: format!("item-{index}"),
                     path: PathBuf::from(format!("./item-{index}")),
@@ -343,14 +407,8 @@ mod tests {
                     modified: None,
                 })
                 .collect(),
-            selection: 7,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
+        );
+        pane.selection = 7;
 
         assert_eq!(pane.visible_selection(4), Some(3));
         assert_eq!(pane.visible_entries(4).len(), 4);
@@ -361,41 +419,7 @@ mod tests {
 
     #[test]
     fn sort_by_name_puts_dirs_first() {
-        let pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![
-                EntryInfo {
-                    name: String::from("zzz.txt"),
-                    path: PathBuf::from("./zzz.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(10),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("aaa"),
-                    path: PathBuf::from("./aaa"),
-                    kind: EntryKind::Directory,
-                    size_bytes: None,
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("aaa.txt"),
-                    path: PathBuf::from("./aaa.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(5),
-                    modified: None,
-                },
-            ],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let pane = pane_with_entries(vec![file("zzz.txt"), dir("aaa"), file("aaa.txt")]);
         let sorted = pane.sorted_entries();
         assert_eq!(sorted[0].kind, EntryKind::Directory);
         assert_eq!(sorted[0].name, "aaa");
@@ -405,40 +429,11 @@ mod tests {
 
     #[test]
     fn sort_by_size_desc_orders_largest_first() {
-        let pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![
-                EntryInfo {
-                    name: String::from("small.txt"),
-                    path: PathBuf::from("./small.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(10),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("large.txt"),
-                    path: PathBuf::from("./large.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(9999),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("medium.txt"),
-                    path: PathBuf::from("./medium.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(500),
-                    modified: None,
-                },
-            ],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::SizeDesc,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
+        let mut pane = pane_with_entries(vec![file("small.txt"), file("large.txt"), file("medium.txt")]);
+        pane.entries[0].size_bytes = Some(10);
+        pane.entries[1].size_bytes = Some(9999);
+        pane.entries[2].size_bytes = Some(500);
+        pane.sort_mode = SortMode::SizeDesc;
 
         let sorted = pane.sorted_entries();
         assert_eq!(sorted[0].name, "large.txt");
@@ -448,43 +443,9 @@ mod tests {
 
     #[test]
     fn sort_by_extension_groups_by_ext() {
-        let pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![
-                EntryInfo {
-                    name: String::from("b.rs"),
-                    path: PathBuf::from("./b.rs"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(1),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("a.md"),
-                    path: PathBuf::from("./a.md"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(1),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("a.rs"),
-                    path: PathBuf::from("./a.rs"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(1),
-                    modified: None,
-                },
-            ],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Extension,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let mut pane = pane_with_entries(vec![file("b.rs"), file("a.md"), file("a.rs")]);
+        pane.sort_mode = SortMode::Extension;
         let sorted = pane.sorted_entries();
-        // md < rs alphabetically; within same ext, names are sorted
         assert_eq!(sorted[0].name, "a.md");
         assert_eq!(sorted[1].name, "a.rs");
         assert_eq!(sorted[2].name, "b.rs");
@@ -493,37 +454,19 @@ mod tests {
     #[test]
     fn cycle_sort_mode_wraps_around() {
         let mut mode = SortMode::Name;
-        mode = mode.next(); // NameDesc
-        mode = mode.next(); // Size
-        mode = mode.next(); // SizeDesc
-        mode = mode.next(); // Modified
-        mode = mode.next(); // ModifiedDesc
-        mode = mode.next(); // Extension
-        mode = mode.next(); // back to Name
+        mode = mode.next();
+        mode = mode.next();
+        mode = mode.next();
+        mode = mode.next();
+        mode = mode.next();
+        mode = mode.next();
+        mode = mode.next();
         assert_eq!(mode, SortMode::Name);
     }
 
     #[test]
     fn toggle_mark_selected_adds_and_removes_mark() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![EntryInfo {
-                name: String::from("file.txt"),
-                path: PathBuf::from("./file.txt"),
-                kind: EntryKind::File,
-                size_bytes: Some(1),
-                modified: None,
-            }],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let mut pane = pane_with_entries(vec![file("file.txt")]);
         assert_eq!(pane.toggle_mark_selected(), Some(true));
         assert_eq!(pane.marked_count(), 1);
         assert_eq!(pane.toggle_mark_selected(), Some(false));
@@ -532,93 +475,24 @@ mod tests {
 
     #[test]
     fn clear_marks_removes_all() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![EntryInfo {
-                name: String::from("file.txt"),
-                path: PathBuf::from("./file.txt"),
-                kind: EntryKind::File,
-                size_bytes: Some(1),
-                modified: None,
-            }],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::from([PathBuf::from("./file.txt")]),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let mut pane = pane_with_entries(vec![file("file.txt")]);
+        pane.marked = BTreeSet::from([PathBuf::from("./file.txt")]);
         pane.clear_marks();
-
         assert_eq!(pane.marked_count(), 0);
     }
 
     #[test]
     fn set_entries_purges_stale_marks() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![EntryInfo {
-                name: String::from("file.txt"),
-                path: PathBuf::from("./file.txt"),
-                kind: EntryKind::File,
-                size_bytes: Some(1),
-                modified: None,
-            }],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::from([PathBuf::from("./file.txt"), PathBuf::from("./missing.txt")]),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
-        pane.set_entries(vec![EntryInfo {
-            name: String::from("file.txt"),
-            path: PathBuf::from("./file.txt"),
-            kind: EntryKind::File,
-            size_bytes: Some(1),
-            modified: None,
-        }]);
-
+        let mut pane = pane_with_entries(vec![file("file.txt")]);
+        pane.marked = BTreeSet::from([PathBuf::from("./file.txt"), PathBuf::from("./missing.txt")]);
+        pane.set_entries(vec![file("file.txt")]);
         assert_eq!(pane.marked_count(), 1);
         assert!(pane.is_marked(&PathBuf::from("./file.txt")));
     }
 
     #[test]
     fn marked_count_tracks_number_of_marks() {
-        let mut pane = PaneState {
-            title: String::from("left"),
-            cwd: PathBuf::from("."),
-            entries: vec![
-                EntryInfo {
-                    name: String::from("a.txt"),
-                    path: PathBuf::from("./a.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(1),
-                    modified: None,
-                },
-                EntryInfo {
-                    name: String::from("b.txt"),
-                    path: PathBuf::from("./b.txt"),
-                    kind: EntryKind::File,
-                    size_bytes: Some(1),
-                    modified: None,
-                },
-            ],
-            selection: 0,
-            scroll_offset: 0,
-            show_hidden: false,
-            sort_mode: SortMode::Name,
-            marked: BTreeSet::new(),
-            history_back: Vec::new(),
-            history_forward: Vec::new(),
-        };
-
+        let mut pane = pane_with_entries(vec![file("a.txt"), file("b.txt")]);
         assert_eq!(pane.marked_count(), 0);
         let _ = pane.toggle_mark_selected();
         pane.move_selection_down();
@@ -626,8 +500,28 @@ mod tests {
         assert_eq!(pane.marked_count(), 2);
     }
 
-    fn empty_pane(cwd: &str) -> PaneState {
-        PaneState::empty("test", PathBuf::from(cwd))
+    #[test]
+    fn filter_active_hides_non_matching_entries() {
+        let mut pane = pane_with_entries(vec![file("main.rs"), file("README.md"), file("Cargo.toml")]);
+        pane.filter_active = true;
+        pane.filter_query = String::from("read");
+        let names: Vec<_> = pane.visible_entries(10).into_iter().map(|e| e.name).collect();
+        assert_eq!(names, vec![String::from("README.md")]);
+    }
+
+    #[test]
+    fn filter_empty_query_shows_all_entries() {
+        let mut pane = pane_with_entries(vec![file("a.rs"), file("b.rs")]);
+        pane.filter_active = true;
+        assert_eq!(pane.visible_entries(10).len(), 2);
+    }
+
+    #[test]
+    fn filter_is_case_insensitive() {
+        let mut pane = pane_with_entries(vec![file("README.md"), file("main.rs")]);
+        pane.filter_active = true;
+        pane.filter_query = String::from("read");
+        assert_eq!(pane.selected_entry().map(|e| e.name.as_str()), Some("README.md"));
     }
 
     #[test]
@@ -641,7 +535,6 @@ mod tests {
     fn pop_back_returns_previous_and_moves_current_to_forward() {
         let mut pane = empty_pane("/home");
         pane.push_history();
-        // Simulate the scan completing: cwd is now /home/user
         pane.cwd = PathBuf::from("/home/user");
 
         let back = pane.pop_back();
@@ -655,11 +548,7 @@ mod tests {
         let mut pane = empty_pane("/home");
         pane.push_history();
         pane.cwd = PathBuf::from("/home/user");
-
-        // Go back first so there is something in forward.
         let _back = pane.pop_back();
-        // pane.cwd is still /home/user (scan hasn't run yet in unit test)
-        // Simulate scan: cwd now set to what pop_back returned.
         pane.cwd = PathBuf::from("/home");
 
         let fwd = pane.pop_forward();
@@ -673,12 +562,8 @@ mod tests {
         let mut pane = empty_pane("/home");
         pane.push_history();
         pane.cwd = PathBuf::from("/home/user");
-
-        // Build a forward stack via pop_back.
         let _back = pane.pop_back();
         pane.cwd = PathBuf::from("/home");
-
-        // Now navigate somewhere new — forward stack must be cleared.
         pane.push_history();
         assert!(pane.history_forward.is_empty());
     }

@@ -15,7 +15,7 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
-use crate::jobs::{self, FileOpRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
+use crate::jobs::{self, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::layout_cache::{rect_contains, LayoutCache};
@@ -179,6 +179,12 @@ impl App {
                     .send(GitStatusRequest { pane, path })
                     .context("failed to queue git status job")?;
             }
+            Command::FindFiles { pane, root, max_depth } => {
+                self.workers
+                    .find_tx
+                    .send(FindRequest { pane, root, max_depth })
+                    .context("failed to queue background file finder job")?;
+            }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
             }
@@ -218,6 +224,8 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
         FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
         FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
+        FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
+        FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
         FocusLayer::MarkdownPreview => {
             if is_preview_open && alt_f3 {
@@ -575,9 +583,9 @@ mod tests {
     fn command_palette_remains_available_while_editor_is_open() {
         let keymap = RuntimeKeymap::default();
         let action = route_key_event(
-            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Char('P'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
             &keymap,
-            FocusLayer::Editor, // editor focused, palette NOT open
+            FocusLayer::Editor,
             false,
         );
         assert_eq!(action, Some(Action::OpenCommandPalette));

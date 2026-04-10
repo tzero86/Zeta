@@ -21,6 +21,7 @@ use anyhow::Result;
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
+use crate::finder::FileFinderState;
 use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult};
@@ -54,6 +55,8 @@ pub struct AppState {
     editor_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
+    pending_reveal: Option<(PaneId, PathBuf)>,
+
 }
 
 impl AppState {
@@ -92,6 +95,7 @@ impl AppState {
             should_quit: false,
             editor_fullscreen: false,
             git: [None, None],
+            pending_reveal: None,
         })
     }
 
@@ -172,6 +176,83 @@ impl AppState {
                 } else {
                     String::from("hiding hidden files")
                 };
+            }
+            Action::OpenPaneFilter => {
+                let pane = self.panes.active_pane_mut();
+                pane.filter_active = true;
+                pane.filter_query.clear();
+                pane.selection = 0;
+                pane.scroll_offset = 0;
+                self.status_message = String::from("type to filter pane entries");
+            }
+            Action::PaneFilterInput(ch) => {
+                let pane = self.panes.active_pane_mut();
+                pane.filter_query.push(*ch);
+                pane.selection = 0;
+                pane.scroll_offset = 0;
+                pane.refresh_filter();
+            }
+            Action::PaneFilterBackspace => {
+                let pane = self.panes.active_pane_mut();
+                pane.filter_query.pop();
+                pane.selection = 0;
+                pane.scroll_offset = 0;
+                pane.refresh_filter();
+            }
+            Action::ClosePaneFilter => {
+                self.panes.active_pane_mut().clear_filter();
+                self.status_message = String::from("pane filter closed");
+            }
+            Action::OpenFileFinder => {
+                let pane = self.panes.focused_pane_id();
+                let root = self.panes.active_pane().cwd.clone();
+                self.overlay.open_file_finder(FileFinderState::new(pane, root.clone()));
+                commands.push(Command::FindFiles {
+                    pane,
+                    root: root.clone(),
+                    max_depth: 5,
+                });
+                self.status_message = format!("searching under {}", root.display());
+            }
+            Action::FileFinderInput(ch) => {
+                if let Some(finder) = self.overlay.file_finder_mut() {
+                    finder.input(*ch);
+                }
+            }
+            Action::FileFinderBackspace => {
+                if let Some(finder) = self.overlay.file_finder_mut() {
+                    finder.backspace();
+                }
+            }
+            Action::FileFinderMoveDown => {
+                if let Some(finder) = self.overlay.file_finder_mut() {
+                    finder.move_down();
+                }
+            }
+            Action::FileFinderMoveUp => {
+                if let Some(finder) = self.overlay.file_finder_mut() {
+                    finder.move_up();
+                }
+            }
+            Action::CloseFileFinder => {
+                self.overlay.close_all();
+                self.status_message = String::from("file finder closed");
+            }
+            Action::FileFinderConfirm => {
+                if let Some(finder) = self.overlay.file_finder() {
+                    if let Some(path) = finder.selected().cloned() {
+                        if let Some(parent) = path.parent() {
+                            let pane = finder.pane;
+                            self.pending_reveal = Some((pane, path.clone()));
+                            commands.push(Command::ScanPane {
+                                pane,
+                                path: parent.to_path_buf(),
+                            });
+                            self.status_message = format!("jumping to {}", path.display());
+                        }
+                    }
+                }
+                self.overlay.close_all();
             }
             Action::CycleFocus => {
                 self.editor.markdown_preview_focused = false;
@@ -460,6 +541,13 @@ impl AppState {
             JobResult::DirectoryScanned { pane, path, entries, elapsed_ms } => {
                 self.panes.pane_mut(pane).cwd = path.clone();
                 self.panes.pane_mut(pane).set_entries(entries);
+                self.panes.pane_mut(pane).refresh_filter();
+                if let Some((pending_pane, pending_path)) = self.pending_reveal.clone() {
+                    if pending_pane == pane && pending_path.parent() == Some(path.as_path()) {
+                        self.panes.pane_mut(pane).select_path(&pending_path);
+                        self.pending_reveal = None;
+                    }
+                }
                 self.status_message = format!("refreshed {} in {elapsed_ms} ms", path.display());
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
@@ -505,6 +593,18 @@ impl AppState {
             }
             JobResult::GitStatusAbsent { pane } => {
                 self.git[pane as usize] = None;
+            }
+            JobResult::FindResults { pane, root, entries } => {
+                if let Some(finder) = self.overlay.file_finder_mut() {
+                    if finder.pane == pane && finder.root == root {
+                        finder.set_results(entries);
+                        self.status_message = format!(
+                            "file finder loaded {} entries from {}",
+                            finder.all_entries.len(),
+                            root.display()
+                        );
+                    }
+                }
             }
         }
     }
@@ -608,10 +708,13 @@ impl AppState {
     }
 
     /// Derive the current input focus layer from state.
-    /// Priority (highest → lowest): Palette > Collision > Prompt > Dialog > Menu > Settings > MarkdownPreview > Editor > Preview > Pane.
+    /// Priority (highest → lowest): Palette > FileFinder > Collision > Prompt > Dialog > Menu > Settings > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
+        }
+        if self.file_finder().is_some() {
+            return FocusLayer::Modal(ModalKind::FileFinder);
         }
         if self.is_collision_open() {
             return FocusLayer::Modal(ModalKind::Collision);
@@ -627,6 +730,9 @@ impl AppState {
         }
         if self.is_settings_open() {
             return FocusLayer::Modal(ModalKind::Settings);
+        }
+        if self.panes.active_pane().filter_active {
+            return FocusLayer::PaneFilter;
         }
         if self.is_markdown_preview_focused() {
             return FocusLayer::MarkdownPreview;
@@ -649,6 +755,7 @@ impl AppState {
     pub fn collision(&self) -> Option<&CollisionState> { self.overlay.collision() }
     pub fn palette(&self) -> Option<&crate::palette::PaletteState> { self.overlay.palette() }
     pub fn settings(&self) -> Option<&SettingsState> { self.overlay.settings() }
+    pub fn file_finder(&self) -> Option<&FileFinderState> { self.overlay.file_finder() }
     pub fn is_menu_open(&self) -> bool { self.overlay.is_menu_open() }
     pub fn is_prompt_open(&self) -> bool { self.overlay.prompt().is_some() }
     pub fn is_dialog_open(&self) -> bool { self.overlay.dialog().is_some() }
@@ -895,6 +1002,8 @@ mod tests {
             show_hidden: false,
             sort_mode: SortMode::Name,
             marked: std::collections::BTreeSet::new(),
+            filter_query: String::new(),
+            filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
         }
@@ -993,6 +1102,21 @@ mod tests {
         assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
     }
 
+    #[test]
+    fn open_pane_filter_switches_focus_layer() {
+        let mut state = test_state();
+        state.apply(Action::OpenPaneFilter).unwrap();
+        assert!(matches!(state.focus_layer(), FocusLayer::PaneFilter));
+    }
+
+    #[test]
+    fn open_file_finder_enqueues_background_search() {
+        let mut state = test_state();
+        let commands = state.apply(Action::OpenFileFinder).unwrap();
+        assert!(matches!(commands.first(), Some(Command::FindFiles { .. })));
+        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::FileFinder)));
+    }
+
     fn test_state() -> AppState {
         let right = PaneState {
             title: String::from("right"),
@@ -1003,6 +1127,8 @@ mod tests {
             show_hidden: false,
             sort_mode: SortMode::Name,
             marked: std::collections::BTreeSet::new(),
+            filter_query: String::new(),
+            filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
         };
@@ -1028,6 +1154,7 @@ mod tests {
             should_quit: false,
             editor_fullscreen: false,
             git: [None, None],
+            pending_reveal: None,
         }
     }
 
