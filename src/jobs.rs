@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
 
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
+
 use crossbeam_channel::{bounded, Receiver, Sender};
 
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
@@ -45,6 +47,11 @@ pub struct FindRequest {
     pub pane: PaneId,
     pub root: PathBuf,
     pub max_depth: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct WatchRequest {
+    pub paths: Vec<PathBuf>,
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +104,9 @@ pub enum JobResult {
         root: PathBuf,
         entries: Vec<PathBuf>,
     },
+    DirectoryChanged {
+        path: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -125,6 +135,7 @@ pub struct WorkerChannels {
     pub preview_tx: Sender<PreviewRequest>,
     pub git_tx:     Sender<GitStatusRequest>,
     pub find_tx:    Sender<FindRequest>,
+    pub watch_tx:   Sender<WatchRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -233,7 +244,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     // --- Finder worker ---
     let (find_tx, find_rx) = bounded::<FindRequest>(8);
     {
-        let result_tx = result_tx;
+        let result_tx = result_tx.clone();
         thread::Builder::new()
             .name("zeta-find".into())
             .spawn(move || {
@@ -254,12 +265,68 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn finder worker");
     }
 
-    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx, find_tx }, result_rx)
+    // --- Watcher worker ---
+    let (watch_tx, watch_rx) = bounded::<WatchRequest>(8);
+    {
+        let result_tx = result_tx;
+        thread::Builder::new()
+            .name("zeta-watch".into())
+            .spawn(move || run_watcher_worker(watch_rx, result_tx))
+            .expect("failed to spawn watcher worker");
+    }
+
+    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx, find_tx, watch_tx }, result_rx)
 }
 
 // ---------------------------------------------------------------------------
 // Internal worker logic
 // ---------------------------------------------------------------------------
+
+fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobResult>) {
+    use std::sync::mpsc;
+
+    let (notify_tx, notify_rx) = mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(notify_tx, Config::default())
+        .expect("failed to create filesystem watcher");
+    let mut watched_paths: Vec<PathBuf> = Vec::new();
+
+    loop {
+        while let Ok(req) = watch_rx.try_recv() {
+            for path in &watched_paths {
+                let _ = watcher.unwatch(path);
+            }
+            watched_paths.clear();
+            for path in req.paths {
+                if watched_paths.iter().all(|p| p != &path)
+                    && watcher.watch(&path, RecursiveMode::NonRecursive).is_ok()
+                {
+                    watched_paths.push(path);
+                }
+            }
+        }
+
+        while let Ok(event_result) = notify_rx.try_recv() {
+            let Ok(event) = event_result else {
+                continue;
+            };
+            for path in event.paths {
+                let changed_dir = if path.is_dir() {
+                    path
+                } else {
+                    path.parent().map(Path::to_path_buf).unwrap_or(path)
+                };
+                if result_tx
+                    .send(JobResult::DirectoryChanged { path: changed_dir })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
 
 fn walk_for_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
     let mut results = Vec::new();
@@ -578,6 +645,44 @@ mod tests {
                 break;
             }
         }
+    }
+
+    #[test]
+    fn watcher_worker_emits_directory_changed() {
+        let (workers, results) = spawn_workers();
+        let root = std::env::temp_dir().join(format!(
+            "zeta-watch-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        workers
+            .watch_tx
+            .send(WatchRequest {
+                paths: vec![root.clone()],
+            })
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        std::fs::write(root.join("created.txt"), "hello").unwrap();
+
+        let mut saw_change = false;
+        for _ in 0..10 {
+            let result = results
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap();
+            if let JobResult::DirectoryChanged { path } = result {
+                if path == root {
+                    saw_change = true;
+                    break;
+                }
+            }
+        }
+
+        let _ = std::fs::remove_file(root.join("created.txt"));
+        let _ = std::fs::remove_dir(&root);
+        assert!(saw_change, "expected watcher to emit DirectoryChanged");
     }
 
     #[test]

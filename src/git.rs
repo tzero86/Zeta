@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -65,8 +65,11 @@ impl RepoStatus {
     /// Look up the status for an absolute path.
     /// Returns `None` for clean (unmodified) files.
     pub fn status_for(&self, absolute_path: &Path) -> Option<FileStatus> {
-        let relative = absolute_path.strip_prefix(&self.root).ok()?;
-        self.file_statuses.get(relative).copied()
+        let relative = relative_lookup_path(&self.root, absolute_path)?;
+        let wanted = normalize_lookup_string(&relative);
+        self.file_statuses.iter().find_map(|(path, status)| {
+            (normalize_lookup_string(path) == wanted).then_some(*status)
+        })
     }
 }
 
@@ -79,11 +82,7 @@ impl RepoStatus {
 /// Shells out to `git rev-parse --show-toplevel`. Returns `None` if `git` is
 /// not on `PATH`, the path is not inside a repo, or any error occurs.
 pub fn detect_repo(path: &Path) -> Option<PathBuf> {
-    let output = Command::new("git")
-        .args(["rev-parse", "--show-toplevel"])
-        .current_dir(path)
-        .output()
-        .ok()?;
+    let output = run_git(path, &["rev-parse", "--show-toplevel"])?;
     if !output.status.success() {
         return None;
     }
@@ -97,16 +96,20 @@ pub fn detect_repo(path: &Path) -> Option<PathBuf> {
 pub fn fetch_status(path: &Path) -> Option<RepoStatus> {
     let root = detect_repo(path)?;
     let branch = current_branch(&root).unwrap_or_else(|| String::from("HEAD"));
-    let output = Command::new("git")
-        .args(["status", "--porcelain=v1", "-u", "--no-optional-locks"])
-        .current_dir(&root)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let file_statuses = parse_porcelain(&text);
+
+    let output = [
+        ["status", "--porcelain=v1", "-u", "--no-optional-locks"].as_slice(),
+        ["status", "--porcelain=v1", "-u"].as_slice(),
+        ["status", "--porcelain"].as_slice(),
+    ]
+    .into_iter()
+    .filter_map(|args| run_git(&root, args))
+    .find(|output| output.status.success());
+
+    let file_statuses = output
+        .map(|output| parse_porcelain(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default();
+
     Some(RepoStatus { root, branch, file_statuses })
 }
 
@@ -114,21 +117,70 @@ pub fn fetch_status(path: &Path) -> Option<RepoStatus> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+fn run_git(cwd: &Path, args: &[&str]) -> Option<Output> {
+    if let Ok(output) = Command::new("git").args(args).current_dir(cwd).output() {
+        return Some(output);
+    }
+
+    #[cfg(windows)]
+    {
+        for candidate in windows_git_candidates() {
+            if let Ok(output) = Command::new(&candidate).args(args).current_dir(cwd).output() {
+                return Some(output);
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn windows_git_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(where_out) = Command::new("where.exe").args(["git"]).output() {
+        if where_out.status.success() {
+            for line in String::from_utf8_lossy(&where_out.stdout).lines() {
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    candidates.push(PathBuf::from(trimmed));
+                }
+            }
+        }
+    }
+
+    for base in [
+        std::env::var_os("ProgramFiles"),
+        std::env::var_os("ProgramW6432"),
+        std::env::var_os("LocalAppData"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let base = PathBuf::from(base);
+        for rel in [
+            PathBuf::from("Git\\cmd\\git.exe"),
+            PathBuf::from("Git\\bin\\git.exe"),
+            PathBuf::from("Programs\\Git\\cmd\\git.exe"),
+            PathBuf::from("Programs\\Git\\bin\\git.exe"),
+        ] {
+            let candidate = base.join(rel);
+            if candidate.exists() {
+                candidates.push(candidate);
+            }
+        }
+    }
+
+    candidates
+}
+
 fn current_branch(repo_root: &Path) -> Option<String> {
-    let output = Command::new("git")
-        .args(["symbolic-ref", "--short", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .ok()?;
+    let output = run_git(repo_root, &["symbolic-ref", "--short", "HEAD"])?;
     if output.status.success() {
         return Some(String::from_utf8(output.stdout).ok()?.trim().to_string());
     }
     // Detached HEAD — fall back to short commit hash.
-    let hash = Command::new("git")
-        .args(["rev-parse", "--short", "HEAD"])
-        .current_dir(repo_root)
-        .output()
-        .ok()?;
+    let hash = run_git(repo_root, &["rev-parse", "--short", "HEAD"])?;
     if hash.status.success() {
         return Some(String::from_utf8(hash.stdout).ok()?.trim().to_string());
     }
@@ -160,9 +212,41 @@ pub fn parse_porcelain(output: &str) -> HashMap<PathBuf, FileStatus> {
         };
 
         let status = classify(x, y);
-        map.insert(PathBuf::from(path), status);
+        map.insert(normalize_relative_path(Path::new(path)), status);
     }
     map
+}
+
+fn normalize_relative_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        normalized.push(component.as_os_str());
+    }
+    normalized
+}
+
+fn relative_lookup_path(root: &Path, absolute_path: &Path) -> Option<PathBuf> {
+    if let Ok(relative) = absolute_path.strip_prefix(root) {
+        return Some(normalize_relative_path(relative));
+    }
+
+    let root_norm = normalize_lookup_string(root);
+    let abs_norm = normalize_lookup_string(absolute_path);
+    abs_norm
+        .strip_prefix(&(root_norm + "/"))
+        .map(PathBuf::from)
+}
+
+fn normalize_lookup_string(path: &Path) -> String {
+    let value = path.display().to_string().replace('\\', "/");
+    #[cfg(windows)]
+    {
+        value.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        value
+    }
 }
 
 /// Collapse XY flag pair into a single `FileStatus`.

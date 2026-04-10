@@ -524,6 +524,8 @@ impl AppState {
                 | Action::EditorNewline
                 | Action::EditorSearchNext
                 | Action::EditorSearchPrev
+                | Action::EditorReplaceNext
+                | Action::EditorReplaceAll
                 | Action::ToggleMarkdownPreview
         ) {
             let preview_height = self
@@ -605,6 +607,9 @@ impl AppState {
                         );
                     }
                 }
+            }
+            JobResult::DirectoryChanged { path } => {
+                self.status_message = format!("filesystem changed: {}", path.display());
             }
         }
     }

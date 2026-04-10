@@ -70,11 +70,13 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     let icon_mode = state.icon_mode();
     let chrome = pane_chrome_style(is_focused, palette);
 
+    let branch = git.map(|g| format!("  ⎇ {}", g.branch)).unwrap_or_default();
     let title = format!(
-        "{} [{}]  {}  ({})",
+        "{} [{}]  {}{}  ({})",
         label,
         pane.entries.len(),
         pane.cwd.display(),
+        branch,
         pane.sort_mode.label()
     );
     let block = Block::default()

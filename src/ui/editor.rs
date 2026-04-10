@@ -7,6 +7,16 @@ use crate::config::ThemePalette;
 use crate::editor::{EditorBuffer, EditorRenderState};
 use crate::ui::code_view::{render_code_view, CodeViewRenderArgs};
 
+pub struct RenderEditorArgs<'a> {
+    pub editor: &'a mut EditorBuffer,
+    pub render_state: &'a EditorRenderState,
+    pub is_focused: bool,
+    pub palette: ThemePalette,
+    pub syntect_theme: &'a str,
+    pub replace_active: bool,
+    pub replace_query: &'a str,
+}
+
 pub fn editor_render_state(
     editor: &mut EditorBuffer,
     area: Rect,
@@ -27,15 +37,16 @@ pub fn editor_highlighted_render_state(
     editor.visible_highlighted_window(height, syntect_theme, palette.text_primary)
 }
 
-pub fn render_editor(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    editor: &mut EditorBuffer,
-    render_state: &EditorRenderState,
-    is_focused: bool,
-    palette: ThemePalette,
-    syntect_theme: &str,
-) {
+pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'_>) {
+    let RenderEditorArgs {
+        editor,
+        render_state,
+        is_focused,
+        palette,
+        syntect_theme,
+        replace_active,
+        replace_query,
+    } = args;
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_editor_focus)
@@ -58,14 +69,20 @@ pub fn render_editor(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let (content_area, search_bar_area) = if editor.search_active {
+    let (content_area, search_bar_area, replace_bar_area) = if editor.search_active && replace_active {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)])
+            .split(inner);
+        (splits[0], Some(splits[1]), Some(splits[2]))
+    } else if editor.search_active {
         let splits = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(1), Constraint::Length(1)])
             .split(inner);
-        (splits[0], Some(splits[1]))
+        (splits[0], Some(splits[1]), None)
     } else {
-        (inner, None)
+        (inner, None, None)
     };
 
     let gutter_width = 6u16;
@@ -103,6 +120,19 @@ pub fn render_editor(
             Style::default()
                 .fg(palette.text_primary)
                 .bg(palette.selection_bg),
+        );
+        frame.render_widget(bar, bar_area);
+    }
+
+    if let Some(bar_area) = replace_bar_area {
+        let bar_text = format!(
+            " Replace: {}  [Ctrl+H replace  Ctrl+Shift+H all]",
+            replace_query
+        );
+        let bar = Paragraph::new(bar_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.tools_bg),
         );
         frame.render_widget(bar, bar_area);
     }

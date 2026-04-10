@@ -7,6 +7,8 @@ use crate::editor::EditorBuffer;
 #[derive(Clone, Debug, Default)]
 pub struct EditorState {
     pub buffer: Option<EditorBuffer>,
+    pub replace_query: String,
+    pub replace_active: bool,
     /// Scroll offset for the markdown preview panel (lines from top).
     pub markdown_preview_scroll: usize,
     /// Whether keyboard focus is currently on the markdown preview, not the editor.
@@ -30,6 +32,8 @@ impl EditorState {
             .as_ref()
             .and_then(|p| p.extension())
             .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+        self.replace_query.clear();
+        self.replace_active = false;
         self.markdown_preview_visible = is_md;
         self.markdown_preview_focused = false;
         self.markdown_preview_scroll = 0;
@@ -38,6 +42,8 @@ impl EditorState {
 
     pub fn close(&mut self) {
         self.buffer = None;
+        self.replace_query.clear();
+        self.replace_active = false;
         self.markdown_preview_scroll = 0;
         self.markdown_preview_focused = false;
         self.markdown_preview_visible = false;
@@ -71,6 +77,11 @@ impl EditorState {
         let mut commands = Vec::new();
         match action {
             Action::CloseEditor => {
+                if self.replace_active {
+                    self.replace_active = false;
+                    self.replace_query.clear();
+                    return Ok(commands);
+                }
                 if let Some(editor) = self.buffer.as_mut() {
                     if editor.search_active {
                         editor.search_active = false;
@@ -92,14 +103,31 @@ impl EditorState {
                     editor.search_match_idx = 0;
                 }
             }
+            Action::OpenEditorReplace => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    if self.replace_active {
+                        editor.replace_next(&self.replace_query);
+                    } else {
+                        editor.search_active = true;
+                        self.replace_active = true;
+                        self.replace_query.clear();
+                    }
+                }
+            }
             Action::EditorCloseSearch => {
                 if let Some(editor) = self.buffer.as_mut() {
                     editor.search_active = false;
                     editor.search_query.clear();
                 }
+                self.replace_active = false;
+                self.replace_query.clear();
             }
             Action::EditorBackspace => {
                 if let Some(editor) = self.buffer.as_mut() {
+                    if self.replace_active {
+                        self.replace_query.pop();
+                        return Ok(commands);
+                    }
                     if editor.search_active {
                         editor.search_query.pop();
                         if !editor.search_query.is_empty() {
@@ -112,6 +140,10 @@ impl EditorState {
             }
             Action::EditorInsert(ch) => {
                 if let Some(editor) = self.buffer.as_mut() {
+                    if self.replace_active {
+                        self.replace_query.push(*ch);
+                        return Ok(commands);
+                    }
                     if editor.search_active {
                         editor.search_query.push(*ch);
                         editor.search_next();
@@ -167,6 +199,22 @@ impl EditorState {
             Action::EditorSearchPrev => {
                 if let Some(e) = self.buffer.as_mut() {
                     e.search_prev();
+                }
+            }
+            Action::EditorReplaceInput(ch) => {
+                self.replace_query.push(*ch);
+            }
+            Action::EditorReplaceBackspace => {
+                self.replace_query.pop();
+            }
+            Action::EditorReplaceNext => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    editor.replace_next(&self.replace_query);
+                }
+            }
+            Action::EditorReplaceAll => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    editor.replace_all(&self.replace_query);
                 }
             }
             Action::ToggleMarkdownPreview => {

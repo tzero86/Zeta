@@ -35,10 +35,15 @@ pub enum Action {
     EditorMoveUp,
     EditorNewline,
     EditorOpenSearch,
+    OpenEditorReplace,
     EditorCloseSearch,
     EditorSearchBackspace,
     EditorSearchNext,
     EditorSearchPrev,
+    EditorReplaceInput(char),
+    EditorReplaceBackspace,
+    EditorReplaceNext,
+    EditorReplaceAll,
     FocusNextPane,
     CycleFocus,
     FocusPreviewPanel,
@@ -415,6 +420,14 @@ impl Action {
             }
             KeyCode::Char('f') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorOpenSearch)
+            }
+            KeyCode::Char('h') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenEditorReplace)
+            }
+            KeyCode::Char('h') | KeyCode::Char('H')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::EditorReplaceAll)
             }
             KeyCode::F(11) => Some(Self::ToggleEditorFullscreen),
             KeyCode::Char('m') if key_event.modifiers == KeyModifiers::CONTROL => {

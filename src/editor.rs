@@ -447,9 +447,53 @@ impl EditorBuffer {
         self.cursor_char_idx = matches[prev].0;
     }
 
+    pub fn replace_next(&mut self, replacement: &str) -> bool {
+        let matches = self.find_matches(&self.search_query.clone());
+        if matches.is_empty() {
+            return false;
+        }
+        let index = self.search_match_idx.min(matches.len() - 1);
+        let (start, end) = matches[index];
+        self.replace_span(start, end, replacement);
+        self.search_match_idx = index;
+        self.search_next();
+        true
+    }
+
+    pub fn replace_all(&mut self, replacement: &str) -> usize {
+        let matches = self.find_matches(&self.search_query.clone());
+        let count = matches.len();
+        for (start, end) in matches.into_iter().rev() {
+            self.replace_span(start, end, replacement);
+        }
+        if count == 0 {
+            self.search_match_idx = 0;
+        }
+        count
+    }
+
     // -----------------------------------------------------------------------
     // Private helpers
     // -----------------------------------------------------------------------
+
+    fn replace_span(&mut self, start: usize, end: usize, replacement: &str) {
+        let removed = self.text.slice(start..end).to_string();
+        let edit = Edit {
+            char_start: start,
+            removed,
+            inserted: replacement.to_string(),
+            cursor_before: self.cursor_char_idx,
+            cursor_after: start + replacement.chars().count(),
+        };
+        self.text.remove(start..end);
+        if !replacement.is_empty() {
+            self.text.insert(start, replacement);
+        }
+        self.cursor_char_idx = edit.cursor_after;
+        self.history.push(edit);
+        self.is_dirty = true;
+        self.edit_version += 1;
+    }
 
     fn line_col_to_char(&self, line: usize, col: usize) -> usize {
         let line_start = self.text.line_to_char(line);
@@ -741,6 +785,26 @@ mod tests {
         buf.search_next();
         assert_eq!(buf.cursor_char_idx, 6);
         assert_eq!(buf.search_match_idx, 1);
+    }
+
+    #[test]
+    fn replace_next_replaces_current_match_and_advances() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "foo foo");
+        buf.search_query = String::from("foo");
+        buf.search_next();
+        assert!(buf.replace_next("bar"));
+        assert_eq!(buf.contents(), "bar foo");
+    }
+
+    #[test]
+    fn replace_all_replaces_every_occurrence() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "foo foo foo");
+        buf.search_query = String::from("foo");
+        let count = buf.replace_all("bar");
+        assert_eq!(count, 3);
+        assert_eq!(buf.contents(), "bar bar bar");
     }
 
     // --- performance -------------------------------------------------------

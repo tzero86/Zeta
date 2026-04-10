@@ -21,7 +21,7 @@ use ratatui::Frame;
 
 use crate::pane::PaneId;
 use crate::state::{AppState, PaneLayout};
-use crate::ui::editor::{editor_render_state, render_editor};
+use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
@@ -136,6 +136,8 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             let editor_focused = state.is_editor_focused();
             let md_focused = state.is_markdown_preview_focused();
             let md_scroll = state.markdown_preview_scroll();
+            let replace_active = state.editor.replace_active;
+            let replace_query = state.editor.replace_query.clone();
             let syntect_theme = state.theme().palette.syntect_theme;
             let (editor_area, md_area_opt) = if show_md_preview {
                 let halves = Layout::default()
@@ -157,11 +159,15 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 render_editor(
                     frame,
                     editor_area,
-                    editor,
-                    &editor_view,
-                    editor_focused,
-                    palette,
-                    syntect_theme,
+                    RenderEditorArgs {
+                        editor,
+                        render_state: &editor_view,
+                        is_focused: editor_focused,
+                        palette,
+                        syntect_theme,
+                        replace_active,
+                        replace_query: &replace_query,
+                    },
                 );
 
                 if let Some(md_area) = md_area_opt {

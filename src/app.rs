@@ -15,7 +15,7 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
-use crate::jobs::{self, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WorkerChannels};
+use crate::jobs::{self, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::layout_cache::{rect_contains, LayoutCache};
@@ -128,8 +128,28 @@ impl App {
             AppEvent::Resize { width, height } => {
                 self.dispatch(Action::Resize { width, height })?;
             }
-            AppEvent::Job(result) => {
-                self.state.apply_job_result(result);
+            AppEvent::Job(result) => match result {
+                JobResult::DirectoryChanged { path } => {
+                    if self.state.left_pane().cwd == path {
+                        self.execute_command(Command::ScanPane {
+                            pane: crate::pane::PaneId::Left,
+                            path: path.clone(),
+                        })?;
+                    }
+                    if self.state.right_pane().cwd == path {
+                        self.execute_command(Command::ScanPane {
+                            pane: crate::pane::PaneId::Right,
+                            path,
+                        })?;
+                    }
+                }
+                other => {
+                    let refresh_watch = matches!(&other, JobResult::DirectoryScanned { .. });
+                    self.state.apply_job_result(other);
+                    if refresh_watch {
+                        self.sync_watched_paths()?;
+                    }
+                }
             }
         }
         Ok(())
@@ -140,6 +160,19 @@ impl App {
             self.execute_command(command)?;
         }
 
+        Ok(())
+    }
+
+    fn sync_watched_paths(&mut self) -> Result<()> {
+        let mut paths = vec![self.state.left_pane().cwd.clone()];
+        let right = self.state.right_pane().cwd.clone();
+        if right != paths[0] {
+            paths.push(right);
+        }
+        self.workers
+            .watch_tx
+            .send(WatchRequest { paths })
+            .context("failed to update watched directories")?;
         Ok(())
     }
 
