@@ -74,11 +74,13 @@ jobs:
       - name: Upload packaged assets to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ (contains(github.ref_name, '-dev') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha')) && format('Zeta {0} (Pre-release)', github.ref_name) || format('Zeta {0}', github.ref_name) }}
           files: |
             dist/${{ matrix.packaged_name }}
             dist/${{ matrix.checksum_name }}
           generate_release_notes: true
           append_body: true
           prerelease: ${{ contains(github.ref_name, '-dev') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          make_latest: ${{ (contains(github.ref_name, '-dev') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha')) && 'false' || 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
