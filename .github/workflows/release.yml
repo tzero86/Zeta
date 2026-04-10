@@ -1,0 +1,84 @@
+name: Release
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+            artifact_name: zeta-linux-x86_64
+            binary_path: target/release/zeta
+            packaged_name: zeta-linux-x86_64.tar.gz
+            checksum_name: zeta-linux-x86_64.tar.gz.sha256
+          - os: windows-latest
+            label: windows-x86_64
+            artifact_name: zeta-windows-x86_64
+            binary_path: target/release/zeta.exe
+            packaged_name: zeta-windows-x86_64.zip
+            checksum_name: zeta-windows-x86_64.zip.sha256
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release asset (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary_path }}" zeta
+          tar -czf "dist/${{ matrix.packaged_name }}" zeta
+          sha256sum "dist/${{ matrix.packaged_name }}" | awk '{print $1}' > "dist/${{ matrix.checksum_name }}"
+          rm -f zeta
+
+      - name: Package release asset (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "${{ matrix.binary_path }}" "zeta.exe"
+          Compress-Archive -Path "zeta.exe" -DestinationPath "dist/${{ matrix.packaged_name }}" -Force
+          $hash = (Get-FileHash "dist/${{ matrix.packaged_name }}" -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "dist/${{ matrix.checksum_name }}" -Value $hash
+          Remove-Item "zeta.exe"
+
+      - name: Upload packaged assets to workflow artifacts
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/${{ matrix.packaged_name }}
+            dist/${{ matrix.checksum_name }}
+          if-no-files-found: error
+
+      - name: Upload packaged assets to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ matrix.packaged_name }}
+            dist/${{ matrix.checksum_name }}
+          generate_release_notes: true
+          append_body: true
+          prerelease: ${{ contains(github.ref_name, '-dev') || contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
