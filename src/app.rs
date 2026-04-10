@@ -261,6 +261,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
         FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
         FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
@@ -668,6 +669,18 @@ mod tests {
             false,
         );
         assert_eq!(action, Some(Action::CloseCommandPalette));
+    }
+
+    #[test]
+    fn bookmarks_layer_routes_enter_to_confirm_selection() {
+        let keymap = RuntimeKeymap::default();
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &keymap,
+            FocusLayer::Modal(ModalKind::Bookmarks),
+            false,
+        );
+        assert_eq!(action, Some(Action::BookmarkConfirm));
     }
 
     #[test]

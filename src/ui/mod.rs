@@ -1,3 +1,4 @@
+mod bookmarks;
 mod code_view;
 mod editor;
 mod finder;
@@ -21,6 +22,7 @@ use ratatui::Frame;
 
 use crate::pane::PaneId;
 use crate::state::{AppState, PaneLayout};
+use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::render_markdown_preview;
@@ -272,6 +274,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some(settings_state) = state.settings() {
         render_settings_panel(frame, areas[1], settings_state, state, palette);
+    }
+
+    if let Some(bookmarks_state) = state.bookmarks() {
+        render_bookmarks_modal(frame, areas[1], bookmarks_state, &state.config().bookmarks, palette);
     }
 
     if let Some(finder_state) = state.file_finder() {

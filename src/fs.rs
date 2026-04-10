@@ -175,6 +175,13 @@ pub fn rename_path(
     })
 }
 
+pub fn trash_path(path: &Path) -> Result<(), FileSystemError> {
+    trash::delete(path).map_err(|error| FileSystemError::DeletePath {
+        path: path.display().to_string(),
+        source: io::Error::other(error.to_string()),
+    })
+}
+
 pub fn copy_path(
     from: &Path,
     to: &Path,

@@ -84,6 +84,18 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "Navigation",
+            label: "Add bookmark for current directory",
+            hint: "Ctrl+B",
+            action: Action::AddBookmark,
+        },
+        PaletteEntry {
+            category: "Navigation",
+            label: "Open bookmarks",
+            hint: "Ctrl+Shift+B",
+            action: Action::OpenBookmarks,
+        },
+        PaletteEntry {
+            category: "Navigation",
             label: "Toggle hidden files",
             hint: "",
             action: Action::ToggleHiddenFiles,
@@ -127,9 +139,15 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "File Ops",
-            label: "Delete file",
+            label: "Move file to trash",
             hint: "F8",
             action: Action::OpenDeletePrompt,
+        },
+        PaletteEntry {
+            category: "File Ops",
+            label: "Delete file permanently",
+            hint: "Shift+F8",
+            action: Action::OpenPermanentDeletePrompt,
         },
         PaletteEntry {
             category: "File Ops",

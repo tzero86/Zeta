@@ -25,6 +25,7 @@ pub enum Action {
     CollisionSkip,
     CloseDialog,
     CloseMenu,
+    CloseBookmarks,
     EnterSelection,
     CloseEditor,
     ClearPreview,
@@ -49,6 +50,14 @@ pub enum Action {
     FocusNextPane,
     CycleFocus,
     FocusPreviewPanel,
+    AddBookmark,
+    OpenBookmarks,
+    BookmarkConfirm,
+    BookmarkDeleteCurrent,
+    BookmarkMoveDown,
+    BookmarkMoveUp,
+    BookmarkSelect(usize),
+    DeleteBookmark(usize),
     OpenPaneFilter,
     PaneFilterInput(char),
     PaneFilterBackspace,
@@ -75,6 +84,7 @@ pub enum Action {
     OpenAboutDialog,
     OpenCopyPrompt,
     OpenDeletePrompt,
+    OpenPermanentDeletePrompt,
     OpenHelpDialog,
     OpenMovePrompt,
     OpenMenu(MenuId),
@@ -173,6 +183,9 @@ pub enum FileOperation {
     Delete {
         path: PathBuf,
     },
+    Trash {
+        path: PathBuf,
+    },
     Move {
         source: PathBuf,
         destination: PathBuf,
@@ -243,6 +256,9 @@ impl Action {
                 Some(Self::OpenMovePrompt)
             }
             KeyCode::F(6) => Some(Self::OpenRenamePrompt),
+            KeyCode::F(8) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::OpenPermanentDeletePrompt)
+            }
             KeyCode::F(8) => Some(Self::OpenDeletePrompt),
             KeyCode::Insert => Some(Self::OpenNewFilePrompt),
             KeyCode::F(7) if key_event.modifiers == KeyModifiers::SHIFT => {
@@ -267,6 +283,11 @@ impl Action {
             }
             KeyCode::Char('o') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenSettingsPanel)
+            }
+            KeyCode::Char('b') | KeyCode::Char('B')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::OpenBookmarks)
             }
             KeyCode::Char('/') => Some(Self::OpenPaneFilter),
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
@@ -314,6 +335,18 @@ impl Action {
         }
     }
 
+    /// Keys when the bookmarks modal is open. Consumes ALL input.
+    pub fn from_bookmarks_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseBookmarks),
+            KeyCode::Enter => Some(Self::BookmarkConfirm),
+            KeyCode::Delete => Some(Self::BookmarkDeleteCurrent),
+            KeyCode::Up => Some(Self::BookmarkMoveUp),
+            KeyCode::Down => Some(Self::BookmarkMoveDown),
+            _ => None,
+        }
+    }
+
     /// Keys when the active pane quick-filter is open. Consumes ALL input.
     pub fn from_pane_filter_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
@@ -355,6 +388,11 @@ impl Action {
             KeyCode::Esc => Some(Self::FocusPreviewPanel),
             KeyCode::Char('w') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::CycleFocus)
+            }
+            KeyCode::Char('b') | KeyCode::Char('B')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::OpenBookmarks)
             }
             _ => None,
         }
@@ -400,6 +438,9 @@ impl Action {
         if keymap.switch_pane.matches(&key_event) {
             return Some(Self::FocusNextPane);
         }
+        if key_event.code == KeyCode::Char('b') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::AddBookmark);
+        }
         // Delegate remaining keys to the comprehensive fallback handler.
         Self::from_key_event_with_settings(key_event, keymap)
     }
@@ -422,6 +463,11 @@ impl Action {
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Char('o') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenSettingsPanel)
+            }
+            KeyCode::Char('b') | KeyCode::Char('B')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::OpenBookmarks)
             }
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiscardEditorChanges)
@@ -515,6 +561,11 @@ impl Action {
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
             KeyCode::Char('o') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenSettingsPanel)
+            }
+            KeyCode::Char('b') | KeyCode::Char('B')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::OpenBookmarks)
             }
             _ => None,
         }
@@ -651,6 +702,10 @@ mod tests {
             Some(Action::OpenDeletePrompt)
         );
         assert_eq!(
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::F(8), KeyModifiers::SHIFT), &keymap),
+            Some(Action::OpenPermanentDeletePrompt)
+        );
+        assert_eq!(
             Action::from_pane_key_event(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE), &keymap),
             Some(Action::OpenNewFilePrompt)
         );
@@ -661,6 +716,17 @@ mod tests {
         assert_eq!(
             Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL), &keymap),
             Some(Action::SaveEditor)
+        );
+        assert_eq!(
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL), &keymap),
+            Some(Action::AddBookmark)
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('B'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+                &keymap,
+            ),
+            Some(Action::OpenBookmarks)
         );
     }
 

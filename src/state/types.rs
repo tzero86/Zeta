@@ -51,6 +51,7 @@ pub enum ModalKind {
     Collision,
     Palette,
     Settings,
+    Bookmarks,
     FileFinder,
 }
 

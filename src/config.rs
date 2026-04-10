@@ -39,6 +39,8 @@ pub struct AppConfig {
     pub preview_panel_open: bool,
     #[serde(default = "default_preview_on_selection")]
     pub preview_on_selection: bool,
+    #[serde(default)]
+    pub bookmarks: Vec<PathBuf>,
 }
 
 impl Default for AppConfig {
@@ -50,6 +52,7 @@ impl Default for AppConfig {
             pane_layout: PaneLayout::default(),
             preview_panel_open: false,
             preview_on_selection: true,
+            bookmarks: Vec::new(),
         }
     }
 }
@@ -522,6 +525,30 @@ mod tests {
         assert_eq!(config.pane_layout, PaneLayout::SideBySide);
         assert!(config.preview_on_selection);
         assert!(!config.preview_panel_open);
+        assert!(config.bookmarks.is_empty());
+    }
+
+    #[test]
+    fn parses_bookmarks() {
+        let raw = r#"
+            bookmarks = ["/tmp/projects", "/tmp/downloads"]
+
+            [theme]
+            preset = "fjord"
+            status_bar_label = "Zeta"
+
+            [keymap]
+            quit = "q"
+            switch_pane = "tab"
+            refresh = "r"
+        "#;
+
+        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+
+        assert_eq!(
+            config.bookmarks,
+            vec![PathBuf::from("/tmp/projects"), PathBuf::from("/tmp/downloads")]
+        );
     }
 
     #[test]

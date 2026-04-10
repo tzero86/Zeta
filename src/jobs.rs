@@ -9,7 +9,7 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
     copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
-    looks_like_binary, rename_path, scan_directory, EntryInfo, FileSystemError,
+    looks_like_binary, rename_path, scan_directory, trash_path, EntryInfo, FileSystemError,
 };
 use crate::pane::PaneId;
 
@@ -472,6 +472,7 @@ fn run_file_operation(
         FileOperation::CreateDirectory { path } => create_directory(path, collision),
         FileOperation::CreateFile { path } => create_file(path, collision),
         FileOperation::Delete { path } => delete_path(path),
+        FileOperation::Trash { path } => trash_path(path),
         FileOperation::Move { source, destination } => {
             run_move_with_progress(source, destination, collision, result_tx)
         }
@@ -610,6 +611,7 @@ fn primary_path(operation: &FileOperation) -> PathBuf {
         FileOperation::CreateDirectory { path } => path.clone(),
         FileOperation::CreateFile { path } => path.clone(),
         FileOperation::Delete { path } => path.clone(),
+        FileOperation::Trash { path } => path.clone(),
         FileOperation::Move { source, .. } => source.clone(),
         FileOperation::Rename { source, .. } => source.clone(),
     }
@@ -621,6 +623,7 @@ fn describe_operation(operation: &FileOperation) -> String {
         FileOperation::CreateDirectory { path } => format!("created {}", path.display()),
         FileOperation::CreateFile { path } => format!("created {}", path.display()),
         FileOperation::Delete { path } => format!("deleted {}", path.display()),
+        FileOperation::Trash { path } => format!("trashed {}", path.display()),
         FileOperation::Move { destination, .. } => format!("moved to {}", destination.display()),
         FileOperation::Rename { destination, .. } => {
             format!("renamed to {}", destination.display())

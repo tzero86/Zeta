@@ -125,7 +125,9 @@ pub fn render_prompt(
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => {
             (area.width.min(76), area.height.min(8))
         }
-        crate::state::PromptKind::Delete => (area.width.min(64), area.height.min(6)),
+        crate::state::PromptKind::Trash | crate::state::PromptKind::Delete => {
+            (area.width.min(64), area.height.min(6))
+        }
         _ => (area.width.min(56), area.height.min(6)),
     };
     let x = area.x + (area.width.saturating_sub(width)) / 2;
@@ -148,8 +150,16 @@ pub fn render_prompt(
     frame.render_widget(block, popup_area);
 
     let body = match prompt.kind {
+        crate::state::PromptKind::Trash => format!(
+            "Move to trash:\n{}\n\nEnter confirm | Esc cancel",
+            prompt
+                .source_path
+                .as_ref()
+                .map(|path| path.display().to_string())
+                .unwrap_or_else(|| String::from("<missing target>")),
+        ),
         crate::state::PromptKind::Delete => format!(
-            "Delete target:\n{}\n\nEnter confirm | Esc cancel",
+            "Delete permanently:\n{}\n\nEnter confirm | Esc cancel",
             prompt
                 .source_path
                 .as_ref()

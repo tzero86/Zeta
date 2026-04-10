@@ -3,9 +3,10 @@ use anyhow::Result;
 use crate::action::{Action, CollisionPolicy, Command, MenuId};
 use crate::finder::FileFinderState;
 use crate::palette::PaletteState;
+use crate::state::bookmarks::BookmarksState;
 use crate::state::dialog::{CollisionState, DialogState};
 use crate::state::menu::menu_items_for;
-use crate::state::prompt::{PromptKind, PromptState};
+use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
 use crate::state::types::MenuItem;
 
@@ -19,6 +20,7 @@ pub enum ModalState {
     Collision(CollisionState),
     Palette(PaletteState),
     Settings(SettingsState),
+    Bookmarks(BookmarksState),
     FileFinder(FileFinderState),
 }
 
@@ -98,6 +100,20 @@ impl OverlayState {
         }
     }
 
+    pub fn bookmarks(&self) -> Option<&BookmarksState> {
+        match &self.modal {
+            Some(ModalState::Bookmarks(b)) => Some(b),
+            _ => None,
+        }
+    }
+
+    pub fn bookmarks_mut(&mut self) -> Option<&mut BookmarksState> {
+        match &mut self.modal {
+            Some(ModalState::Bookmarks(b)) => Some(b),
+            _ => None,
+        }
+    }
+
     pub fn file_finder(&self) -> Option<&FileFinderState> {
         match &self.modal {
             Some(ModalState::FileFinder(f)) => Some(f),
@@ -115,6 +131,11 @@ impl OverlayState {
     pub fn open_file_finder(&mut self, state: FileFinderState) {
         self.close_all();
         self.modal = Some(ModalState::FileFinder(state));
+    }
+
+    pub fn open_bookmarks(&mut self, state: BookmarksState) {
+        self.close_all();
+        self.modal = Some(ModalState::Bookmarks(state));
     }
 
     pub fn apply(&mut self, action: &Action) -> Result<Vec<Command>> {
@@ -283,6 +304,7 @@ impl OverlayState {
             // ── File op prompts ──────────────────────────────────────────────
             Action::OpenCopyPrompt
             | Action::OpenDeletePrompt
+            | Action::OpenPermanentDeletePrompt
             | Action::OpenMovePrompt
             | Action::OpenNewDirectoryPrompt
             | Action::OpenNewFilePrompt
@@ -295,7 +317,7 @@ impl OverlayState {
             // ── Prompt input ─────────────────────────────────────────────────
             Action::PromptBackspace => {
                 if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
-                    if p.kind != PromptKind::Delete {
+                    if !p.kind.is_confirmation_only() {
                         p.value.pop();
                     }
                 }
@@ -305,7 +327,7 @@ impl OverlayState {
             }
             Action::PromptInput(ch) => {
                 if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
-                    if p.kind != PromptKind::Delete {
+                    if !p.kind.is_confirmation_only() {
                         p.value.push(*ch);
                     }
                 }
@@ -318,6 +340,33 @@ impl OverlayState {
             Action::OpenSettingsPanel => {
                 self.close_all();
                 self.modal = Some(ModalState::Settings(SettingsState::new()));
+            }
+            Action::OpenBookmarks => {
+                self.close_all();
+                self.modal = Some(ModalState::Bookmarks(BookmarksState::new()));
+            }
+            Action::CloseBookmarks => {
+                self.close_all();
+            }
+            Action::BookmarkMoveDown => {
+                if let Some(ModalState::Bookmarks(b)) = self.modal.as_mut() {
+                    b.selection = b.selection.saturating_add(1);
+                }
+            }
+            Action::BookmarkMoveUp => {
+                if let Some(ModalState::Bookmarks(b)) = self.modal.as_mut() {
+                    b.selection = b.selection.saturating_sub(1);
+                }
+            }
+            Action::BookmarkConfirm => {
+                if let Some(ModalState::Bookmarks(b)) = self.modal.as_ref() {
+                    commands.push(Command::DispatchAction(Action::BookmarkSelect(b.selection)));
+                }
+            }
+            Action::BookmarkDeleteCurrent => {
+                if let Some(ModalState::Bookmarks(b)) = self.modal.as_ref() {
+                    commands.push(Command::DispatchAction(Action::DeleteBookmark(b.selection)));
+                }
             }
             Action::CloseSettingsPanel => {
                 self.close_all();

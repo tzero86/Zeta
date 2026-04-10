@@ -1,3 +1,4 @@
+mod bookmarks;
 mod dialog;
 mod menu;
 pub mod editor_state;
@@ -27,6 +28,7 @@ use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
 
+pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
@@ -344,6 +346,44 @@ impl AppState {
                     self.status_message = String::from("no file selected for editor");
                 }
             }
+            Action::AddBookmark => {
+                let cwd = self.panes.active_pane().cwd.clone();
+                if self.config.bookmarks.contains(&cwd) {
+                    self.status_message = String::from("bookmark already exists");
+                } else {
+                    self.config.bookmarks.push(cwd.clone());
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    self.status_message = format!("bookmark added: {}", cwd.display());
+                }
+            }
+            Action::OpenBookmarks => {
+                self.overlay.open_bookmarks(crate::state::BookmarksState::new());
+                self.status_message = if self.config.bookmarks.is_empty() {
+                    String::from("no bookmarks saved yet")
+                } else {
+                    String::from("bookmarks opened")
+                };
+            }
+            Action::BookmarkSelect(index) => {
+                if let Some(path) = self.config.bookmarks.get(*index).cloned() {
+                    let pane = self.panes.focused_pane_id();
+                    self.overlay.close_all();
+                    commands.push(Command::ScanPane { pane, path: path.clone() });
+                    self.status_message = format!("jumping to bookmark: {}", path.display());
+                }
+            }
+            Action::DeleteBookmark(index) => {
+                if *index < self.config.bookmarks.len() {
+                    let removed = self.config.bookmarks.remove(*index);
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    if let Some(bookmarks) = self.overlay.bookmarks_mut() {
+                        bookmarks.selection = bookmarks
+                            .selection
+                            .min(self.config.bookmarks.len().saturating_sub(1));
+                    }
+                    self.status_message = format!("bookmark removed: {}", removed.display());
+                }
+            }
             Action::OpenCopyPrompt => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let target_dir = self.panes.inactive_pane().cwd.clone();
@@ -366,13 +406,30 @@ impl AppState {
                     let entry_path = entry.path.clone();
                     let cwd = self.panes.active_pane().cwd.clone();
                     self.overlay.open_prompt(PromptState::with_value(
-                        PromptKind::Delete,
-                        "Delete",
+                        PromptKind::Trash,
+                        "Move to Trash",
                         cwd,
                         Some(entry_path),
                         String::new(),
                     ));
-                    self.status_message = format!("confirm delete for {entry_name}");
+                    self.status_message = format!("confirm trash for {entry_name}");
+                } else {
+                    self.status_message = String::from("no item selected to trash");
+                }
+            }
+            Action::OpenPermanentDeletePrompt => {
+                if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    let entry_name = entry.name.clone();
+                    let entry_path = entry.path.clone();
+                    let cwd = self.panes.active_pane().cwd.clone();
+                    self.overlay.open_prompt(PromptState::with_value(
+                        PromptKind::Delete,
+                        "Delete Permanently",
+                        cwd,
+                        Some(entry_path),
+                        String::new(),
+                    ));
+                    self.status_message = format!("confirm permanent delete for {entry_name}");
                 } else {
                     self.status_message = String::from("no item selected to delete");
                 }
@@ -431,20 +488,22 @@ impl AppState {
             Action::PromptSubmit => {
                 if let Some(ModalState::Prompt(prompt)) = &self.overlay.modal {
                     let prompt = prompt.clone();
-                    if prompt.kind != PromptKind::Delete && prompt.value.trim().is_empty() {
+                    if !prompt.kind.is_confirmation_only() && prompt.value.trim().is_empty() {
                         self.status_message = String::from("name cannot be empty");
                     } else {
                         let kind = prompt.kind;
                         let value = prompt.value.trim().to_string();
                         let target_path = resolve_prompt_target(&prompt, &value);
-                        let refresh =
-                            self.refresh_targets_for_prompt(kind, &target_path);
+                        let refresh = self.refresh_targets_for_prompt(kind, &target_path);
                         let operation = match kind {
                             PromptKind::Copy => prompt.source_path.as_ref().map(|s| {
                                 FileOperation::Copy {
                                     source: s.clone(),
                                     destination: target_path.clone(),
                                 }
+                            }),
+                            PromptKind::Trash => prompt.source_path.as_ref().map(|p| {
+                                FileOperation::Trash { path: p.clone() }
                             }),
                             PromptKind::Delete => prompt.source_path.as_ref().map(|p| {
                                 FileOperation::Delete { path: p.clone() }
@@ -476,7 +535,8 @@ impl AppState {
                             });
                             self.status_message = match kind {
                                 PromptKind::Copy => String::from("copying item"),
-                                PromptKind::Delete => String::from("deleting item"),
+                                PromptKind::Trash => String::from("moving item to trash"),
+                                PromptKind::Delete => String::from("deleting item permanently"),
                                 PromptKind::Move => String::from("moving item"),
                                 PromptKind::NewDirectory => String::from("creating directory"),
                                 PromptKind::NewFile => String::from("creating file"),
@@ -755,7 +815,7 @@ impl AppState {
     }
 
     /// Derive the current input focus layer from state.
-    /// Priority (highest → lowest): Palette > FileFinder > Collision > Prompt > Dialog > Menu > Settings > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
+    /// Priority (highest → lowest): Palette > FileFinder > Collision > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
@@ -777,6 +837,9 @@ impl AppState {
         }
         if self.is_settings_open() {
             return FocusLayer::Modal(ModalKind::Settings);
+        }
+        if self.bookmarks().is_some() {
+            return FocusLayer::Modal(ModalKind::Bookmarks);
         }
         if self.panes.active_pane().filter_active {
             return FocusLayer::PaneFilter;
@@ -802,6 +865,7 @@ impl AppState {
     pub fn collision(&self) -> Option<&CollisionState> { self.overlay.collision() }
     pub fn palette(&self) -> Option<&crate::palette::PaletteState> { self.overlay.palette() }
     pub fn settings(&self) -> Option<&SettingsState> { self.overlay.settings() }
+    pub fn bookmarks(&self) -> Option<&BookmarksState> { self.overlay.bookmarks() }
     pub fn file_finder(&self) -> Option<&FileFinderState> { self.overlay.file_finder() }
     pub fn is_menu_open(&self) -> bool { self.overlay.is_menu_open() }
     pub fn is_prompt_open(&self) -> bool { self.overlay.prompt().is_some() }
@@ -873,6 +937,7 @@ impl AppState {
 
     // Theme/config
     pub fn theme(&self) -> &ResolvedTheme { &self.theme }
+    pub fn config(&self) -> &AppConfig { &self.config }
     pub fn icon_mode(&self) -> IconMode { self.icon_mode }
     pub fn should_quit(&self) -> bool { self.should_quit }
 
@@ -1183,6 +1248,13 @@ mod tests {
         assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::FileFinder)));
     }
 
+    #[test]
+    fn open_bookmarks_switches_focus_layer() {
+        let mut state = test_state();
+        state.apply(Action::OpenBookmarks).unwrap();
+        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::Bookmarks)));
+    }
+
     fn test_state() -> AppState {
         let right = PaneState {
             title: String::from("right"),
@@ -1247,6 +1319,72 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn add_bookmark_persists_to_config() {
+        let mut state = test_state();
+        let root = temp_root();
+        std::fs::create_dir_all(&root).expect("temp dir should exist");
+        state.config_path = root.join("config.toml").display().to_string();
+        state.panes.left.cwd = root.join("work");
+
+        state.apply(Action::AddBookmark).expect("bookmark add should succeed");
+
+        assert_eq!(state.config.bookmarks, vec![root.join("work")]);
+        assert!(root.join("config.toml").exists());
+        std::fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn delete_bookmark_removes_from_config() {
+        let mut state = test_state();
+        let root = temp_root();
+        std::fs::create_dir_all(&root).expect("temp dir should exist");
+        state.config_path = root.join("config.toml").display().to_string();
+        state.config.bookmarks = vec![root.join("one"), root.join("two")];
+        state.overlay.open_bookmarks(crate::state::BookmarksState::new());
+
+        state
+            .apply(Action::DeleteBookmark(0))
+            .expect("bookmark delete should succeed");
+
+        assert_eq!(state.config.bookmarks, vec![root.join("two")]);
+        std::fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn prompt_submit_dispatches_trash_operation() {
+        let mut state = test_state();
+        state.apply(Action::OpenDeletePrompt).expect("trash prompt should open");
+
+        let commands = state.apply(Action::PromptSubmit).expect("submit should succeed");
+
+        assert!(matches!(
+            commands.first(),
+            Some(Command::RunFileOperation {
+                operation: FileOperation::Trash { .. },
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn prompt_submit_dispatches_permanent_delete_operation() {
+        let mut state = test_state();
+        state
+            .apply(Action::OpenPermanentDeletePrompt)
+            .expect("delete prompt should open");
+
+        let commands = state.apply(Action::PromptSubmit).expect("submit should succeed");
+
+        assert!(matches!(
+            commands.first(),
+            Some(Command::RunFileOperation {
+                operation: FileOperation::Delete { .. },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -1636,17 +1774,34 @@ mod tests {
     }
 
     #[test]
-    fn open_delete_prompt_sets_confirmation_message() {
+    fn open_delete_prompt_sets_trash_confirmation_message() {
         let mut state = test_state();
 
         state
             .apply(Action::OpenDeletePrompt)
+            .expect("trash prompt should open");
+
+        assert!(state.overlay.prompt().is_some());
+        assert_eq!(state.overlay.prompt().map(|prompt| prompt.kind), Some(PromptKind::Trash));
+        assert_eq!(
+            state.overlay.prompt().map(|prompt| prompt.title),
+            Some("Move to Trash")
+        );
+    }
+
+    #[test]
+    fn open_permanent_delete_prompt_sets_delete_confirmation_message() {
+        let mut state = test_state();
+
+        state
+            .apply(Action::OpenPermanentDeletePrompt)
             .expect("delete prompt should open");
 
         assert!(state.overlay.prompt().is_some());
+        assert_eq!(state.overlay.prompt().map(|prompt| prompt.kind), Some(PromptKind::Delete));
         assert_eq!(
             state.overlay.prompt().map(|prompt| prompt.title),
-            Some("Delete")
+            Some("Delete Permanently")
         );
     }
 

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptKind {
     Copy,
+    Trash,
     Delete,
     Move,
     NewDirectory,
@@ -18,6 +19,12 @@ pub struct PromptState {
     pub base_path: PathBuf,
     pub source_path: Option<PathBuf>,
     pub value: String,
+}
+
+impl PromptKind {
+    pub fn is_confirmation_only(self) -> bool {
+        matches!(self, Self::Trash | Self::Delete)
+    }
 }
 
 impl PromptState {

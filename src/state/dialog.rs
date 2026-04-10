@@ -154,7 +154,14 @@ impl CollisionState {
             ),
             FileOperation::Delete { path } => PromptState::with_value(
                 PromptKind::Delete,
-                "Delete",
+                "Delete Permanently",
+                prompt_base_path(&path),
+                Some(path),
+                String::new(),
+            ),
+            FileOperation::Trash { path } => PromptState::with_value(
+                PromptKind::Trash,
+                "Move to Trash",
                 prompt_base_path(&path),
                 Some(path),
                 String::new(),
@@ -182,6 +189,7 @@ impl CollisionState {
             FileOperation::CreateDirectory { .. } => String::from("create directory"),
             FileOperation::CreateFile { .. } => String::from("create file"),
             FileOperation::Delete { path } => format!("delete {}", path.display()),
+            FileOperation::Trash { path } => format!("trash {}", path.display()),
             FileOperation::Move { source, .. } => format!("move {}", source.display()),
             FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
         }
@@ -193,6 +201,7 @@ impl CollisionState {
             FileOperation::CreateDirectory { path } => path,
             FileOperation::CreateFile { path } => path,
             FileOperation::Delete { path } => path,
+            FileOperation::Trash { path } => path,
             FileOperation::Move { destination, .. } => destination,
             FileOperation::Rename { destination, .. } => destination,
         }
