@@ -137,6 +137,8 @@ pub enum Action {
     SettingsMoveUp,
     SettingsToggleCurrent,
     CycleSortMode,
+    ToggleDiffMode,
+    DiffSyncToOther,
     /// Mouse click on a pane entry row.
     PaneClick { left_pane: bool, row: usize },
     /// Mouse double-click on a pane entry row (enter dir / open file).
@@ -286,6 +288,8 @@ impl Action {
             KeyCode::F(7) if key_event.modifiers == KeyModifiers::SHIFT => {
                 Some(Self::OpenNewDirectoryPrompt)
             }
+            KeyCode::F(10) => Some(Self::ToggleDiffMode),
+            KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::DiffSyncToOther),
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char(' ') => Some(Self::ToggleMark),

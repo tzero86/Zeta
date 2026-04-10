@@ -155,7 +155,8 @@ impl PaneState {
     pub fn set_entries(&mut self, entries: Vec<EntryInfo>) {
         self.entries = entries
             .into_iter()
-            .filter(|entry| self.show_hidden || !entry.name.starts_with('.'))
+            // Always keep ".." even when hidden files are off (it starts with '.').
+            .filter(|entry| entry.name == ".." || self.show_hidden || !entry.name.starts_with('.'))
             .collect();
         let entry_paths: BTreeSet<PathBuf> = self
             .entries
@@ -200,6 +201,10 @@ impl PaneState {
 
     pub fn toggle_mark_selected(&mut self) -> Option<bool> {
         let path = self.selected_path()?;
+        // ".." is a navigation sentinel — never mark it.
+        if self.selected_entry().is_some_and(|e| e.name == "..") {
+            return None;
+        }
         if self.marked.contains(&path) {
             self.marked.remove(&path);
             Some(false)
@@ -222,8 +227,9 @@ impl PaneState {
     }
 
     pub fn can_enter_selected(&self) -> bool {
-        self.selected_entry()
-            .is_some_and(|entry| entry.kind == EntryKind::Directory)
+        self.selected_entry().is_some_and(|entry| {
+            entry.kind == EntryKind::Directory || entry.kind == EntryKind::Archive
+        })
     }
 
     pub fn parent_path(&self) -> Option<PathBuf> {
@@ -396,8 +402,12 @@ impl PaneState {
     }
 
     fn rebuild_cache(&self) {
-        let mut indices: Vec<usize> = (0..self.entries.len()).collect();
-        indices.sort_by(|&left_idx, &right_idx| {
+        let indices: Vec<usize> = (0..self.entries.len()).collect();
+        // Always pin ".." at index 0, sort/filter everything else.
+        let (parent_indices, mut rest_indices): (Vec<usize>, Vec<usize>) =
+            indices.into_iter().partition(|&i| self.entries[i].name == "..");
+
+        rest_indices.sort_by(|&left_idx, &right_idx| {
             let left = &self.entries[left_idx];
             let right = &self.entries[right_idx];
             match self.sort_mode {
@@ -441,8 +451,13 @@ impl PaneState {
 
         if self.filter_active && !self.filter_query.is_empty() {
             let query = self.filter_query.to_lowercase();
-            indices.retain(|&idx| self.entries[idx].name.to_lowercase().contains(&query));
+            // ".." is always visible even during filtering.
+            rest_indices.retain(|&idx| self.entries[idx].name.to_lowercase().contains(&query));
         }
+
+        // Prepend ".." (if present) before all other entries.
+        let mut indices = parent_indices;
+        indices.extend(rest_indices);
 
         *self.filtered_indices.borrow_mut() = indices;
         self.cache_entry_count.set(self.entries.len());

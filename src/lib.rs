@@ -11,6 +11,7 @@ pub mod icon;
 pub mod jobs;
 pub mod palette;
 pub mod pane;
+pub mod diff;
 pub mod preview;
 pub mod state;
 pub mod ui;

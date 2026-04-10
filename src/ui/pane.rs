@@ -21,6 +21,7 @@ pub struct RenderPaneArgs<'a> {
     pub pane: &'a PaneState,
     pub label: &'a str,
     pub is_focused: bool,
+    pub is_left: bool,
     pub borders: Borders,
     pub state: &'a AppState,
     pub git: Option<&'a RepoStatus>,
