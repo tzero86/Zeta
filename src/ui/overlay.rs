@@ -8,8 +8,44 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuItem, PromptState};
 use crate::ui::styles::{
-    elevated_surface_style, overlay_footer_style, overlay_key_hint_style, overlay_title_style,
+    elevated_surface_style, modal_backdrop_style, overlay_footer_style, overlay_key_hint_style,
+    overlay_title_style,
 };
+
+pub fn expanded_modal_backdrop(area: Rect, popup: Rect) -> Rect {
+    let halo = (((popup.width.min(popup.height)) as f32) * 0.10) as u16;
+    let pad_x = halo.max(2);
+    let pad_y = halo.max(1);
+    let x = popup.x.saturating_sub(pad_x).max(area.x);
+    let y = popup.y.saturating_sub(pad_y).max(area.y);
+    let right = (popup.x + popup.width + pad_x).min(area.x + area.width);
+    let bottom = (popup.y + popup.height + pad_y).min(area.y + area.height);
+    Rect {
+        x,
+        y,
+        width: right.saturating_sub(x),
+        height: bottom.saturating_sub(y),
+    }
+}
+
+pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect, popup: Rect, palette: ThemePalette) {
+    let backdrop = expanded_modal_backdrop(area, popup);
+    frame.render_widget(Clear, backdrop);
+    frame.render_widget(
+        Paragraph::new("").style(modal_backdrop_style(palette)),
+        backdrop,
+    );
+}
+
+pub fn menu_popup_width(items: &[MenuItem]) -> u16 {
+    let content_width = items
+        .iter()
+        .map(|item| item.label.chars().count() + item.shortcut.chars().count() + 4)
+        .max()
+        .unwrap_or(24)
+        .max(24);
+    (content_width as u16).saturating_add(2)
+}
 
 pub fn render_menu_popup(
     frame: &mut Frame<'_>,
@@ -29,7 +65,7 @@ pub fn render_menu_popup(
         }
         cursor += tab.label.len() as u16;
     }
-    let width = 28;
+    let width = menu_popup_width(items);
     let height = items.len() as u16 + 2;
     let popup_area = Rect {
         x,
@@ -61,14 +97,15 @@ pub fn render_menu_popup(
                     .bg(palette.surface_bg)
             };
 
-            let content_width = inner.width.saturating_sub(2) as usize;
-            let label_width = content_width.saturating_sub(item.shortcut.len() + 1);
-            let label = format!(" {:<width$}", item.label, width = label_width.max(1));
-            let shortcut = item.shortcut.to_string();
-            ListItem::new(Line::from(vec![
-                Span::styled(label, base_style),
-                Span::styled(shortcut, base_style),
-            ]))
+            let content_width = inner.width as usize;
+            let shortcut_width = item.shortcut.chars().count();
+            let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);
+            let row = format!(" {:<label_width$} {}", item.label, item.shortcut);
+            let pad = content_width.saturating_sub(row.chars().count());
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}{}", row, " ".repeat(pad)),
+                base_style,
+            )]))
         })
         .collect::<Vec<_>>();
 
@@ -106,6 +143,7 @@ pub fn render_prompt(
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
+    render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
@@ -166,6 +204,7 @@ pub fn render_dialog(
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
+    render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
@@ -241,6 +280,7 @@ pub fn render_collision_dialog(
         )
         .style(Style::default().bg(palette.prompt_bg));
     let inner = block.inner(popup_area);
+    render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 

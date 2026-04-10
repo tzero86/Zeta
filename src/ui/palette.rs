@@ -5,6 +5,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, Paragraph};
 use ratatui::Frame;
 
 use crate::config::ThemePalette;
+use crate::ui::overlay::render_modal_backdrop;
 use crate::ui::styles::{
     command_palette_entry_hint_style, command_palette_entry_label_style,
     command_palette_header_style, elevated_surface_style, overlay_footer_style,
@@ -44,6 +45,7 @@ pub fn render_command_palette(
         )
         .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
+    render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 

@@ -6,6 +6,7 @@ use ratatui::Frame;
 
 use crate::config::ThemePalette;
 use crate::state::{AppState, SettingsState};
+use crate::ui::overlay::render_modal_backdrop;
 use crate::ui::styles::{elevated_surface_style, overlay_footer_style, overlay_title_style};
 
 pub fn render_settings_panel(
@@ -16,10 +17,11 @@ pub fn render_settings_panel(
     palette: ThemePalette,
 ) {
     let entries = state.settings_entries();
-    let width = ((area.width as f32 * 0.72) as u16)
-        .clamp(52, 84)
-        .min(area.width);
-    let height = (entries.len() as u16 + 6).min(area.height.saturating_sub(4));
+    let width = ((area.width as f32 * 0.84) as u16)
+        .clamp(64, 104)
+        .min(area.width.saturating_sub(2).max(1));
+    let height = (entries.len() as u16 + 8)
+        .min(area.height.saturating_sub(2).max(8));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {
@@ -39,6 +41,7 @@ pub fn render_settings_panel(
         )
         .style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
+    render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
@@ -51,9 +54,10 @@ pub fn render_settings_panel(
         ])
         .split(inner);
 
-    let intro =
-        Paragraph::new("Enter/Space toggles • Esc closes • future keymap controls reserved")
-            .style(overlay_footer_style(palette));
+    let intro = Paragraph::new(
+        "Settings affect the entire app. Enter/Space toggles • Esc closes • future keymap controls reserved",
+    )
+    .style(overlay_footer_style(palette));
     frame.render_widget(intro, chunks[0]);
 
     let rows: Vec<ListItem<'_>> = entries

@@ -1,9 +1,13 @@
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 
 use crate::config::ThemePalette;
 
 pub fn elevated_surface_style(palette: ThemePalette) -> Style {
     Style::default().bg(palette.tools_bg)
+}
+
+pub fn modal_backdrop_style(_palette: ThemePalette) -> Style {
+    Style::default().bg(Color::Rgb(36, 38, 42))
 }
 
 pub fn overlay_title_style(palette: ThemePalette) -> Style {

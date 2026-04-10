@@ -381,6 +381,10 @@ fn route_mouse_event(
                 return Some(Action::CloseMenu);
             }
 
+            if matches!(focus, FocusLayer::Modal(ModalKind::Dialog)) {
+                return Some(Action::CloseDialog);
+            }
+
             // All other modal states absorb left clicks.
             if matches!(focus, FocusLayer::Modal(_)) {
                 return None;
@@ -592,12 +596,12 @@ mod tests {
     }
 
     #[test]
-    fn route_mouse_modal_absorbs_left_click() {
+    fn route_mouse_left_click_on_dialog_closes_it() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
             &test_cache(), FocusLayer::Modal(ModalKind::Dialog), false,
         );
-        assert_eq!(action, None);
+        assert_eq!(action, Some(Action::CloseDialog));
     }
 
     #[test]

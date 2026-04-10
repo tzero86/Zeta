@@ -26,7 +26,7 @@ use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
-    render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
+    menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -239,7 +239,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         let rect = Rect {
             x: popup_x,
             y: areas[1].y,
-            width: 28,
+            width: menu_popup_width(&state.menu_items()),
             height: item_count as u16 + 2,
         };
         menu_popup_rect = Some(rect);

@@ -6,6 +6,7 @@ use ratatui::Frame;
 
 use crate::config::ThemePalette;
 use crate::finder::FileFinderState;
+use crate::ui::overlay::render_modal_backdrop;
 use crate::ui::styles::{elevated_surface_style, overlay_footer_style, overlay_title_style};
 
 pub fn render_file_finder(
@@ -30,6 +31,7 @@ pub fn render_file_finder(
         )
         .style(elevated_surface_style(palette));
     let inner = block.inner(popup);
+    render_modal_backdrop(frame, area, popup, palette);
     frame.render_widget(Clear, popup);
     frame.render_widget(block, popup);
 
