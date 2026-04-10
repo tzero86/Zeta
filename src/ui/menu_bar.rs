@@ -3,9 +3,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::{layout::Rect, Frame};
 
-use crate::action::MenuId;
 use crate::config::ThemePalette;
-use crate::state::AppState;
+use crate::state::{menu_tabs, AppState};
 
 pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
     let active = state.active_menu().is_none();
@@ -16,30 +15,14 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
     };
     let mut line = Line::default();
     line.spans.extend(top_bar_logo_spans(active, palette));
-    line.spans.extend(menu_spans(
-        " File ",
-        Some('F'),
-        state.active_menu() == Some(MenuId::File),
-        palette,
-    ));
-    line.spans.extend(menu_spans(
-        " Navigate ",
-        Some('N'),
-        state.active_menu() == Some(MenuId::Navigate),
-        palette,
-    ));
-    line.spans.extend(menu_spans(
-        " View ",
-        Some('V'),
-        state.active_menu() == Some(MenuId::View),
-        palette,
-    ));
-    line.spans.extend(menu_spans(
-        " Help ",
-        Some('H'),
-        state.active_menu() == Some(MenuId::Help),
-        palette,
-    ));
+    for tab in menu_tabs(state.is_editor_fullscreen() && state.editor().is_some()) {
+        line.spans.extend(menu_spans(
+            tab.label,
+            Some(tab.mnemonic),
+            state.active_menu() == Some(tab.id),
+            palette,
+        ));
+    }
 
     let menu = Paragraph::new(line).style(
         Style::default()

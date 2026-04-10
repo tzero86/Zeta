@@ -28,6 +28,7 @@ use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
 
 pub use dialog::{CollisionState, DialogState};
+pub use menu::{menu_tabs, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
@@ -60,6 +61,11 @@ pub struct AppState {
 }
 
 impl AppState {
+    fn sync_editor_menu_mode(&mut self) {
+        let enabled = self.editor_fullscreen && self.editor.is_open();
+        self.overlay.set_editor_menu_mode(enabled);
+    }
+
     pub fn bootstrap(loaded_config: LoadedConfig, started_at: Instant) -> Result<Self> {
         let cwd = fs::current_dir()?;
         let secondary = cwd.parent().map(Path::to_path_buf).unwrap_or_else(|| cwd.clone());
@@ -161,6 +167,7 @@ impl AppState {
             Action::ToggleEditorFullscreen => {
                 if self.editor.is_open() {
                     self.editor_fullscreen = !self.editor_fullscreen;
+                    self.sync_editor_menu_mode();
                     self.status_message = if self.editor_fullscreen {
                         String::from("editor fullscreen enabled")
                     } else {
@@ -488,10 +495,12 @@ impl AppState {
                         String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
                 } else if !self.editor.is_open() {
                     self.editor_fullscreen = false;
+                    self.sync_editor_menu_mode();
                 }
             }
             Action::DiscardEditorChanges => {
                 self.editor_fullscreen = false;
+                self.sync_editor_menu_mode();
                 self.status_message = String::from("discarded editor changes");
             }
             Action::SettingsToggleCurrent => {
@@ -824,6 +833,7 @@ impl AppState {
         self.editor_fullscreen = false;
         let display = path.display().to_string();
         self.editor.open_placeholder(path);
+        self.sync_editor_menu_mode();
         self.status_message = format!("opening {display}...");
     }
 
@@ -838,6 +848,7 @@ impl AppState {
         }
         self.editor_fullscreen = false;
         self.editor.open(buffer);
+        self.sync_editor_menu_mode();
         self.editor.sync_markdown_preview_to_cursor(12);
         self.status_message = format!("opened editor for {path}");
     }

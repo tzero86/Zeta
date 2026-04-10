@@ -121,8 +121,9 @@ impl App {
             }
             AppEvent::Mouse(mouse_event) => {
                 let focus = self.state.focus_layer();
+                let editor_menu_mode = self.state.is_editor_fullscreen() && self.state.editor().is_some();
                 if let Some(action) =
-                    route_mouse_event(mouse_event, &self.layout_cache, focus)
+                    route_mouse_event(mouse_event, &self.layout_cache, focus, editor_menu_mode)
                 {
                     self.dispatch(action)?;
                 }
@@ -293,6 +294,7 @@ fn route_mouse_event(
     event: crossterm::event::MouseEvent,
     cache: &LayoutCache,
     focus: FocusLayer,
+    editor_menu_mode: bool,
 ) -> Option<Action> {
     use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -365,7 +367,7 @@ fn route_mouse_event(
             // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
                 if rect_contains(cache.menu_bar, col, row) {
-                    return route_menu_bar_click(col, cache.menu_bar.x);
+                    return route_menu_bar_click(col, cache.menu_bar.x, editor_menu_mode);
                 }
                 if let Some(popup) = cache.menu_popup {
                     if rect_contains(popup, col, row) {
@@ -386,7 +388,7 @@ fn route_mouse_event(
 
             // Click on menu bar item.
             if rect_contains(cache.menu_bar, col, row) {
-                return route_menu_bar_click(col, cache.menu_bar.x);
+                return route_menu_bar_click(col, cache.menu_bar.x, editor_menu_mode);
             }
 
             if let Some(md_rect) = cache.markdown_preview_panel {
@@ -459,16 +461,17 @@ fn route_mouse_event(
 ///   14-23 " Navigate "
 ///   24-29 " View "
 ///   30-35 " Help "
-fn route_menu_bar_click(col: u16, bar_x: u16) -> Option<Action> {
-    use crate::action::MenuId;
-    let offset = col.saturating_sub(bar_x);
-    match offset {
-        8..=13 => Some(Action::OpenMenu(MenuId::File)),
-        14..=23 => Some(Action::OpenMenu(MenuId::Navigate)),
-        24..=29 => Some(Action::OpenMenu(MenuId::View)),
-        30..=35 => Some(Action::OpenMenu(MenuId::Help)),
-        _ => None,
+fn route_menu_bar_click(col: u16, bar_x: u16, editor_menu_mode: bool) -> Option<Action> {
+    let mut cursor = bar_x + 8;
+    for tab in crate::state::menu_tabs(editor_menu_mode) {
+        let start = cursor;
+        let end = cursor + tab.label.len() as u16 - 1;
+        if col >= start && col <= end {
+            return Some(Action::OpenMenu(tab.id));
+        }
+        cursor += tab.label.len() as u16;
     }
+    None
 }
 
 struct TerminalSession {
@@ -556,7 +559,7 @@ mod tests {
     fn route_mouse_scroll_up_in_pane_produces_move_selection_up() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane,
+            &test_cache(), FocusLayer::Pane, false,
         );
         assert_eq!(action, Some(Action::MoveSelectionUp));
     }
@@ -565,7 +568,7 @@ mod tests {
     fn route_mouse_scroll_down_in_pane_produces_move_selection_down() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane,
+            &test_cache(), FocusLayer::Pane, false,
         );
         assert_eq!(action, Some(Action::MoveSelectionDown));
     }
@@ -574,7 +577,7 @@ mod tests {
     fn route_mouse_left_click_on_pane_produces_action() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane,
+            &test_cache(), FocusLayer::Pane, false,
         );
         assert!(action.is_some(), "expected an action for left-pane click");
     }
@@ -583,7 +586,7 @@ mod tests {
     fn route_mouse_left_click_on_file_menu_opens_file_menu() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 0, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane,
+            &test_cache(), FocusLayer::Pane, false,
         );
         assert_eq!(action, Some(Action::OpenMenu(crate::action::MenuId::File)));
     }
@@ -592,7 +595,7 @@ mod tests {
     fn route_mouse_modal_absorbs_left_click() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Modal(ModalKind::Dialog),
+            &test_cache(), FocusLayer::Modal(ModalKind::Dialog), false,
         );
         assert_eq!(action, None);
     }
@@ -601,7 +604,7 @@ mod tests {
     fn route_mouse_scroll_in_preview_layer_scrolls_preview() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Preview,
+            &test_cache(), FocusLayer::Preview, false,
         );
         assert_eq!(action, Some(Action::ScrollPreviewDown));
     }
@@ -610,7 +613,7 @@ mod tests {
     fn route_mouse_scroll_in_editor_layer_moves_cursor() {
         let action = route_mouse_event(
             MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Editor,
+            &test_cache(), FocusLayer::Editor, false,
         );
         assert_eq!(action, Some(Action::EditorMoveUp));
     }

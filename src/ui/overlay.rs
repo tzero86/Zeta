@@ -6,7 +6,7 @@ use ratatui::Frame;
 
 use crate::action::MenuId;
 use crate::config::ThemePalette;
-use crate::state::{CollisionState, DialogState, MenuItem, PromptState};
+use crate::state::{menu_tabs, CollisionState, DialogState, MenuItem, PromptState};
 use crate::ui::styles::{
     elevated_surface_style, overlay_footer_style, overlay_key_hint_style, overlay_title_style,
 };
@@ -18,13 +18,17 @@ pub fn render_menu_popup(
     items: &[MenuItem],
     selection: usize,
     palette: ThemePalette,
+    editor_mode: bool,
 ) {
-    let x = match menu {
-        MenuId::File => area.x + 1,
-        MenuId::Navigate => area.x + 8,
-        MenuId::View => area.x + 19,
-        MenuId::Help => area.x + 26,
-    };
+    let mut x = area.x + 1;
+    let mut cursor = area.x + 8;
+    for tab in menu_tabs(editor_mode) {
+        if tab.id == menu {
+            x = cursor;
+            break;
+        }
+        cursor += tab.label.len() as u16;
+    }
     let width = 28;
     let height = items.len() as u16 + 2;
     let popup_area = Rect {

@@ -11,6 +11,8 @@ use crate::state::PaneLayout;
 pub enum MenuId {
     File,
     Navigate,
+    Edit,
+    Search,
     View,
     Help,
 }
@@ -199,6 +201,8 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
+                KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
@@ -378,6 +382,8 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
+                KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
@@ -403,6 +409,8 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
+                KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
@@ -465,6 +473,8 @@ impl Action {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
                 KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::OpenMenu(MenuId::Navigate)),
+                KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
+                KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,

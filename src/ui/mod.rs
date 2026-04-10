@@ -226,12 +226,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut menu_popup_rect: Option<Rect> = None;
     if let Some(menu) = state.active_menu() {
         let item_count = state.menu_items().len();
-        let popup_x = match menu {
-            crate::action::MenuId::File     => areas[0].x + 1,
-            crate::action::MenuId::Navigate => areas[0].x + 8,
-            crate::action::MenuId::View     => areas[0].x + 19,
-            crate::action::MenuId::Help     => areas[0].x + 26,
-        };
+        let editor_menu_mode = state.is_editor_fullscreen() && state.editor().is_some();
+        let mut popup_x = areas[0].x + 1;
+        let mut cursor = areas[0].x + 8;
+        for tab in crate::state::menu_tabs(editor_menu_mode) {
+            if tab.id == menu {
+                popup_x = cursor;
+                break;
+            }
+            cursor += tab.label.len() as u16;
+        }
         let rect = Rect {
             x: popup_x,
             y: areas[1].y,
@@ -246,6 +250,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             &state.menu_items(),
             state.menu_selection(),
             palette,
+            editor_menu_mode,
         );
     }
 

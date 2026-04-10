@@ -25,6 +25,7 @@ pub enum ModalState {
 #[derive(Clone, Debug, Default)]
 pub struct OverlayState {
     pub modal: Option<ModalState>,
+    pub editor_menu_mode: bool,
 }
 
 impl OverlayState {
@@ -53,9 +54,13 @@ impl OverlayState {
 
     pub fn menu_items(&self) -> Vec<MenuItem> {
         match &self.modal {
-            Some(ModalState::Menu { id, .. }) => menu_items_for(*id),
+            Some(ModalState::Menu { id, .. }) => menu_items_for(*id, self.editor_menu_mode),
             _ => vec![],
         }
+    }
+
+    pub fn set_editor_menu_mode(&mut self, enabled: bool) {
+        self.editor_menu_mode = enabled;
     }
 
     pub fn prompt(&self) -> Option<&PromptState> {
@@ -209,7 +214,7 @@ impl OverlayState {
                 if let Some(ModalState::Menu { id, selection }) = &self.modal {
                     let id = *id;
                     let sel = *selection;
-                    if let Some(item) = menu_items_for(id).get(sel).cloned() {
+                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned() {
                         self.close_all();
                         commands.push(Command::DispatchAction(item.action.clone()));
                     }
@@ -218,7 +223,7 @@ impl OverlayState {
             Action::MenuClickItem(index) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;
-                    let items = menu_items_for(id);
+                    let items = menu_items_for(id, self.editor_menu_mode);
                     if *index < items.len() {
                         let item = items[*index].clone();
                         self.close_all();
@@ -234,7 +239,7 @@ impl OverlayState {
             Action::MenuMnemonic(ch) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;
-                    if let Some(item) = menu_items_for(id)
+                    if let Some(item) = menu_items_for(id, self.editor_menu_mode)
                         .into_iter()
                         .find(|item| item.mnemonic.eq_ignore_ascii_case(ch))
                     {
@@ -245,7 +250,7 @@ impl OverlayState {
             }
             Action::MenuMoveDown => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    let len = menu_items_for(*id).len();
+                    let len = menu_items_for(*id, self.editor_menu_mode).len();
                     if len > 0 {
                         *selection = (*selection + 1).min(len.saturating_sub(1));
                     }
@@ -258,23 +263,19 @@ impl OverlayState {
             }
             Action::MenuNext => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    *id = match *id {
-                        MenuId::File => MenuId::Navigate,
-                        MenuId::Navigate => MenuId::View,
-                        MenuId::View => MenuId::Help,
-                        MenuId::Help => MenuId::File,
-                    };
+                    let tabs = crate::state::menu::menu_tabs(self.editor_menu_mode);
+                    if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
+                        *id = tabs[(pos + 1) % tabs.len()].id;
+                    }
                     *selection = 0;
                 }
             }
             Action::MenuPrevious => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    *id = match *id {
-                        MenuId::File => MenuId::Help,
-                        MenuId::Navigate => MenuId::File,
-                        MenuId::View => MenuId::Navigate,
-                        MenuId::Help => MenuId::View,
-                    };
+                    let tabs = crate::state::menu::menu_tabs(self.editor_menu_mode);
+                    if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
+                        *id = tabs[(pos + tabs.len() - 1) % tabs.len()].id;
+                    }
                     *selection = 0;
                 }
             }
