@@ -99,17 +99,21 @@ pub struct EditorBuffer {
 }
 
 impl EditorBuffer {
+    pub fn from_text(path: PathBuf, contents: String) -> Self {
+        Self {
+            path: Some(path),
+            text: Rope::from_str(&contents),
+            ..Self::default()
+        }
+    }
+
     pub fn open(path: &Path) -> Result<Self, EditorError> {
         let bytes = std_fs::read(path).map_err(|source| EditorError::ReadFile {
             path: path.display().to_string(),
             source,
         })?;
         let contents = String::from_utf8_lossy(&bytes);
-        Ok(Self {
-            path: Some(path.to_path_buf()),
-            text: Rope::from_str(&contents),
-            ..Self::default()
-        })
+        Ok(Self::from_text(path.to_path_buf(), contents.into_owned()))
     }
 
     // -----------------------------------------------------------------------
@@ -280,9 +284,9 @@ impl EditorBuffer {
         height: usize,
         syntect_theme: &str,
         fallback_color: Color,
-    ) -> (usize, Vec<HighlightedLine>) {
+    ) -> (usize, &[HighlightedLine]) {
         if height == 0 {
-            return (0, Vec::new());
+            return (0, &[]);
         }
 
         let ext = self
@@ -318,13 +322,8 @@ impl EditorBuffer {
 
         let (start, _) = self.visible_line_window(height);
         let all_lines = &self.highlight_cache.as_ref().unwrap().2;
-        let window = all_lines
-            .iter()
-            .skip(start)
-            .take(height)
-            .cloned()
-            .collect();
-        (start, window)
+        let end = (start + height).min(all_lines.len());
+        (start, &all_lines[start..end])
     }
 
     /// Returns the visible line window as plain strings.

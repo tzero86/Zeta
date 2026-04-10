@@ -135,6 +135,7 @@ impl PaneSetState {
                 pane.sort_mode = pane.sort_mode.next();
                 pane.selection = 0;
                 pane.scroll_offset = 0;
+                pane.refresh_filter();
             }
             Action::ToggleHiddenFiles => {
                 let new_value = !self.active_pane().show_hidden;

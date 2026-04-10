@@ -186,6 +186,7 @@ pub fn render_preview_panel(
     filename: &str,
     is_focused: bool,
     palette: ThemePalette,
+    cheap_mode: bool,
 ) {
     let border_style = if is_focused {
         Style::default()
@@ -210,11 +211,29 @@ pub fn render_preview_panel(
             inner,
         ),
         Some(v) => {
-            if v.is_markdown() {
-                // TODO: replace with tui-markdown AST rendering once a version
-                // compatible with ratatui 0.29 is available (tui-markdown 0.2
-                // targets ratatui 0.28; 0.3 targets ratatui-core which ratatui
-                // 0.29 does not depend on). Raw source is still readable markdown.
+            if cheap_mode {
+                if v.is_markdown() {
+                    if let Some(source) = v.markdown_source() {
+                        let text: String = source.lines().take(inner.height as usize).collect::<Vec<_>>().join("\n");
+                        frame.render_widget(
+                            Paragraph::new(text).style(Style::default().bg(palette.tools_bg)),
+                            inner,
+                        );
+                    }
+                } else {
+                    let height = inner.height as usize;
+                    let (_, window) = v.visible_window(height);
+                    let text = window
+                        .iter()
+                        .map(|line| line.iter().map(|(_, _, text)| text.as_str()).collect::<String>())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    frame.render_widget(
+                        Paragraph::new(text).style(Style::default().bg(palette.tools_bg)),
+                        inner,
+                    );
+                }
+            } else if v.is_markdown() {
                 if let Some(source) = v.markdown_source() {
                     let widget = Paragraph::new(source)
                         .style(Style::default().bg(palette.tools_bg))

@@ -1,4 +1,6 @@
+use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 
@@ -6,11 +8,17 @@ use crate::action::{Action, Command};
 use crate::preview::ViewBuffer;
 use crate::state::types::PaneFocus;
 
+const PREVIEW_DEBOUNCE_MS: u64 = 150;
+const PREVIEW_CACHE_SIZE: usize = 8;
+
 #[derive(Clone, Debug, Default)]
 pub struct PreviewState {
     pub view: Option<(PathBuf, ViewBuffer)>,
     pub panel_open: bool,
     pub preview_on_selection: bool,
+    requested_path: Option<PathBuf>,
+    pending_request: Option<(PathBuf, Instant)>,
+    cache: VecDeque<(PathBuf, ViewBuffer)>,
 }
 
 impl PreviewState {
@@ -19,6 +27,43 @@ impl PreviewState {
             view: None,
             panel_open,
             preview_on_selection,
+            requested_path: None,
+            pending_request: None,
+            cache: VecDeque::new(),
+        }
+    }
+
+    pub fn should_auto_preview(&self) -> bool {
+        self.panel_open && self.preview_on_selection
+    }
+
+    pub fn request_debounced_preview(&mut self, path: PathBuf) {
+        self.requested_path = Some(path.clone());
+        if let Some((_, cached)) = self.cache.iter().find(|(cached_path, _)| *cached_path == path) {
+            self.view = Some((path, cached.clone()));
+            self.pending_request = None;
+            return;
+        }
+        self.pending_request = Some((
+            path,
+            Instant::now() + Duration::from_millis(PREVIEW_DEBOUNCE_MS),
+        ));
+    }
+
+    pub fn preview_command_due(&mut self) -> Option<Command> {
+        let (path, due_at) = self.pending_request.as_ref()?.clone();
+        if Instant::now() < due_at {
+            return None;
+        }
+        self.pending_request = None;
+        Some(Command::PreviewFile { path })
+    }
+
+    fn cache_view(&mut self, path: PathBuf, view: ViewBuffer) {
+        self.cache.retain(|(cached_path, _)| *cached_path != path);
+        self.cache.push_front((path, view));
+        while self.cache.len() > PREVIEW_CACHE_SIZE {
+            self.cache.pop_back();
         }
     }
 
@@ -31,12 +76,22 @@ impl PreviewState {
         match action {
             Action::ClearPreview => {
                 self.view = None;
+                self.requested_path = None;
+                self.pending_request = None;
             }
             Action::TogglePreviewPanel => {
                 self.panel_open = !self.panel_open;
+                if !self.panel_open {
+                    self.pending_request = None;
+                }
             }
             Action::PreviewFile { path } => {
-                commands.push(Command::PreviewFile { path: path.clone() });
+                self.requested_path = Some(path.clone());
+                if let Some((_, cached)) = self.cache.iter().find(|(cached_path, _)| cached_path == path) {
+                    self.view = Some((path.clone(), cached.clone()));
+                } else {
+                    commands.push(Command::PreviewFile { path: path.clone() });
+                }
             }
             Action::FocusPreviewPanel => {
                 // Focus toggling handled at AppState level (needs full focus context)
@@ -75,13 +130,20 @@ impl PreviewState {
     }
 
     pub fn apply_job_loaded(&mut self, path: PathBuf, view: ViewBuffer) {
+        if self.requested_path.as_ref() != Some(&path) {
+            return;
+        }
+        let cached = view.clone();
         if let Some((ref current, ref mut buf)) = self.view {
             if *current == path {
+                *buf = view;
                 buf.reset_scroll();
+                self.cache_view(path, cached);
                 return;
             }
         }
-        self.view = Some((path, view));
+        self.view = Some((path.clone(), view));
+        self.cache_view(path, cached);
     }
 }
 
@@ -115,13 +177,31 @@ mod tests {
             PathBuf::from("/tmp/a.txt"),
             ViewBuffer::from_plain("line1\nline2\nline3"),
         ));
-        // scroll while pane focused — should have no effect
         s.apply(&Action::ScrollPreviewDown, &PaneFocus::Left).unwrap();
         let row = s.view.as_ref().unwrap().1.scroll_row;
         assert_eq!(row, 0);
-        // scroll while preview focused — should move
         s.apply(&Action::ScrollPreviewDown, &PaneFocus::Preview).unwrap();
         let row = s.view.as_ref().unwrap().1.scroll_row;
         assert_eq!(row, 1);
+    }
+
+    #[test]
+    fn stale_preview_result_is_ignored() {
+        let mut s = PreviewState::new(true, true);
+        s.request_debounced_preview(PathBuf::from("/tmp/b.txt"));
+        s.apply_job_loaded(PathBuf::from("/tmp/a.txt"), ViewBuffer::from_plain("old"));
+        assert!(s.view.is_none());
+    }
+
+    #[test]
+    fn cached_preview_is_reused_immediately() {
+        let mut s = PreviewState::new(true, true);
+        let path = PathBuf::from("/tmp/a.txt");
+        s.request_debounced_preview(path.clone());
+        s.apply_job_loaded(path.clone(), ViewBuffer::from_plain("hello"));
+        s.view = None;
+        s.request_debounced_preview(path.clone());
+        assert_eq!(s.view.as_ref().map(|(_, v)| v.total_lines), Some(1));
+        assert!(s.preview_command_due().is_none());
     }
 }

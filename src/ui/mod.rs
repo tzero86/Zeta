@@ -59,6 +59,8 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let has_editor = state.editor().is_some();
     let editor_fullscreen = has_editor && state.is_editor_fullscreen();
     let show_md_preview = has_editor && state.is_markdown_preview_visible();
+    let pane_navigation_mode = matches!(state.focus_layer(), crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter);
+    let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
     let show_tools = has_editor || is_preview_open;
 
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
@@ -134,6 +136,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
             let editor_focused = state.is_editor_focused();
+            let editor_loading = state.is_editor_loading();
             let md_focused = state.is_markdown_preview_focused();
             let md_scroll = state.markdown_preview_scroll();
             let replace_active = state.editor.replace_active;
@@ -167,19 +170,41 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         syntect_theme,
                         replace_active,
                         replace_query: &replace_query,
+                        loading: editor_loading,
+                        cheap_mode: cheap_tools_mode && !editor_focused,
                     },
                 );
 
                 if let Some(md_area) = md_area_opt {
                     let source = editor.contents();
-                    render_markdown_preview(
-                        frame,
-                        md_area,
-                        &source,
-                        palette,
-                        md_scroll,
-                        md_focused,
-                    );
+                    if cheap_tools_mode && !md_focused {
+                        let text = source
+                            .lines()
+                            .take(md_area.height.saturating_sub(2) as usize)
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let block = ratatui::widgets::Block::default()
+                            .title(" Markdown Preview ")
+                            .borders(ratatui::widgets::Borders::ALL)
+                            .border_style(ratatui::style::Style::default().fg(palette.text_muted))
+                            .style(ratatui::style::Style::default().bg(palette.tools_bg));
+                        let inner = block.inner(md_area);
+                        frame.render_widget(block, md_area);
+                        frame.render_widget(
+                            ratatui::widgets::Paragraph::new(text)
+                                .style(ratatui::style::Style::default().bg(palette.tools_bg)),
+                            inner,
+                        );
+                    } else {
+                        render_markdown_preview(
+                            frame,
+                            md_area,
+                            &source,
+                            palette,
+                            md_scroll,
+                            md_focused,
+                        );
+                    }
                 }
             }
         } else if is_preview_open {
@@ -193,6 +218,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 &filename,
                 state.is_preview_focused(),
                 palette,
+                cheap_tools_mode && !state.is_preview_focused(),
             );
         }
     }

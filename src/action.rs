@@ -429,6 +429,9 @@ impl Action {
             {
                 Some(Self::EditorReplaceAll)
             }
+            KeyCode::F(11) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ToggleEditorFullscreen)
+            }
             KeyCode::F(11) => Some(Self::ToggleEditorFullscreen),
             KeyCode::Char('m') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::ToggleMarkdownPreview)

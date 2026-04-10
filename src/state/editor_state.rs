@@ -7,6 +7,7 @@ use crate::editor::EditorBuffer;
 #[derive(Clone, Debug, Default)]
 pub struct EditorState {
     pub buffer: Option<EditorBuffer>,
+    pub loading: bool,
     pub replace_query: String,
     pub replace_active: bool,
     /// Scroll offset for the markdown preview panel (lines from top).
@@ -22,6 +23,21 @@ impl EditorState {
         self.buffer.is_some()
     }
 
+    pub fn open_placeholder(&mut self, path: std::path::PathBuf) {
+        let is_md = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+        let mut editor = EditorBuffer::default();
+        editor.path = Some(path);
+        self.buffer = Some(editor);
+        self.loading = true;
+        self.replace_query.clear();
+        self.replace_active = false;
+        self.markdown_preview_visible = is_md;
+        self.markdown_preview_focused = false;
+        self.markdown_preview_scroll = 0;
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.buffer.as_ref().is_some_and(|e| e.is_dirty)
     }
@@ -32,6 +48,7 @@ impl EditorState {
             .as_ref()
             .and_then(|p| p.extension())
             .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+        self.loading = false;
         self.replace_query.clear();
         self.replace_active = false;
         self.markdown_preview_visible = is_md;
@@ -42,6 +59,7 @@ impl EditorState {
 
     pub fn close(&mut self) {
         self.buffer = None;
+        self.loading = false;
         self.replace_query.clear();
         self.replace_active = false;
         self.markdown_preview_scroll = 0;

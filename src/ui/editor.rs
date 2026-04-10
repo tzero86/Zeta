@@ -15,6 +15,8 @@ pub struct RenderEditorArgs<'a> {
     pub syntect_theme: &'a str,
     pub replace_active: bool,
     pub replace_query: &'a str,
+    pub loading: bool,
+    pub cheap_mode: bool,
 }
 
 pub fn editor_render_state(
@@ -27,12 +29,12 @@ pub fn editor_render_state(
     editor.render_state(viewport_rows, viewport_cols, is_active)
 }
 
-pub fn editor_highlighted_render_state(
-    editor: &mut EditorBuffer,
+pub fn editor_highlighted_render_state<'a>(
+    editor: &'a mut EditorBuffer,
     area: Rect,
     syntect_theme: &str,
     palette: ThemePalette,
-) -> (usize, Vec<crate::highlight::HighlightedLine>) {
+) -> (usize, &'a [crate::highlight::HighlightedLine]) {
     let height = area.height.saturating_sub(2) as usize;
     editor.visible_highlighted_window(height, syntect_theme, palette.text_primary)
 }
@@ -46,6 +48,8 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         syntect_theme,
         replace_active,
         replace_query,
+        loading,
+        cheap_mode,
     } = args;
     let border_style = if is_focused {
         Style::default()
@@ -86,21 +90,53 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
     };
 
     let gutter_width = 6u16;
-    let (first_line_num, highlighted) =
-        editor_highlighted_render_state(editor, content_area, syntect_theme, palette);
+    if loading {
+        let loading_text = editor
+            .path
+            .as_ref()
+            .map(|p| format!("Loading {}...", p.display()))
+            .unwrap_or_else(|| String::from("Loading..."));
+        let loading = Paragraph::new(loading_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        );
+        frame.render_widget(loading, content_area);
+    } else if cheap_mode {
+        let (first_line_num, visible_lines) = editor.visible_line_window(content_area.height as usize);
+        let plain_lines: Vec<crate::highlight::HighlightedLine> = visible_lines
+            .into_iter()
+            .map(|line| vec![(palette.text_primary, Modifier::empty(), line)])
+            .collect();
+        render_code_view(
+            frame,
+            content_area,
+            CodeViewRenderArgs {
+                lines: &plain_lines,
+                first_line_number: first_line_num + 1,
+                gutter_width,
+                scroll_col: render_state.scroll_col,
+                cursor_row: None,
+                palette,
+            },
+        );
+    } else {
+        let (first_line_num, highlighted) =
+            editor_highlighted_render_state(editor, content_area, syntect_theme, palette);
 
-    render_code_view(
-        frame,
-        content_area,
-        CodeViewRenderArgs {
-            lines: &highlighted,
-            first_line_number: first_line_num + 1,
-            gutter_width,
-            scroll_col: render_state.scroll_col,
-            cursor_row: render_state.cursor_visible_row,
-            palette,
-        },
-    );
+        render_code_view(
+            frame,
+            content_area,
+            CodeViewRenderArgs {
+                lines: highlighted,
+                first_line_number: first_line_num + 1,
+                gutter_width,
+                scroll_col: render_state.scroll_col,
+                cursor_row: render_state.cursor_visible_row,
+                palette,
+            },
+        );
+    }
 
     if let Some(bar_area) = search_bar_area {
         let matches = editor.find_matches(&editor.search_query.clone());
@@ -137,7 +173,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         frame.render_widget(bar, bar_area);
     }
 
-    if render_state.cursor_visible_row.is_some() {
+    if !loading && !cheap_mode && render_state.cursor_visible_row.is_some() {
         let (line, column) = editor.cursor_line_col();
         let visible_line = line.saturating_sub(render_state.visible_start);
         let content_x = content_area.x + gutter_width;

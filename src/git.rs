@@ -59,17 +59,30 @@ pub struct RepoStatus {
     pub branch: String,
     /// Status of every dirty file, keyed by path relative to `root`.
     pub file_statuses: HashMap<PathBuf, FileStatus>,
+    /// Pre-normalized lookup map for O(1) status checks during pane rendering.
+    normalized_statuses: HashMap<String, FileStatus>,
 }
 
 impl RepoStatus {
+    pub fn new(root: PathBuf, branch: String, file_statuses: HashMap<PathBuf, FileStatus>) -> Self {
+        let normalized_statuses = file_statuses
+            .iter()
+            .map(|(path, status)| (normalize_lookup_string(path), *status))
+            .collect();
+        Self {
+            root,
+            branch,
+            file_statuses,
+            normalized_statuses,
+        }
+    }
+
     /// Look up the status for an absolute path.
     /// Returns `None` for clean (unmodified) files.
     pub fn status_for(&self, absolute_path: &Path) -> Option<FileStatus> {
         let relative = relative_lookup_path(&self.root, absolute_path)?;
         let wanted = normalize_lookup_string(&relative);
-        self.file_statuses.iter().find_map(|(path, status)| {
-            (normalize_lookup_string(path) == wanted).then_some(*status)
-        })
+        self.normalized_statuses.get(&wanted).copied()
     }
 }
 
@@ -110,7 +123,7 @@ pub fn fetch_status(path: &Path) -> Option<RepoStatus> {
         .map(|output| parse_porcelain(&String::from_utf8_lossy(&output.stdout)))
         .unwrap_or_default();
 
-    Some(RepoStatus { root, branch, file_statuses })
+    Some(RepoStatus::new(root, branch, file_statuses))
 }
 
 // ---------------------------------------------------------------------------
@@ -363,11 +376,11 @@ mod tests {
 
     #[test]
     fn repo_status_for_returns_none_for_clean_file() {
-        let status = RepoStatus {
-            root: PathBuf::from("/repo"),
-            branch: String::from("main"),
-            file_statuses: HashMap::new(),
-        };
+        let status = RepoStatus::new(
+            PathBuf::from("/repo"),
+            String::from("main"),
+            HashMap::new(),
+        );
         assert_eq!(status.status_for(Path::new("/repo/clean.rs")), None);
     }
 
@@ -375,11 +388,7 @@ mod tests {
     fn repo_status_for_resolves_absolute_to_relative() {
         let mut file_statuses = HashMap::new();
         file_statuses.insert(PathBuf::from("src/lib.rs"), FileStatus::Modified);
-        let status = RepoStatus {
-            root: PathBuf::from("/repo"),
-            branch: String::from("main"),
-            file_statuses,
-        };
+        let status = RepoStatus::new(PathBuf::from("/repo"), String::from("main"), file_statuses);
         assert_eq!(
             status.status_for(Path::new("/repo/src/lib.rs")),
             Some(FileStatus::Modified)

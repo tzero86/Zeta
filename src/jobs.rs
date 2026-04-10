@@ -37,6 +37,11 @@ pub struct PreviewRequest {
 }
 
 #[derive(Clone, Debug)]
+pub struct EditorLoadRequest {
+    pub path: PathBuf,
+}
+
+#[derive(Clone, Debug)]
 pub struct GitStatusRequest {
     pub pane: PaneId,
     pub path: PathBuf,
@@ -90,6 +95,14 @@ pub enum JobResult {
         path: PathBuf,
         view: crate::preview::ViewBuffer,
     },
+    EditorLoaded {
+        path: PathBuf,
+        contents: String,
+    },
+    EditorLoadFailed {
+        path: PathBuf,
+        message: String,
+    },
     /// Git status fetched successfully for a pane's working directory.
     GitStatusLoaded {
         pane: PaneId,
@@ -133,6 +146,7 @@ pub struct WorkerChannels {
     pub scan_tx:    Sender<ScanRequest>,
     pub file_op_tx: Sender<FileOpRequest>,
     pub preview_tx: Sender<PreviewRequest>,
+    pub editor_tx:  Sender<EditorLoadRequest>,
     pub git_tx:     Sender<GitStatusRequest>,
     pub find_tx:    Sender<FindRequest>,
     pub watch_tx:   Sender<WatchRequest>,
@@ -203,7 +217,6 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     // --- Preview worker ---
     let (preview_tx, preview_rx) = bounded::<PreviewRequest>(8);
     {
-        // Clone for preview — git worker gets the final move below.
         let result_tx_preview = result_tx.clone();
         thread::Builder::new()
             .name("zeta-preview".into())
@@ -219,6 +232,32 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                 }
             })
             .expect("failed to spawn preview worker");
+    }
+
+    // --- Editor load worker ---
+    let (editor_tx, editor_rx) = bounded::<EditorLoadRequest>(4);
+    {
+        let result_tx_editor = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-editor-load".into())
+            .spawn(move || {
+                for req in editor_rx {
+                    let result = match std::fs::read(&req.path) {
+                        Ok(bytes) => JobResult::EditorLoaded {
+                            path: req.path,
+                            contents: String::from_utf8_lossy(&bytes).into_owned(),
+                        },
+                        Err(error) => JobResult::EditorLoadFailed {
+                            path: req.path,
+                            message: error.to_string(),
+                        },
+                    };
+                    if result_tx_editor.send(result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn editor load worker");
     }
 
     // --- Git status worker ---
@@ -275,7 +314,18 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn watcher worker");
     }
 
-    (WorkerChannels { scan_tx, file_op_tx, preview_tx, git_tx, find_tx, watch_tx }, result_rx)
+    (
+        WorkerChannels {
+            scan_tx,
+            file_op_tx,
+            preview_tx,
+            editor_tx,
+            git_tx,
+            find_tx,
+            watch_tx,
+        },
+        result_rx,
+    )
 }
 
 // ---------------------------------------------------------------------------

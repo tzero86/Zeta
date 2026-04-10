@@ -13,9 +13,8 @@ use ratatui::{Frame, Terminal};
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
-use crate::editor::EditorBuffer;
 use crate::event::AppEvent;
-use crate::jobs::{self, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels};
+use crate::jobs::{self, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::layout_cache::{rect_contains, LayoutCache};
@@ -75,6 +74,9 @@ impl App {
 
     fn process_next_event(&mut self) -> Result<()> {
         let Some(app_event) = self.next_event()? else {
+            if let Some(command) = self.state.preview_command_due() {
+                self.execute_command(command)?;
+            }
             return Ok(());
         };
 
@@ -178,12 +180,13 @@ impl App {
 
     fn execute_command(&mut self, command: Command) -> Result<()> {
         match command {
-            Command::OpenEditor { path } => match EditorBuffer::open(&path) {
-                Ok(editor) => self.state.open_editor(editor),
-                Err(error) => self
-                    .state
-                    .set_error_status(format!("failed to open editor buffer: {error}")),
-            },
+            Command::OpenEditor { path } => {
+                self.state.begin_open_editor(path.clone());
+                self.workers
+                    .editor_tx
+                    .send(EditorLoadRequest { path })
+                    .context("failed to queue background editor load job")?;
+            }
             Command::PreviewFile { path } => self
                 .workers
                 .preview_tx

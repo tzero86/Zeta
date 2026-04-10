@@ -1,3 +1,4 @@
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
@@ -63,6 +64,12 @@ pub struct PaneState {
     // Navigation history
     pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
     pub history_forward: Vec<PathBuf>, // dirs we can go forward to
+    pub(crate) filtered_indices: RefCell<Vec<usize>>,
+    pub(crate) cache_dirty: Cell<bool>,
+    pub(crate) cache_entry_count: Cell<usize>,
+    pub(crate) cache_sort_mode: Cell<SortMode>,
+    pub(crate) cache_filter_active: Cell<bool>,
+    pub(crate) cache_filter_query: RefCell<String>,
 }
 
 impl PaneState {
@@ -80,6 +87,12 @@ impl PaneState {
             filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
+            filtered_indices: RefCell::new(Vec::new()),
+            cache_dirty: Cell::new(true),
+            cache_entry_count: Cell::new(0),
+            cache_sort_mode: Cell::new(SortMode::Name),
+            cache_filter_active: Cell::new(false),
+            cache_filter_query: RefCell::new(String::new()),
         }
     }
 
@@ -155,7 +168,9 @@ impl PaneState {
     }
 
     pub fn selected_entry(&self) -> Option<&EntryInfo> {
-        self.filtered_entries().into_iter().nth(self.selection)
+        self.ensure_cache();
+        let idx = *self.filtered_indices.borrow().get(self.selection)?;
+        self.entries.get(idx)
     }
 
     pub fn selected_path(&self) -> Option<PathBuf> {
@@ -255,27 +270,27 @@ impl PaneState {
     }
 
     pub fn filtered_entries(&self) -> Vec<&EntryInfo> {
-        let sorted = self.sorted_entries();
-        if self.filter_active && !self.filter_query.is_empty() {
-            let query = self.filter_query.to_lowercase();
-            sorted
-                .into_iter()
-                .filter(|entry| entry.name.to_lowercase().contains(&query))
-                .collect()
-        } else {
-            sorted
-        }
+        self.ensure_cache();
+        self.filtered_indices
+            .borrow()
+            .iter()
+            .filter_map(|&idx| self.entries.get(idx))
+            .collect()
     }
 
-    pub fn visible_entries(&self, height: usize) -> Vec<EntryInfo> {
-        let filtered = self.filtered_entries();
-        if height == 0 || filtered.is_empty() {
+    pub fn visible_entries(&self, height: usize) -> Vec<&EntryInfo> {
+        self.ensure_cache();
+        let indices = self.filtered_indices.borrow();
+        if height == 0 || indices.is_empty() {
             return Vec::new();
         }
 
-        let start = self.visible_start_for(height, filtered.len());
-        let end = (start + height).min(filtered.len());
-        filtered[start..end].iter().map(|e| (*e).clone()).collect()
+        let start = self.visible_start_for(height, indices.len());
+        let end = (start + height).min(indices.len());
+        indices[start..end]
+            .iter()
+            .filter_map(|&idx| self.entries.get(idx))
+            .collect()
     }
 
     pub fn visible_selection(&self, height: usize) -> Option<usize> {
@@ -291,10 +306,12 @@ impl PaneState {
     }
 
     pub fn select_path(&mut self, path: &std::path::Path) -> bool {
+        self.ensure_cache();
         if let Some(index) = self
-            .filtered_entries()
+            .filtered_indices
+            .borrow()
             .iter()
-            .position(|entry| entry.path == path)
+            .position(|&entry_index| self.entries[entry_index].path == path)
         {
             self.selection = index;
             true
@@ -308,14 +325,17 @@ impl PaneState {
         self.filter_query.clear();
         self.selection = 0;
         self.scroll_offset = 0;
+        self.invalidate_cache();
     }
 
     pub fn refresh_filter(&mut self) {
+        self.invalidate_cache();
         self.clamp_selection();
     }
 
     fn filtered_len(&self) -> usize {
-        self.filtered_entries().len()
+        self.ensure_cache();
+        self.filtered_indices.borrow().len()
     }
 
     fn clamp_selection(&mut self) {
@@ -337,6 +357,78 @@ impl PaneState {
         } else {
             self.scroll_offset.min(count.saturating_sub(height))
         }
+    }
+
+    fn invalidate_cache(&self) {
+        self.cache_dirty.set(true);
+    }
+
+    fn ensure_cache(&self) {
+        if self.cache_dirty.get()
+            || self.cache_entry_count.get() != self.entries.len()
+            || self.cache_sort_mode.get() != self.sort_mode
+            || self.cache_filter_active.get() != self.filter_active
+            || *self.cache_filter_query.borrow() != self.filter_query
+        {
+            self.rebuild_cache();
+        }
+    }
+
+    fn rebuild_cache(&self) {
+        let mut indices: Vec<usize> = (0..self.entries.len()).collect();
+        indices.sort_by(|&left_idx, &right_idx| {
+            let left = &self.entries[left_idx];
+            let right = &self.entries[right_idx];
+            match self.sort_mode {
+                SortMode::Name => {
+                    dir_first(left, right)
+                        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                }
+                SortMode::NameDesc => {
+                    dir_first(left, right)
+                        .then_with(|| right.name.to_lowercase().cmp(&left.name.to_lowercase()))
+                }
+                SortMode::Size => dir_first(left, right)
+                    .then_with(|| left.size_bytes.unwrap_or(0).cmp(&right.size_bytes.unwrap_or(0))),
+                SortMode::SizeDesc => dir_first(left, right)
+                    .then_with(|| right.size_bytes.unwrap_or(0).cmp(&left.size_bytes.unwrap_or(0))),
+                SortMode::Modified => {
+                    dir_first(left, right).then_with(|| left.modified.cmp(&right.modified))
+                }
+                SortMode::ModifiedDesc => {
+                    dir_first(left, right).then_with(|| right.modified.cmp(&left.modified))
+                }
+                SortMode::Extension => dir_first(left, right).then_with(|| {
+                    let ext_a = left
+                        .path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let ext_b = right
+                        .path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    ext_a
+                        .cmp(&ext_b)
+                        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                }),
+            }
+        });
+
+        if self.filter_active && !self.filter_query.is_empty() {
+            let query = self.filter_query.to_lowercase();
+            indices.retain(|&idx| self.entries[idx].name.to_lowercase().contains(&query));
+        }
+
+        *self.filtered_indices.borrow_mut() = indices;
+        self.cache_entry_count.set(self.entries.len());
+        self.cache_sort_mode.set(self.sort_mode);
+        self.cache_filter_active.set(self.filter_active);
+        *self.cache_filter_query.borrow_mut() = self.filter_query.clone();
+        self.cache_dirty.set(false);
     }
 }
 
@@ -505,7 +597,11 @@ mod tests {
         let mut pane = pane_with_entries(vec![file("main.rs"), file("README.md"), file("Cargo.toml")]);
         pane.filter_active = true;
         pane.filter_query = String::from("read");
-        let names: Vec<_> = pane.visible_entries(10).into_iter().map(|e| e.name).collect();
+        let names: Vec<_> = pane
+            .visible_entries(10)
+            .into_iter()
+            .map(|e| e.name.clone())
+            .collect();
         assert_eq!(names, vec![String::from("README.md")]);
     }
 

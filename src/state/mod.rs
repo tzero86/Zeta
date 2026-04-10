@@ -149,6 +149,13 @@ impl AppState {
             }
             Action::TogglePreviewPanel => {
                 self.config.preview_panel_open = self.preview.panel_open;
+                if self.preview.panel_open {
+                    if let Some(entry) = self.panes.active_pane().selected_entry() {
+                        if entry.kind == EntryKind::File {
+                            self.preview.request_debounced_preview(entry.path.clone());
+                        }
+                    }
+                }
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             Action::ToggleEditorFullscreen => {
@@ -500,14 +507,16 @@ impl AppState {
             Action::MoveSelectionDown
             | Action::MoveSelectionUp
             | Action::EnterSelection => {
-                if let Some(entry) = self.panes.active_pane().selected_entry() {
-                    if entry.kind == EntryKind::File {
-                        commands.push(Command::PreviewFile { path: entry.path.clone() });
+                if self.preview.should_auto_preview() {
+                    if let Some(entry) = self.panes.active_pane().selected_entry() {
+                        if entry.kind == EntryKind::File {
+                            self.preview.request_debounced_preview(entry.path.clone());
+                        } else {
+                            self.preview.view = None;
+                        }
                     } else {
                         self.preview.view = None;
                     }
-                } else {
-                    self.preview.view = None;
                 }
             }
             _ => {}
@@ -589,6 +598,29 @@ impl AppState {
             }
             JobResult::PreviewLoaded { path, view } => {
                 self.preview.apply_job_loaded(path, view);
+            }
+            JobResult::EditorLoaded { path, contents } => {
+                let is_expected = self
+                    .editor
+                    .buffer
+                    .as_ref()
+                    .and_then(|current| current.path.as_ref())
+                    == Some(&path);
+                if is_expected {
+                    self.open_editor(EditorBuffer::from_text(path, contents));
+                }
+            }
+            JobResult::EditorLoadFailed { path, message } => {
+                let is_expected = self
+                    .editor
+                    .buffer
+                    .as_ref()
+                    .and_then(|current| current.path.as_ref())
+                    == Some(&path);
+                if is_expected {
+                    self.editor.close();
+                    self.set_error_status(format!("failed to open editor buffer: {message}"));
+                }
             }
             JobResult::GitStatusLoaded { pane, status } => {
                 self.git[pane as usize] = Some(status);
@@ -706,6 +738,7 @@ impl AppState {
     }
 
     pub fn is_editor_fullscreen(&self) -> bool { self.editor_fullscreen }
+    pub fn is_editor_loading(&self) -> bool { self.editor.loading }
 
     /// Returns the cached git status for the given pane, if available.
     pub fn git_status(&self, pane: crate::pane::PaneId) -> Option<&crate::git::RepoStatus> {
@@ -772,6 +805,7 @@ impl AppState {
     pub fn preview_view(&self) -> Option<&(PathBuf, crate::preview::ViewBuffer)> {
         self.preview.view.as_ref()
     }
+    pub fn preview_command_due(&mut self) -> Option<Command> { self.preview.preview_command_due() }
     pub fn is_preview_panel_open(&self) -> bool { self.preview.panel_open }
     pub fn is_preview_focused(&self) -> bool { self.panes.focus == PaneFocus::Preview }
 
@@ -782,6 +816,16 @@ impl AppState {
         self.editor.is_markdown_file() && self.editor.markdown_preview_visible
     }
     pub fn markdown_preview_scroll(&self) -> usize { self.editor.markdown_preview_scroll }
+
+    pub fn begin_open_editor(&mut self, path: PathBuf) {
+        if self.panes.focus == PaneFocus::Preview {
+            self.panes.focus = PaneFocus::Left;
+        }
+        self.editor_fullscreen = false;
+        let display = path.display().to_string();
+        self.editor.open_placeholder(path);
+        self.status_message = format!("opening {display}...");
+    }
 
     pub fn open_editor(&mut self, buffer: EditorBuffer) {
         let path = buffer
@@ -1011,6 +1055,12 @@ mod tests {
             filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
+            filtered_indices: std::cell::RefCell::new(Vec::new()),
+            cache_dirty: std::cell::Cell::new(true),
+            cache_entry_count: std::cell::Cell::new(0),
+            cache_sort_mode: std::cell::Cell::new(SortMode::Name),
+            cache_filter_active: std::cell::Cell::new(false),
+            cache_filter_query: std::cell::RefCell::new(String::new()),
         }
     }
 
@@ -1036,11 +1086,11 @@ mod tests {
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
             pane: crate::pane::PaneId::Left,
-            status: RepoStatus {
-                root: PathBuf::from("/tmp/repo"),
-                branch: String::from("main"),
-                file_statuses: HashMap::new(),
-            },
+            status: RepoStatus::new(
+                PathBuf::from("/tmp/repo"),
+                String::from("main"),
+                HashMap::new(),
+            ),
         });
         assert!(state.git_status(crate::pane::PaneId::Left).is_some());
         assert_eq!(state.git_status(crate::pane::PaneId::Left).unwrap().branch, "main");
@@ -1054,11 +1104,11 @@ mod tests {
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
             pane: crate::pane::PaneId::Left,
-            status: RepoStatus {
-                root: PathBuf::from("/tmp/repo"),
-                branch: String::from("main"),
-                file_statuses: HashMap::new(),
-            },
+            status: RepoStatus::new(
+                PathBuf::from("/tmp/repo"),
+                String::from("main"),
+                HashMap::new(),
+            ),
         });
         state.apply_job_result(JobResult::GitStatusAbsent { pane: crate::pane::PaneId::Left });
         assert!(state.git_status(crate::pane::PaneId::Left).is_none());
@@ -1071,11 +1121,11 @@ mod tests {
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
             pane: crate::pane::PaneId::Left,
-            status: RepoStatus {
-                root: PathBuf::from("/tmp/repo"),
-                branch: String::from("feature/cool"),
-                file_statuses: HashMap::new(),
-            },
+            status: RepoStatus::new(
+                PathBuf::from("/tmp/repo"),
+                String::from("feature/cool"),
+                HashMap::new(),
+            ),
         });
         assert!(
             state.status_line().contains("feature/cool"),
@@ -1136,6 +1186,12 @@ mod tests {
             filter_active: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
+            filtered_indices: std::cell::RefCell::new(Vec::new()),
+            cache_dirty: std::cell::Cell::new(true),
+            cache_entry_count: std::cell::Cell::new(0),
+            cache_sort_mode: std::cell::Cell::new(SortMode::Name),
+            cache_filter_active: std::cell::Cell::new(false),
+            cache_filter_query: std::cell::RefCell::new(String::new()),
         };
         AppState {
             panes: PaneSetState::new(pane_with_file("./note.txt"), right),
