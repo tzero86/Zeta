@@ -244,15 +244,34 @@ impl App {
                 .send(FileOpRequest { operation, backend: crate::jobs::BackendRef::Local, refresh, collision })
                 .context("failed to queue background file operation")?,
             Command::ScanPane { pane, path } => {
-                self.workers
-                    .scan_tx
-                    .send(ScanRequest { pane, path: path.clone() })
-                    .context("failed to queue background scan job")?;
-                // Fire a git status refresh alongside every directory scan.
-                self.workers
-                    .git_tx
-                    .send(GitStatusRequest { pane, path })
-                    .context("failed to queue git status job")?;
+                // Check if pane is in remote mode and route to SFTP
+                if let Some(address) = self.state.panes.pane(pane).remote_address() {
+                    // For remote panes, send to SFTP worker
+                    // Parse session ID from address
+                    let session_id = format!("{}@{}", 
+                        std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
+                        address);
+                    
+                    self.workers
+                        .sftp_tx
+                        .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                            pane,
+                            path: path.clone(),
+                            session_id,
+                        }))
+                        .context("failed to queue SFTP scan job")?;
+                } else {
+                    // Local pane - use normal scan
+                    self.workers
+                        .scan_tx
+                        .send(ScanRequest { pane, path: path.clone() })
+                        .context("failed to queue background scan job")?;
+                    // Fire a git status refresh alongside every directory scan.
+                    self.workers
+                        .git_tx
+                        .send(GitStatusRequest { pane, path })
+                        .context("failed to queue git status job")?;
+                }
             }
             Command::FindFiles { pane, root, max_depth } => {
                 self.workers

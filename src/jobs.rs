@@ -19,6 +19,38 @@ use crate::pane::PaneId;
 // Public request types — one per worker
 // ---------------------------------------------------------------------------
 
+pub type SessionId = String;
+
+#[derive(Clone, Debug)]
+pub struct SftpScanRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
+    pub session_id: SessionId,
+}
+
+#[derive(Clone, Debug)]
+pub struct SftpFileOpRequest {
+    pub operation: FileOperation,
+    pub src_session: Option<SessionId>,
+    pub dst_session: Option<SessionId>,
+    pub refresh: Vec<RefreshTarget>,
+    pub collision: CollisionPolicy,
+}
+
+pub enum SftpRequest {
+    Connect {
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        reply: crossbeam_channel::Sender<Result<SessionId, String>>,
+    },
+    Disconnect {
+        session_id: SessionId,
+    },
+    Scan(SftpScanRequest),
+    FileOp(SftpFileOpRequest),
+}
+
 #[derive(Clone, Debug)]
 pub struct ArchiveListRequest {
     pub pane: PaneId,
@@ -176,6 +208,7 @@ pub struct WorkerChannels {
     pub find_tx:    Sender<FindRequest>,
     pub watch_tx:   Sender<WatchRequest>,
     pub archive_tx: Sender<ArchiveListRequest>,
+    pub sftp_tx:    Sender<SftpRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -501,6 +534,67 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn archive worker");
     }
 
+    // --- SFTP worker ---
+    let (sftp_tx, sftp_rx) = bounded::<SftpRequest>(8);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-sftp".into())
+            .spawn(move || {
+                let mut sessions: std::collections::HashMap<SessionId, crate::fs::sftp::SftpBackend> = std::collections::HashMap::new();
+                
+                for req in sftp_rx {
+                    match req {
+                        SftpRequest::Connect { address, auth_method, credential, reply } => {
+                            let result: Result<(SessionId, crate::fs::sftp::SftpBackend), String> = connect_sftp(&address, auth_method, &credential);
+                            match result {
+                                Ok((session_id, backend)) => {
+                                    sessions.insert(session_id.clone(), backend);
+                                    let _ = reply.send(Ok(session_id));
+                                }
+                                Err(e) => {
+                                    let _ = reply.send(Err(e));
+                                }
+                            }
+                        }
+                        SftpRequest::Disconnect { session_id } => {
+                            sessions.remove(&session_id);
+                        }
+                        SftpRequest::Scan(req) => {
+                            if let Some(backend) = sessions.get(&req.session_id) {
+                                let started_at = Instant::now();
+                                let job_result = match backend.scan_directory(&req.path) {
+                                    Ok(entries) => JobResult::DirectoryScanned {
+                                        pane: req.pane,
+                                        path: req.path.clone(),
+                                        entries,
+                                        elapsed_ms: started_at.elapsed().as_millis(),
+                                    },
+                                    Err(e) => JobResult::JobFailed {
+                                        pane: req.pane,
+                                        path: req.path,
+                                        message: format!("SFTP scan failed: {}", e),
+                                        elapsed_ms: started_at.elapsed().as_millis(),
+                                    }
+                                };
+                                let _ = result_tx.send(job_result);
+                            }
+                        }
+                        SftpRequest::FileOp(req) => {
+                            // TODO: Implement cross-backend file operations
+                            let _ = result_tx.send(JobResult::JobFailed {
+                                pane: req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left),
+                                path: PathBuf::new(),
+                                message: "Cross-backend file operations not yet implemented".to_string(),
+                                elapsed_ms: 0,
+                            });
+                        }
+                    }
+                }
+            })
+            .expect("failed to spawn sftp worker");
+    }
+
     (
         WorkerChannels {
             scan_tx,
@@ -511,6 +605,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             find_tx,
             watch_tx,
             archive_tx,
+            sftp_tx,
         },
         result_rx,
     )
@@ -639,6 +734,64 @@ fn load_preview_from_bytes(bytes: &[u8], path: &Path, syntect_theme: &str) -> cr
         .collect();
 
     crate::preview::ViewBuffer::from_plain(&truncated)
+}
+
+/// Parse SSH address in format user@host:port or user@host
+fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
+    let (user, rest) = address.split_once('@').ok_or("Address must be in format user@host:port")?;
+    
+    let (host, port) = match rest.rsplit_once(':') {
+        Some((h, p)) => {
+            let port = p.parse().map_err(|_| "Invalid port number")?;
+            (h, port)
+        }
+        None => (rest, 22u16),
+    };
+    
+    Ok((user.to_string(), host.to_string(), port))
+}
+
+/// Connect to SSH host and create SftpBackend
+fn connect_sftp(
+    address: &str,
+    auth_method: crate::state::ssh::SshAuthMethod,
+    credential: &str,
+) -> Result<(SessionId, crate::fs::sftp::SftpBackend), String> {
+    use std::net::TcpStream;
+    
+    let (user, host, port) = parse_ssh_address(address)?;
+    
+    // Create session ID for tracking
+    let session_id = format!("{}@{}:{}", user, host, port);
+    
+    // Connect to SSH server
+    let tcp = TcpStream::connect((host.as_str(), port))
+        .map_err(|e| format!("Connection failed: {}", e))?;
+    
+    let mut session = ssh2::Session::new()
+        .map_err(|e| format!("Failed to create session: {}", e))?;
+    
+    session.set_tcp_stream(tcp);
+    session.handshake()
+        .map_err(|e| format!("Handshake failed: {}", e))?;
+    
+    // Authenticate
+    match auth_method {
+        crate::state::ssh::SshAuthMethod::Password => {
+            session.userauth_password(&user, credential)
+                .map_err(|e| format!("Authentication failed: {}", e))?;
+        }
+        crate::state::ssh::SshAuthMethod::KeyFile => {
+            session.userauth_pubkey_file(&user, None, std::path::Path::new(credential), None)
+                .map_err(|e| format!("Key authentication failed: {}", e))?;
+        }
+    }
+    
+    // Create SFTP backend
+    let backend = crate::fs::sftp::SftpBackend::new(session, std::path::PathBuf::from("/"))
+        .map_err(|e| format!("Failed to initialize SFTP: {}", e))?;
+    
+    Ok((session_id, backend))
 }
 
 #[allow(clippy::result_large_err)]

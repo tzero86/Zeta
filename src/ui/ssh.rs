@@ -23,13 +23,13 @@ pub fn render_ssh_connect_dialog(
     let dialog_area = Rect::new(x, y, width, height);
 
     // Render backdrop
-    crate::ui::overlay::render_modal_backdrop(frame, area, dialog_area, palette.clone());
+    crate::ui::overlay::render_modal_backdrop(frame, area, dialog_area, *palette);
 
     // Create dialog block
     let block = Block::default()
-        .title(Span::styled(" SSH Connect ", overlay_title_style(palette.clone())))
+        .title(Span::styled(" SSH Connect ", overlay_title_style(*palette)))
         .borders(Borders::ALL)
-        .style(modal_backdrop_style(palette.clone()));
+        .style(modal_backdrop_style(*palette));
 
     // Render the block
     frame.render_widget(block, dialog_area);
@@ -59,7 +59,7 @@ pub fn render_ssh_connect_dialog(
         format!("Address: {}", state.address)
     };
     let address_paragraph = Paragraph::new(address_label)
-        .style(modal_backdrop_style(palette.clone()));
+        .style(modal_backdrop_style(*palette));
     frame.render_widget(address_paragraph, chunks[0]);
 
     // Auth method
@@ -80,7 +80,7 @@ pub fn render_ssh_connect_dialog(
         }
     };
     let auth_paragraph = Paragraph::new(auth_text)
-        .style(modal_backdrop_style(palette.clone()));
+        .style(modal_backdrop_style(*palette));
     frame.render_widget(auth_paragraph, chunks[1]);
 
     // Credential field
@@ -101,7 +101,7 @@ pub fn render_ssh_connect_dialog(
         )
     };
     let credential_paragraph = Paragraph::new(credential_label)
-        .style(modal_backdrop_style(palette.clone()));
+        .style(modal_backdrop_style(*palette));
     frame.render_widget(credential_paragraph, chunks[2]);
 
     // Error message
@@ -113,6 +113,6 @@ pub fn render_ssh_connect_dialog(
 
     // Footer
     let footer = Paragraph::new("Enter=connect Tab=switch Space=auth Esc=cancel")
-        .style(overlay_footer_style(palette.clone()));
+        .style(overlay_footer_style(*palette));
     frame.render_widget(footer, chunks[4]);
 }

@@ -76,12 +76,23 @@ pub enum FileSystemError {
     },
     #[error("failed to delete {path}: {source}")]
     DeletePath { path: String, source: io::Error },
+    #[error("failed to create directory {path}: {source}")]
+    CreateDirectory { path: String, source: io::Error },
+    #[error("failed to delete entry {path}: {source}")]
+    DeleteEntry { path: String, source: io::Error },
+    #[error("{message}")]
+    Other { message: String },
+    #[error("failed to move {src} to {dst}: {source}")]
+    MoveEntry { src: String, dst: String, source: io::Error },
+    #[error("failed to copy {src} to {dst}: {source}")]
+    CopyEntry { src: String, dst: String, source: io::Error },
 }
 
 
 
 pub mod backend;
 pub mod local;
+pub mod sftp;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationProgress {
