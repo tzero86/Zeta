@@ -3,6 +3,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::{IconMode, ThemePalette};
 use crate::fs::{EntryInfo, EntryKind};
@@ -284,7 +285,7 @@ pub fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
 }
 
 pub fn display_width(value: &str) -> usize {
-    value.chars().count()
+    UnicodeWidthStr::width(value)
 }
 
 pub fn truncate_text(value: &str, max_width: usize) -> String {
@@ -295,7 +296,19 @@ pub fn truncate_text(value: &str, max_width: usize) -> String {
     if max_width <= 2 {
         return value.chars().take(max_width).collect();
     }
-    let truncated: String = value.chars().take(max_width - 2).collect();
+
+    let mut truncated = String::new();
+    let mut current_width = 0usize;
+    let target_width = max_width - 2;
+    for ch in value.chars() {
+        let ch_width = UnicodeWidthChar::width(ch).unwrap_or(1).max(1);
+        if current_width + ch_width > target_width {
+            break;
+        }
+        truncated.push(ch);
+        current_width += ch_width;
+    }
+
     format!("{}..", truncated)
 }
 

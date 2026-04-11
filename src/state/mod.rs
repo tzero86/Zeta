@@ -7,6 +7,7 @@ pub mod pane_set;
 pub mod preview_state;
 mod prompt;
 mod settings;
+pub mod ssh;
 mod types;
 
 pub use editor_state::EditorState;
@@ -19,6 +20,7 @@ use std::time::Instant;
 
 use anyhow::Result;
 
+pub use ssh::*;
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
 use crate::editor::EditorBuffer;
@@ -1006,6 +1008,7 @@ impl AppState {
     pub fn settings(&self) -> Option<&SettingsState> { self.overlay.settings() }
     pub fn bookmarks(&self) -> Option<&BookmarksState> { self.overlay.bookmarks() }
     pub fn file_finder(&self) -> Option<&FileFinderState> { self.overlay.file_finder() }
+    pub fn ssh_connect(&self) -> Option<&crate::state::ssh::SshConnectionState> { self.overlay.ssh_connect() }
     pub fn is_menu_open(&self) -> bool { self.overlay.is_menu_open() }
     pub fn is_prompt_open(&self) -> bool { self.overlay.prompt().is_some() }
     pub fn is_dialog_open(&self) -> bool { self.overlay.dialog().is_some() }

@@ -8,6 +8,7 @@ use crate::state::dialog::{CollisionState, DialogState};
 use crate::state::menu::menu_items_for;
 use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
+use crate::state::ssh::SshConnectionState;
 use crate::state::types::MenuItem;
 
 /// All modal UI states, mutually exclusive by construction.
@@ -22,6 +23,7 @@ pub enum ModalState {
     Settings(SettingsState),
     Bookmarks(BookmarksState),
     FileFinder(FileFinderState),
+    SshConnect(crate::state::ssh::SshConnectionState),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -124,6 +126,31 @@ impl OverlayState {
     pub fn file_finder_mut(&mut self) -> Option<&mut FileFinderState> {
         match &mut self.modal {
             Some(ModalState::FileFinder(f)) => Some(f),
+            _ => None,
+        }
+    }
+
+    pub fn open_ssh_connect(&mut self, state: SshConnectionState) {
+        self.close_all();
+        self.modal = Some(ModalState::SshConnect(state));
+    }
+
+    pub fn close_ssh_connect(&mut self) {
+        if matches!(self.modal, Some(ModalState::SshConnect(_))) {
+            self.modal = None;
+        }
+    }
+
+    pub fn ssh_connect(&self) -> Option<&SshConnectionState> {
+        match &self.modal {
+            Some(ModalState::SshConnect(s)) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn ssh_connect_mut(&mut self) -> Option<&mut SshConnectionState> {
+        match &mut self.modal {
+            Some(ModalState::SshConnect(s)) => Some(s),
             _ => None,
         }
     }

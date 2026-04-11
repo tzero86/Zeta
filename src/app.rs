@@ -298,6 +298,14 @@ impl App {
                 execute!(stdout, EnterAlternateScreen).ok();
                 enable_raw_mode().ok();
             }
+            Command::ConnectSSH { address, auth_method, credential, pane } => {
+                // TODO: Implement SSH connection logic
+                self.state.set_error_status(format!("SSH connect to {} - not yet implemented", address));
+            }
+            Command::DisconnectSSH { pane } => {
+                // TODO: Implement SSH disconnection logic
+                self.state.set_error_status(format!("SSH disconnect on pane {:?} - not yet implemented", pane));
+            }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
             }
@@ -337,9 +345,10 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
         FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
         FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
-        FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
-        FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
-        FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
+            FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
+            FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
+            FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
+            FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
         FocusLayer::MarkdownPreview => {
             if is_preview_open && alt_f3 {

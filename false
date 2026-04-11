@@ -26,7 +26,7 @@ use crate::state::{AppState, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
-use crate::ui::ssh::render_ssh_connect_dialog;
+use crate::ui::ssh::render_ssh_connect_dialog;</parameter
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
@@ -286,10 +286,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some(finder_state) = state.file_finder() {
         render_file_finder(frame, areas[1], finder_state, palette);
-    }
 
     if let Some(ssh_state) = state.ssh_connect() {
         render_ssh_connect_dialog(frame, areas[1], ssh_state, &palette);
+    }
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(

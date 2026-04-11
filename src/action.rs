@@ -129,6 +129,14 @@ pub enum Action {
     FileFinderMoveDown,
     FileFinderMoveUp,
     CloseSettingsPanel,
+    OpenSshConnect,
+    SshDialogInput(char),
+    SshDialogBackspace,
+    SshDialogToggleField,
+    SshDialogToggleAuthMethod,
+    SshConnectConfirm,
+    SshDisconnect,
+    CloseSshConnect,
     PaletteInput(char),
     PaletteBackspace,
     PaletteConfirm,
@@ -175,6 +183,15 @@ pub enum Command {
     },
     OpenShell {
         path: PathBuf,
+    },
+    ConnectSSH {
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        pane: PaneId,
+    },
+    DisconnectSSH {
+        pane: PaneId,
     },
     SaveEditor,
 }
@@ -398,9 +415,33 @@ impl Action {
             KeyCode::Down => Some(Self::FileFinderMoveDown),
             KeyCode::Backspace => Some(Self::FileFinderBackspace),
             KeyCode::Char(ch)
-                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+                if key_event.modifiers.is_empty()
+                    || key_event.modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::FileFinderInput(ch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys when the SSH connect dialog is open. Consumes ALL input.
+    pub fn from_ssh_connect_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseSshConnect),
+            KeyCode::Enter => Some(Self::SshConnectConfirm),
+            KeyCode::Backspace => Some(Self::SshDialogBackspace),
+            KeyCode::Tab => Some(Self::SshDialogToggleField),
+            KeyCode::Char(' ')
+                if key_event.modifiers.is_empty()
+                    || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SshDialogToggleAuthMethod)
+            }
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty()
+                    || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SshDialogInput(ch))
             }
             _ => None,
         }

@@ -78,6 +78,11 @@ pub enum FileSystemError {
     DeletePath { path: String, source: io::Error },
 }
 
+
+
+pub mod backend;
+pub mod local;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationProgress {
     pub completed: u64,

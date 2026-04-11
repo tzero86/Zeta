@@ -53,6 +53,7 @@ pub enum ModalKind {
     Settings,
     Bookmarks,
     FileFinder,
+    SshConnect,
 }
 
 #[cfg(test)]

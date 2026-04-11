@@ -15,6 +15,7 @@ trash = { version = "3", default-features = false, features = ["coinit_apartment
 syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes", "default-themes"] }
 thiserror = "2.0"
 toml = "0.8"
+ssh2 = "0.9"
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 unicode-width = "0.2"
 zip = "0.6"
