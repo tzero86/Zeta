@@ -298,13 +298,19 @@ impl App {
                 execute!(stdout, EnterAlternateScreen).ok();
                 enable_raw_mode().ok();
             }
-            Command::ConnectSSH { address, auth_method, credential, pane } => {
+            Command::ConnectSSH { address, auth_method: _, credential: _, pane: _ } => {
                 // TODO: Implement SSH connection logic
                 self.state.set_error_status(format!("SSH connect to {} - not yet implemented", address));
             }
             Command::DisconnectSSH { pane } => {
-                // TODO: Implement SSH disconnection logic
-                self.state.set_error_status(format!("SSH disconnect on pane {:?} - not yet implemented", pane));
+                // Switch back to local mode and scan home directory
+                self.state.panes.pane_mut(pane).mode = crate::pane::PaneMode::Real;
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                self.execute_command(Command::ScanPane {
+                    pane,
+                    path: std::path::PathBuf::from(home),
+                })?;
+
             }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;

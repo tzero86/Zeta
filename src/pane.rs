@@ -53,6 +53,7 @@ impl SortMode {
 pub enum PaneMode {
     Real,
     Archive { source: PathBuf, inner_path: PathBuf },
+    Remote { address: String, base_path: PathBuf },
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +87,15 @@ impl PaneState {
     pub fn archive_source(&self) -> Option<&PathBuf> {
         match &self.mode {
             PaneMode::Archive { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+    pub fn in_remote(&self) -> bool {
+        matches!(self.mode, PaneMode::Remote { .. })
+    }
+    pub fn remote_address(&self) -> Option<&str> {
+        match &self.mode {
+            PaneMode::Remote { address, .. } => Some(address.as_str()),
             _ => None,
         }
     }

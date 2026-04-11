@@ -700,6 +700,30 @@ impl AppState {
                     }
                 }
             }
+            Action::OpenSshConnect => {
+                self.overlay.open_ssh_connect(Default::default());
+                self.status_message = String::from("enter SSH connection details");
+            }
+            Action::SshConnectConfirm => {
+                if let Some(ModalState::SshConnect(state)) = &self.overlay.modal {
+                    let address = state.address.clone();
+                    let auth_method = state.auth_method;
+                    let credential = state.credential.clone();
+                    let pane = self.panes.focused_pane_id();
+                    commands.push(Command::ConnectSSH {
+                        address: address.clone(),
+                        auth_method,
+                        credential,
+                        pane,
+                    });
+                    self.overlay.close_all();
+                    self.status_message = format!("connecting to {}", address);
+                }
+            }
+            Action::CloseSshConnect => {
+                self.overlay.close_all();
+                self.status_message = String::from("SSH connection cancelled");
+            }
             _ => {}
         }
 

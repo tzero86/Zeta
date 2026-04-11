@@ -80,11 +80,16 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     } else {
         String::new()
     };
+    let cwd_display = if pane.in_remote() {
+        pane.remote_address().unwrap_or("unknown")
+    } else {
+        &pane.cwd.display().to_string()
+    };
     let title = format!(
         "{} [{}]  {}{}{}  ({})",
         label,
         pane.entries.len(),
-        pane.cwd.display(),
+        cwd_display,
         branch,
         diff_legend,
         pane.sort_mode.label()
