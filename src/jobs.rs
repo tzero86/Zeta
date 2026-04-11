@@ -76,6 +76,10 @@ pub struct FileOpRequest {
     pub operation: FileOperation,
     pub refresh: Vec<RefreshTarget>,
     pub collision: CollisionPolicy,
+    /// Source session for cross-backend operations
+    pub src_session: Option<SessionId>,
+    /// Destination session for cross-backend operations
+    pub dst_session: Option<SessionId>,
 }
 
 #[derive(Clone, Debug)]
@@ -581,13 +585,40 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             }
                         }
                         SftpRequest::FileOp(req) => {
-                            // TODO: Implement cross-backend file operations
-                            let _ = result_tx.send(JobResult::JobFailed {
-                                pane: req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left),
-                                path: PathBuf::new(),
-                                message: "Cross-backend file operations not yet implemented".to_string(),
-                                elapsed_ms: 0,
-                            });
+                            // Handle cross-backend file operations
+                            let started_at = Instant::now();
+                            let pane = req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left);
+                            
+                            // Get source and destination backends
+                            let src_backend = req.src_session.as_ref()
+                                .and_then(|id| sessions.get(id));
+                            let dst_backend = req.dst_session.as_ref()
+                                .and_then(|id| sessions.get(id))
+                                .or_else(|| src_backend); // Same session for remote→remote
+                            
+                            let result = execute_sftp_file_op(
+                                &req.operation,
+                                src_backend,
+                                dst_backend,
+                                req.collision,
+                                &result_tx,
+                                pane,
+                            );
+                            
+                            let job_result = match result {
+                                Ok(msg) => JobResult::FileOperationCompleted {
+                                    message: msg,
+                                    refreshed: vec![],
+                                    elapsed_ms: started_at.elapsed().as_millis(),
+                                },
+                                Err((path, msg)) => JobResult::JobFailed {
+                                    pane,
+                                    path,
+                                    message: msg,
+                                    elapsed_ms: started_at.elapsed().as_millis(),
+                                },
+                            };
+                            let _ = result_tx.send(job_result);
                         }
                     }
                 }
@@ -792,6 +823,54 @@ fn connect_sftp(
         .map_err(|e| format!("Failed to initialize SFTP: {}", e))?;
     
     Ok((session_id, backend))
+}
+
+/// Execute a file operation with SFTP backends (cross-backend support)
+fn execute_sftp_file_op(
+    operation: &FileOperation,
+    src_backend: Option<&crate::fs::sftp::SftpBackend>,
+    dst_backend: Option<&crate::fs::sftp::SftpBackend>,
+    _collision: CollisionPolicy,
+    _result_tx: &Sender<JobResult>,
+    _pane: crate::pane::PaneId,
+) -> Result<String, (PathBuf, String)> {
+    use crate::fs::backend::FsBackend;
+    
+    match operation {
+        FileOperation::Copy { source, destination } => {
+            // Cross-backend copy: read from source, write to destination
+            let contents = if let Some(backend) = src_backend {
+                backend.read_file(source)
+                    .map_err(|e| (source.clone(), e.to_string()))?
+            } else {
+                // Local source
+                std::fs::read(source)
+                    .map_err(|e| (source.clone(), e.to_string()))?
+            };
+            
+            if let Some(backend) = dst_backend {
+                backend.write_file(destination, &contents)
+                    .map_err(|e| (destination.clone(), e.to_string()))?;
+            } else {
+                // Local destination
+                std::fs::write(destination, &contents)
+                    .map_err(|e| (destination.clone(), e.to_string()))?;
+            }
+            
+            Ok(format!("Copied {} to {}", source.display(), destination.display()))
+        }
+        FileOperation::Delete { path } => {
+            if let Some(backend) = src_backend {
+                backend.delete_path(path)
+                    .map_err(|e| (path.clone(), e.to_string()))?;
+            } else {
+                std::fs::remove_file(path)
+                    .map_err(|e| (path.clone(), e.to_string()))?;
+            }
+            Ok(format!("Deleted {}", path.display()))
+        }
+        _ => Err((PathBuf::new(), "Operation not yet implemented for SFTP".to_string())),
+    }
 }
 
 #[allow(clippy::result_large_err)]
@@ -1256,6 +1335,8 @@ mod tests {
             operation: FileOperation::ExtractArchive { archive: archive_path.clone(), inner_path: std::path::PathBuf::new(), destination: outdir.clone() },
             refresh: vec![],
             collision: CollisionPolicy::Fail,
+            src_session: None,
+            dst_session: None,
         }).unwrap();
 
         loop {

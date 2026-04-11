@@ -197,6 +197,44 @@ impl App {
         Ok(())
     }
 
+    /// Determine source and destination sessions for a file operation based on
+    /// which panes the paths belong to
+    fn determine_backends_for_operation(
+        &self,
+        operation: &crate::action::FileOperation,
+    ) -> (Option<crate::jobs::SessionId>, Option<crate::jobs::SessionId>) {
+        use crate::action::FileOperation;
+
+        let (src_path, dst_path): (Option<&std::path::Path>, Option<&std::path::Path>) = match operation {
+            FileOperation::Copy { source, destination } => (Some(source), Some(destination)),
+            FileOperation::Move { source, destination } => (Some(source), Some(destination)),
+            FileOperation::Rename { source, destination } => (Some(source), Some(destination)),
+            FileOperation::Delete { path } => (Some(path), None),
+            FileOperation::Trash { path } => (Some(path), None),
+            FileOperation::CreateDirectory { path } => (None, Some(path)),
+            FileOperation::CreateFile { path } => (None, Some(path)),
+            FileOperation::ExtractArchive { archive, destination, .. } => (Some(archive), Some(destination)),
+        };
+
+        let get_session = |path: Option<&std::path::Path>| {
+            path.and_then(|_p| {
+                // Check if path is in a remote pane's working directory
+                // For now, we use a simple heuristic: paths that look like they
+                // belong to a remote pane based on cwd
+                let pane = self.state.panes.active_pane();
+                if pane.in_remote() {
+                    // Use the current active pane's remote session
+                    pane.remote_address()
+                        .map(|addr| format!("{}", addr))
+                } else {
+                    None
+                }
+            })
+        };
+
+        (get_session(src_path), get_session(dst_path))
+    }
+
     fn execute_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::OpenEditor { path } => {
@@ -238,11 +276,38 @@ impl App {
                 operation,
                 refresh,
                 collision,
-            } => self
-                .workers
-                .file_op_tx
-                .send(FileOpRequest { operation, backend: crate::jobs::BackendRef::Local, refresh, collision })
-                .context("failed to queue background file operation")?,
+            } => {
+                // Determine source and destination backends from file paths
+                // and pane modes
+                let (src_session, dst_session) = self.determine_backends_for_operation(&operation);
+                
+                // If either side is remote, we need SFTP
+                if src_session.is_some() || dst_session.is_some() {
+                    self.workers
+                        .sftp_tx
+                        .send(jobs::SftpRequest::FileOp(jobs::SftpFileOpRequest {
+                            operation: operation.clone(),
+                            src_session: src_session.clone(),
+                            dst_session: dst_session.clone(),
+                            refresh: refresh.clone(),
+                            collision,
+                        }))
+                        .context("failed to queue SFTP file operation")?;
+                } else {
+                    // Pure local operation
+                    self.workers
+                        .file_op_tx
+                        .send(FileOpRequest {
+                            operation,
+                            backend: crate::jobs::BackendRef::Local,
+                            refresh,
+                            collision,
+                            src_session: None,
+                            dst_session: None,
+                        })
+                        .context("failed to queue background file operation")?;
+                }
+            }
             Command::ScanPane { pane, path } => {
                 // Check if pane is in remote mode and route to SFTP
                 if let Some(address) = self.state.panes.pane(pane).remote_address() {
