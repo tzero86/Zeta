@@ -89,6 +89,7 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
         MenuId::Navigate => vec![
             MenuItem { label: "Open Directory", shortcut: "Enter", mnemonic: 'o', action: Action::EnterSelection },
             MenuItem { label: "Parent Directory", shortcut: "Backspace", mnemonic: 'p', action: Action::NavigateToParent },
+            MenuItem { label: "Connect SSH...", shortcut: "Ctrl+R", mnemonic: 'c', action: Action::OpenSshConnect },
             MenuItem { label: "Add Bookmark", shortcut: "Ctrl+B", mnemonic: 'b', action: Action::AddBookmark },
             MenuItem { label: "Show Bookmarks", shortcut: "Ctrl+Shift+B", mnemonic: 'k', action: Action::OpenBookmarks },
             MenuItem { label: "Refresh", shortcut: "r", mnemonic: 'r', action: Action::Refresh },
