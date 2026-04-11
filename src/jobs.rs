@@ -1099,6 +1099,7 @@ mod tests {
 
         let (workers, results) = spawn_workers();
         workers.file_op_tx.send(FileOpRequest {
+            backend: BackendRef::Local,
             operation: FileOperation::ExtractArchive { archive: archive_path.clone(), inner_path: std::path::PathBuf::new(), destination: outdir.clone() },
             refresh: vec![],
             collision: CollisionPolicy::Fail,
