@@ -720,6 +720,44 @@ impl AppState {
                     self.status_message = format!("connecting to {}", address);
                 }
             }
+            Action::SshDialogInput(ch) => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => state.address.push(*ch),
+                        crate::state::ssh::SshDialogField::Credential => state.credential.push(*ch),
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogBackspace => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => {
+                            state.address.pop();
+                        }
+                        crate::state::ssh::SshDialogField::Credential => {
+                            state.credential.pop();
+                        }
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogToggleField => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.focused_field = match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => crate::state::ssh::SshDialogField::Credential,
+                        crate::state::ssh::SshDialogField::Credential => crate::state::ssh::SshDialogField::Address,
+                    };
+                }
+            }
+            Action::SshDialogToggleAuthMethod => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.auth_method = match state.auth_method {
+                        crate::state::ssh::SshAuthMethod::Password => crate::state::ssh::SshAuthMethod::KeyFile,
+                        crate::state::ssh::SshAuthMethod::KeyFile => crate::state::ssh::SshAuthMethod::Password,
+                    };
+                }
+            }
             Action::CloseSshConnect => {
                 self.overlay.close_all();
                 self.status_message = String::from("SSH connection cancelled");
@@ -1002,6 +1040,9 @@ impl AppState {
         }
         if self.is_settings_open() {
             return FocusLayer::Modal(ModalKind::Settings);
+        }
+        if self.ssh_connect().is_some() {
+            return FocusLayer::Modal(ModalKind::SshConnect);
         }
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);

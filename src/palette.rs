@@ -160,6 +160,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::OpenNewDirectoryPrompt,
         },
         PaletteEntry {
+            category: "File Ops",
+            label: "Connect via SSH",
+            hint: "ssh",
+            action: Action::OpenSshConnect,
+        },
+        PaletteEntry {
             category: "System",
             label: "Open shell in current directory",
             hint: "F2",
