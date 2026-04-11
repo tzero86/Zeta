@@ -10,7 +10,8 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
     copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
-    looks_like_binary, rename_path, scan_directory, trash_path, EntryInfo, FileSystemError,
+    looks_like_binary, rename_path, trash_path, EntryInfo, FileSystemError,
+    backend::FsBackend, local::LocalBackend,
 };
 use crate::pane::PaneId;
 
@@ -185,7 +186,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .spawn(move || {
                 for req in scan_rx {
                     let started_at = Instant::now();
-                    let job_result = match scan_directory(&req.path) {
+                    let backend = LocalBackend;
+                    let job_result = match backend.scan_directory(&req.path) {
                         Ok(entries) => JobResult::DirectoryScanned {
                             pane: req.pane,
                             path: req.path,
@@ -682,8 +684,9 @@ fn run_file_operation(
     }
 
     let mut refreshed = Vec::with_capacity(refresh.len());
+    let backend = LocalBackend;
     for target in refresh {
-        match scan_directory(&target.path) {
+        match backend.scan_directory(&target.path) {
             Ok(entries) => refreshed.push(RefreshedPane {
                 pane: target.pane,
                 path: target.path,
