@@ -241,7 +241,7 @@ impl App {
             } => self
                 .workers
                 .file_op_tx
-                .send(FileOpRequest { operation, refresh, collision })
+                .send(FileOpRequest { operation, backend: crate::jobs::BackendRef::Local, refresh, collision })
                 .context("failed to queue background file operation")?,
             Command::ScanPane { pane, path } => {
                 self.workers

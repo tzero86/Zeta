@@ -27,6 +27,12 @@ pub struct ArchiveListRequest {
 }
 
 #[derive(Clone, Debug)]
+pub enum BackendRef {
+    Local,
+    Remote { address: String },
+}
+
+#[derive(Clone, Debug)]
 pub struct ScanRequest {
     pub pane: PaneId,
     pub path: PathBuf,
@@ -34,6 +40,7 @@ pub struct ScanRequest {
 
 #[derive(Clone, Debug)]
 pub struct FileOpRequest {
+    pub backend: BackendRef,
     pub operation: FileOperation,
     pub refresh: Vec<RefreshTarget>,
     pub collision: CollisionPolicy,
