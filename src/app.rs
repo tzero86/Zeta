@@ -224,8 +224,7 @@ impl App {
                 let pane = self.state.panes.active_pane();
                 if pane.in_remote() {
                     // Use the current active pane's remote session
-                    pane.remote_address()
-                        .map(|addr| format!("{}", addr))
+                    pane.remote_address().map(|addr| addr.to_string())
                 } else {
                     None
                 }
