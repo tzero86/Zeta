@@ -1,477 +1,1185 @@
-mod bookmarks;
-mod code_view;
-mod editor;
-mod finder;
-mod menu_bar;
-pub mod markdown;
-mod overlay;
-mod palette;
-mod pane;
-mod preview;
-mod settings;
-mod styles;
-pub mod ssh;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Instant;
+use std::io::Read;
 
-pub mod layout_cache;
-pub use layout_cache::LayoutCache;
+use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
-use ratatui::Frame;
+use crossbeam_channel::{bounded, Receiver, Sender};
 
-use crate::pane::PaneId;
-use crate::state::{AppState, PaneLayout};
-use crate::ui::bookmarks::render_bookmarks_modal;
-use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
-use crate::ui::finder::render_file_finder;
-use crate::ui::ssh::render_ssh_connect_dialog;</parameter
-use crate::ui::markdown::render_markdown_preview;
-use crate::ui::menu_bar::render_menu_bar;
-use crate::ui::overlay::{
-    menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
+use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
+use crate::fs::{
+    copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
+    looks_like_binary, rename_path, trash_path, EntryInfo, FileSystemError,
+    backend::FsBackend, local::LocalBackend,
 };
-use crate::ui::palette::render_command_palette;
-use crate::ui::pane::{render_pane, RenderPaneArgs};
-use crate::ui::preview::render_preview_panel;
-use crate::ui::settings::render_settings_panel;
+use crate::pane::PaneId;
 
-use ratatui::widgets::Borders;
+// ---------------------------------------------------------------------------
+// Public request types — one per worker
+// ---------------------------------------------------------------------------
 
-/// Render the full TUI. Returns a `LayoutCache` recording each panel's `Rect`
-/// so the event loop can use it for mouse hit-testing without re-running layout.
-pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
-    let palette = state.theme().palette;
-    let areas = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
-        .split(frame.area());
+#[derive(Clone, Debug)]
+pub struct ArchiveListRequest {
+    pub pane: PaneId,
+    pub archive_path: PathBuf,
+    pub inner_path: PathBuf, // for navigating inside nested directories in the archive
+}
 
-    render_menu_bar(frame, areas[0], state, palette);
+#[derive(Clone, Debug)]
+pub struct ScanRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
+}
 
-    let pane_direction = match state.pane_layout() {
-        PaneLayout::SideBySide => Direction::Horizontal,
-        PaneLayout::Stacked => Direction::Vertical,
-    };
+#[derive(Clone, Debug)]
+pub struct FileOpRequest {
+    pub operation: FileOperation,
+    pub refresh: Vec<RefreshTarget>,
+    pub collision: CollisionPolicy,
+}
 
-    let is_preview_open = state.is_preview_panel_open();
-    let has_editor = state.editor().is_some();
-    let editor_fullscreen = has_editor && state.is_editor_fullscreen();
-    let show_md_preview = has_editor && state.is_markdown_preview_visible();
-    let pane_navigation_mode = matches!(state.focus_layer(), crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter);
-    let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
-    let show_tools = has_editor || is_preview_open;
+#[derive(Clone, Debug)]
+pub struct PreviewRequest {
+    pub path: PathBuf,
+    pub syntect_theme: String,
+    pub archive: Option<PathBuf>,
+    pub inner_path: Option<PathBuf>,
+}
 
-    let tools_pct = if has_editor { 50u16 } else { 40u16 };
-    let panes_pct = 100 - tools_pct;
+#[derive(Clone, Debug)]
+pub struct EditorLoadRequest {
+    pub path: PathBuf,
+}
 
-    let (pane_area, tools_area_opt) = if editor_fullscreen {
-        (Rect::default(), Some(areas[1]))
-    } else if show_tools {
-        let vertical = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(panes_pct),
-                Constraint::Percentage(tools_pct),
-            ])
-            .split(areas[1]);
-        (vertical[0], Some(vertical[1]))
-    } else {
-        (areas[1], None)
-    };
+#[derive(Clone, Debug)]
+pub struct GitStatusRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
+}
 
-    let mut left_pane_rect = Rect::default();
-    let mut right_pane_rect = Rect::default();
-    let mut editor_panel_rect = None;
-    let mut file_preview_panel_rect = None;
-    let mut markdown_preview_panel_rect = None;
+#[derive(Clone, Debug)]
+pub struct FindRequest {
+    pub pane: PaneId,
+    pub root: PathBuf,
+    pub max_depth: usize,
+}
 
-    if !editor_fullscreen {
-        let panes = Layout::default()
-            .direction(pane_direction)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(pane_area);
+#[derive(Clone, Debug)]
+pub struct WatchRequest {
+    pub paths: Vec<PathBuf>,
+}
 
-        left_pane_rect = panes[0];
-        right_pane_rect = panes[1];
+// ---------------------------------------------------------------------------
+// Result types (unchanged public surface)
+// ---------------------------------------------------------------------------
 
-        let left_focused = state.focus() == PaneId::Left;
-        let right_focused = state.focus() == PaneId::Right;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum JobResult {
+    DirectoryScanned {
+        pane: PaneId,
+        path: PathBuf,
+        entries: Vec<EntryInfo>,
+        elapsed_ms: u128,
+    },
+    ArchiveListed {
+        pane: PaneId,
+        archive_path: PathBuf,
+        inner_path: PathBuf,
+        entries: Vec<EntryInfo>,
+        elapsed_ms: u128,
+    },
+    FileOperationCompleted {
+        message: String,
+        refreshed: Vec<RefreshedPane>,
+        elapsed_ms: u128,
+    },
+    FileOperationCollision {
+        operation: FileOperation,
+        refresh: Vec<RefreshTarget>,
+        path: PathBuf,
+        elapsed_ms: u128,
+    },
+    FileOperationProgress {
+        status: FileOperationStatus,
+    },
+    JobFailed {
+        pane: PaneId,
+        path: PathBuf,
+        message: String,
+        elapsed_ms: u128,
+    },
+    PreviewLoaded {
+        path: PathBuf,
+        view: crate::preview::ViewBuffer,
+    },
+    EditorLoaded {
+        path: PathBuf,
+        contents: String,
+    },
+    EditorLoadFailed {
+        path: PathBuf,
+        message: String,
+    },
+    /// Git status fetched successfully for a pane's working directory.
+    GitStatusLoaded {
+        pane: PaneId,
+        status: crate::git::RepoStatus,
+    },
+    /// The path is not inside a git repository (or git is not available).
+    GitStatusAbsent {
+        pane: PaneId,
+    },
+    FindResults {
+        pane: PaneId,
+        root: PathBuf,
+        entries: Vec<PathBuf>,
+    },
+    DirectoryChanged {
+        path: PathBuf,
+    },
+}
 
-        let is_stacked = state.pane_layout() == PaneLayout::Stacked;
-        let (first_label, second_label) = if is_stacked {
-            ("Top", "Bottom")
-        } else {
-            ("Left", "Right")
-        };
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RefreshedPane {
+    pub pane: PaneId,
+    pub path: PathBuf,
+    pub entries: Vec<EntryInfo>,
+}
 
-        render_pane(
-            frame,
-            panes[0],
-            RenderPaneArgs {
-                pane: state.left_pane(),
-                label: first_label,
-                is_focused: left_focused,
-                is_left: true,
-                borders: Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-                state,
-                git: state.git_status(PaneId::Left),
-            },
-        );
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FileOperationStatus {
+    pub operation: &'static str,
+    pub completed: u64,
+    pub total: u64,
+    pub current_path: PathBuf,
+}
 
-        render_pane(
-            frame,
-            panes[1],
-            RenderPaneArgs {
-                pane: state.right_pane(),
-                label: second_label,
-                is_focused: right_focused,
-                is_left: false,
-                borders: Borders::ALL,
-                state,
-                git: state.git_status(PaneId::Right),
-            },
-        );
-    }
+// ---------------------------------------------------------------------------
+// Worker channels
+// ---------------------------------------------------------------------------
 
-    if let Some(tools_area) = tools_area_opt {
-        if has_editor {
-            let editor_focused = state.is_editor_focused();
-            let editor_loading = state.is_editor_loading();
-            let md_focused = state.is_markdown_preview_focused();
-            let md_scroll = state.markdown_preview_scroll();
-            let replace_active = state.editor.replace_active;
-            let replace_query = state.editor.replace_query.clone();
-            let syntect_theme = state.theme().palette.syntect_theme;
-            let (editor_area, md_area_opt) = if show_md_preview {
-                let halves = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Percentage(50),
-                        Constraint::Percentage(50),
-                    ])
-                    .split(tools_area);
-                (halves[0], Some(halves[1]))
-            } else {
-                (tools_area, None)
-            };
-            editor_panel_rect = Some(editor_area);
-            markdown_preview_panel_rect = md_area_opt;
+/// Three typed senders — one per dedicated worker thread.
+pub struct WorkerChannels {
+    pub scan_tx:    Sender<ScanRequest>,
+    pub file_op_tx: Sender<FileOpRequest>,
+    pub preview_tx: Sender<PreviewRequest>,
+    pub editor_tx:  Sender<EditorLoadRequest>,
+    pub git_tx:     Sender<GitStatusRequest>,
+    pub find_tx:    Sender<FindRequest>,
+    pub watch_tx:   Sender<WatchRequest>,
+    pub archive_tx: Sender<ArchiveListRequest>,
+}
 
-            if let Some(editor) = state.editor_mut() {
-                let editor_view = editor_render_state(editor, editor_area, editor_focused);
-                render_editor(
-                    frame,
-                    editor_area,
-                    RenderEditorArgs {
-                        editor,
-                        render_state: &editor_view,
-                        is_focused: editor_focused,
-                        palette,
-                        syntect_theme,
-                        replace_active,
-                        replace_query: &replace_query,
-                        loading: editor_loading,
-                        cheap_mode: cheap_tools_mode && !editor_focused,
-                    },
-                );
+/// Spawn three dedicated background workers that all fan results into a single
+/// `Receiver<JobResult>`. Each worker processes its queue sequentially; because
+/// the queues are independent, a slow file operation never delays a scan.
+pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
+    let (result_tx, result_rx) = bounded::<JobResult>(64);
 
-                if let Some(md_area) = md_area_opt {
-                    let source = editor.contents();
-                    if cheap_tools_mode && !md_focused {
-                        let text = source
-                            .lines()
-                            .take(md_area.height.saturating_sub(2) as usize)
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        let block = ratatui::widgets::Block::default()
-                            .title(" Markdown Preview ")
-                            .borders(ratatui::widgets::Borders::ALL)
-                            .border_style(ratatui::style::Style::default().fg(palette.text_muted))
-                            .style(ratatui::style::Style::default().bg(palette.tools_bg));
-                        let inner = block.inner(md_area);
-                        frame.render_widget(block, md_area);
-                        frame.render_widget(
-                            ratatui::widgets::Paragraph::new(text)
-                                .style(ratatui::style::Style::default().bg(palette.tools_bg)),
-                            inner,
-                        );
-                    } else {
-                        render_markdown_preview(
-                            frame,
-                            md_area,
-                            &source,
-                            palette,
-                            md_scroll,
-                            md_focused,
-                        );
+    // --- Scan worker ---
+    let (scan_tx, scan_rx) = bounded::<ScanRequest>(16);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-scan".into())
+            .spawn(move || {
+                for req in scan_rx {
+                    let started_at = Instant::now();
+                    let backend = LocalBackend;
+                    let job_result = match backend.scan_directory(&req.path) {
+                        Ok(entries) => JobResult::DirectoryScanned {
+                            pane: req.pane,
+                            path: req.path,
+                            entries,
+                            elapsed_ms: started_at.elapsed().as_millis(),
+                        },
+                        Err(err) => JobResult::JobFailed {
+                            pane: req.pane,
+                            path: req.path,
+                            message: err.to_string(),
+                            elapsed_ms: started_at.elapsed().as_millis(),
+                        },
+                    };
+                    if result_tx.send(job_result).is_err() {
+                        break;
                     }
                 }
-            }
-        } else if is_preview_open {
-            let preview_view = state.preview_view().map(|(_, view)| view);
-            let filename = state.active_pane_title().to_string();
-            file_preview_panel_rect = Some(tools_area);
-            render_preview_panel(
-                frame,
-                tools_area,
-                preview_view,
-                &filename,
-                state.is_preview_focused(),
-                palette,
-                cheap_tools_mode && !state.is_preview_focused(),
-            );
-        }
+            })
+            .expect("failed to spawn scan worker");
     }
 
-    let mut menu_popup_rect: Option<Rect> = None;
-    if let Some(menu) = state.active_menu() {
-        let item_count = state.menu_items().len();
-        let editor_menu_mode = state.is_editor_fullscreen() && state.editor().is_some();
-        let mut popup_x = areas[0].x + 1;
-        let mut cursor = areas[0].x + 8;
-        for tab in crate::state::menu_tabs(editor_menu_mode) {
-            if tab.id == menu {
-                popup_x = cursor;
-                break;
+    // --- File operation worker ---
+    let (file_op_tx, file_op_rx) = bounded::<FileOpRequest>(8);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-file-op".into())
+            .spawn(move || {
+                for req in file_op_rx {
+                    let outcome = run_file_operation(
+                        req.operation,
+                        req.refresh,
+                        req.collision,
+                        &result_tx,
+                    );
+                    let job_result = match outcome {
+                        Ok(r) | Err(r) => r,
+                    };
+                    if result_tx.send(job_result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn file-op worker");
+    }
+
+    // --- Preview worker ---
+    let (preview_tx, preview_rx) = bounded::<PreviewRequest>(8);
+    {
+        let result_tx_preview = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-preview".into())
+            .spawn(move || {
+                for req in preview_rx {
+                    let view = if req.archive.is_none() {
+                        load_preview_content(&req.path, &req.syntect_theme)
+                    } else if let (Some(archive_path), Some(inner_path)) = (req.archive.clone(), req.inner_path.clone()) {
+                        // Attempt to extract single file from archive into memory
+                        match std::fs::File::open(&archive_path) {
+                            Ok(f) => {
+                                let name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                if name.ends_with(".zip") {
+                                    match zip::ZipArchive::new(f) {
+                                        Ok(mut za) => {
+                                            let inner_name = inner_path.to_string_lossy();
+                                            match za.by_name(&inner_name) {
+                                                Ok(mut entry) => {
+                                                    let mut buf = Vec::new();
+                                                    use std::io::Read;
+                                                    let _ = entry.read_to_end(&mut buf);
+                                                    load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme)
+                                                }
+                                                Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                            }
+                                        }
+                                        Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                    }
+                                } else {
+                                    // Try tar variants with decompression based on extension
+                                    let archive_reader: Box<dyn std::io::Read> = if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+                                        Box::new(flate2::read::GzDecoder::new(f))
+                                    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+                                        Box::new(bzip2::read::BzDecoder::new(f))
+                                    } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+                                        Box::new(xz2::read::XzDecoder::new(f))
+                                    } else {
+                                        Box::new(f)
+                                    };
+                                    let mut ar = tar::Archive::new(archive_reader);
+                                    let mut found = None;
+                                    if let Ok(entries) = ar.entries() {
+                                        for mut e in entries.flatten() {
+                                            if let Ok(path) = e.path() {
+                                                if path == inner_path {
+                                                    let mut buf = Vec::new();
+                                                    let _ = e.read_to_end(&mut buf);
+                                                    found = Some(buf);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(buf) = found { load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme) } else { crate::preview::ViewBuffer::from_plain("[empty file]") }
+                                }
+                            }
+                            Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                        }
+                    } else {
+                        load_preview_content(&req.path, &req.syntect_theme)
+                    };
+                    if result_tx_preview
+                        .send(JobResult::PreviewLoaded { path: req.path, view })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn preview worker");
+    }
+
+    // --- Editor load worker ---
+    let (editor_tx, editor_rx) = bounded::<EditorLoadRequest>(4);
+    {
+        let result_tx_editor = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-editor-load".into())
+            .spawn(move || {
+                for req in editor_rx {
+                    let result = match std::fs::read(&req.path) {
+                        Ok(bytes) => JobResult::EditorLoaded {
+                            path: req.path,
+                            contents: String::from_utf8_lossy(&bytes).into_owned(),
+                        },
+                        Err(error) => JobResult::EditorLoadFailed {
+                            path: req.path,
+                            message: error.to_string(),
+                        },
+                    };
+                    if result_tx_editor.send(result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn editor load worker");
+    }
+
+    // --- Git status worker ---
+    let (git_tx, git_rx) = bounded::<GitStatusRequest>(16);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-git".into())
+            .spawn(move || {
+                for req in git_rx {
+                    let result = match crate::git::fetch_status(&req.path) {
+                        Some(status) => JobResult::GitStatusLoaded { pane: req.pane, status },
+                        None         => JobResult::GitStatusAbsent { pane: req.pane },
+                    };
+                    if result_tx.send(result).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn git worker");
+    }
+
+    // --- Finder worker ---
+    let (find_tx, find_rx) = bounded::<FindRequest>(8);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-find".into())
+            .spawn(move || {
+                for req in find_rx {
+                    let entries = walk_for_files(&req.root, req.max_depth);
+                    if result_tx
+                        .send(JobResult::FindResults {
+                            pane: req.pane,
+                            root: req.root,
+                            entries,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn finder worker");
+    }
+
+    // --- Watcher worker ---
+    let (watch_tx, watch_rx) = bounded::<WatchRequest>(8);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-watch".into())
+            .spawn(move || run_watcher_worker(watch_rx, result_tx))
+            .expect("failed to spawn watcher worker");
+    }
+
+    // --- Archive worker ---
+    let (archive_tx, archive_rx) = bounded::<ArchiveListRequest>(4);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-archive".into())
+            .spawn(move || {
+                for req in archive_rx {
+                    let started_at = std::time::Instant::now();
+                    let archive_path = req.archive_path.clone();
+
+                    // Try ZIP first (open a fresh file handle by path).
+                    if let Ok(zip_file) = std::fs::File::open(&archive_path) {
+                        if let Ok(mut archive) = zip::ZipArchive::new(zip_file) {
+                            let mut seen = std::collections::BTreeSet::new();
+                            let mut entries: Vec<EntryInfo> = Vec::new();
+                            let inner = req.inner_path.to_string_lossy().replace("\\", "/");
+                            let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+
+                            for i in 0..archive.len() {
+                                if let Ok(file) = archive.by_index(i) {
+                                    let name = file.name().to_string();
+                                    let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
+                                    if rest.is_empty() { continue; }
+                                    let first = rest.split('/').next().unwrap().to_string();
+                                    if !seen.insert(first.clone()) { continue; }
+                                    let is_dir = rest.contains('/') || name.ends_with('/');
+                                    let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
+                                    let size_bytes = if kind == crate::fs::EntryKind::File { Some(file.size()) } else { None };
+                                    entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                                }
+                            }
+
+                            entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                            let _ = result_tx.send(JobResult::ArchiveListed {
+                                pane: req.pane,
+                                archive_path: archive_path.clone(),
+                                inner_path: req.inner_path,
+                                entries,
+                                elapsed_ms: started_at.elapsed().as_millis(),
+                            });
+                            continue; // done for this request
+                        }
+                    }
+
+                    // Fall back to tar variants (plain tar, tar.gz, tar.bz2, tar.xz).
+                    let ext_name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                    let tar_file = match std::fs::File::open(&archive_path) {
+                        Ok(f) => f,
+                        Err(err) => {
+                            let _ = result_tx.send(JobResult::JobFailed {
+                                pane: req.pane,
+                                path: archive_path,
+                                message: format!("failed to open archive: {err}"),
+                                elapsed_ms: started_at.elapsed().as_millis(),
+                            });
+                            continue;
+                        }
+                    };
+
+                    let reader: Box<dyn std::io::Read> = if ext_name.ends_with(".tar.gz") || ext_name.ends_with(".tgz") {
+                        Box::new(flate2::read::GzDecoder::new(tar_file))
+                    } else if ext_name.ends_with(".tar.bz2") || ext_name.ends_with(".tbz2") {
+                        Box::new(bzip2::read::BzDecoder::new(tar_file))
+                    } else if ext_name.ends_with(".tar.xz") || ext_name.ends_with(".txz") {
+                        Box::new(xz2::read::XzDecoder::new(tar_file))
+                    } else {
+                        Box::new(tar_file)
+                    };
+
+                    let mut ar = tar::Archive::new(reader);
+                    let mut seen = std::collections::BTreeSet::new();
+                    let mut entries: Vec<EntryInfo> = Vec::new();
+                    let inner = req.inner_path.to_string_lossy().replace("\\", "/");
+                    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+
+                    if let Ok(entries_iter) = ar.entries() {
+                        for entry in entries_iter.flatten() {
+                            if let Ok(path) = entry.path() {
+                                let name = path.to_string_lossy().to_string();
+                                let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
+                                if rest.is_empty() { continue; }
+                                let first = rest.split('/').next().unwrap().to_string();
+                                if !seen.insert(first.clone()) { continue; }
+                                let is_dir = rest.contains('/');
+                                let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
+                                let size_bytes = if kind == crate::fs::EntryKind::File { Some(entry.size()) } else { None };
+                                entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                            }
+                        }
+                    }
+
+                    entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                    let _ = result_tx.send(JobResult::ArchiveListed {
+                        pane: req.pane,
+                        archive_path,
+                        inner_path: req.inner_path,
+                        entries,
+                        elapsed_ms: started_at.elapsed().as_millis(),
+                    });
+                }
+            })
+            .expect("failed to spawn archive worker");
+    }
+
+    (
+        WorkerChannels {
+            scan_tx,
+            file_op_tx,
+            preview_tx,
+            editor_tx,
+            git_tx,
+            find_tx,
+            watch_tx,
+            archive_tx,
+            sftp_connect_tx,
+            sftp_scan_tx,
+            sftp_file_op_tx,
+        },</parameter
+        result_rx,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Internal worker logic
+// ---------------------------------------------------------------------------
+
+fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobResult>) {
+    use std::sync::mpsc;
+
+    let (notify_tx, notify_rx) = mpsc::channel();
+    let mut watcher = RecommendedWatcher::new(notify_tx, Config::default())
+        .expect("failed to create filesystem watcher");
+    let mut watched_paths: Vec<PathBuf> = Vec::new();
+
+    loop {
+        while let Ok(req) = watch_rx.try_recv() {
+            for path in &watched_paths {
+                let _ = watcher.unwatch(path);
             }
-            cursor += tab.label.len() as u16;
+            watched_paths.clear();
+            for path in req.paths {
+                if watched_paths.iter().all(|p| p != &path)
+                    && watcher.watch(&path, RecursiveMode::NonRecursive).is_ok()
+                {
+                    watched_paths.push(path);
+                }
+            }
         }
-        let rect = Rect {
-            x: popup_x,
-            y: areas[1].y,
-            width: menu_popup_width(&state.menu_items()),
-            height: item_count as u16 + 2,
+
+        while let Ok(event_result) = notify_rx.try_recv() {
+            let Ok(event) = event_result else {
+                continue;
+            };
+            for path in event.paths {
+                let changed_dir = if path.is_dir() {
+                    path
+                } else {
+                    path.parent().map(Path::to_path_buf).unwrap_or(path)
+                };
+                if result_tx
+                    .send(JobResult::DirectoryChanged { path: changed_dir })
+                    .is_err()
+                {
+                    return;
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    }
+}
+
+fn walk_for_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
+    let mut results = Vec::new();
+    walk_recursive(root, max_depth, &mut results);
+    results
+}
+
+fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+    if depth == 0 {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with('.') || matches!(name, "target" | "node_modules" | "__pycache__" | ".git") {
+            continue;
+        }
+        if path.is_dir() {
+            walk_recursive(&path, depth - 1, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
+fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
+    };
+    load_preview_from_bytes(&bytes, path, syntect_theme)
+}
+
+fn load_preview_from_bytes(bytes: &[u8], path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
+    if bytes.is_empty() {
+        return crate::preview::ViewBuffer::from_plain("[empty file]");
+    }
+
+    if looks_like_binary(bytes) {
+        let size_bytes = std::fs::metadata(path)
+            .map(|m| m.len())
+            .unwrap_or(bytes.len() as u64);
+        let label = format!("[binary file — {size_bytes} bytes]");
+        return crate::preview::ViewBuffer::from_plain(&label);
+    }
+
+    let text = String::from_utf8_lossy(bytes);
+    let extension = path.extension().and_then(|e| e.to_str());
+
+    // Markdown: store raw text for AST rendering at display time.
+    if extension == Some("md") {
+        return crate::preview::ViewBuffer::from_markdown(text.into_owned());
+    }
+
+    if let Some(lines) = crate::highlight::highlight_text(&text, extension, syntect_theme) {
+        return crate::preview::ViewBuffer::from_highlighted(lines);
+    }
+
+    // Fallback: truncate to 200 lines, capped at 200 × 80 chars.
+    let truncated: String = text
+        .lines()
+        .take(200)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .chars()
+        .take(200 * 80)
+        .collect();
+
+    crate::preview::ViewBuffer::from_plain(&truncated)
+}
+
+#[allow(clippy::result_large_err)]
+fn run_file_operation(
+    operation: FileOperation,
+    refresh: Vec<RefreshTarget>,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
+) -> Result<JobResult, JobResult> {
+    let started_at = Instant::now();
+    let operation_label = describe_operation(&operation);
+    let primary_path = primary_path(&operation);
+    let failure_pane = refresh
+        .first()
+        .map(|target| target.pane)
+        .unwrap_or(PaneId::Left);
+
+    let op_result = match &operation {
+        FileOperation::Copy { source, destination } => {
+            run_copy_with_progress(source, destination, collision, result_tx)
+        }
+        FileOperation::CreateDirectory { path } => create_directory(path, collision),
+        FileOperation::CreateFile { path } => create_file(path, collision),
+        FileOperation::Delete { path } => delete_path(path),
+        FileOperation::Trash { path } => trash_path(path),
+        FileOperation::Move { source, destination } => {
+            run_move_with_progress(source, destination, collision, result_tx)
+        }
+        FileOperation::Rename { source, destination } => rename_path(source, destination, collision),
+        FileOperation::ExtractArchive { archive, inner_path, destination } => {
+            run_extract_archive(archive, inner_path, destination, result_tx)
+        }
+    };
+
+    if let Err(error) = op_result {
+        return match error {
+            FileSystemError::PathExists { path } => Err(JobResult::FileOperationCollision {
+                operation,
+                refresh,
+                path: PathBuf::from(path),
+                elapsed_ms: started_at.elapsed().as_millis(),
+            }),
+            other => Err(JobResult::JobFailed {
+                pane: failure_pane,
+                path: primary_path,
+                message: other.to_string(),
+                elapsed_ms: started_at.elapsed().as_millis(),
+            }),
         };
-        menu_popup_rect = Some(rect);
-        render_menu_popup(
-            frame,
-            areas[1],
-            menu,
-            &state.menu_items(),
-            state.menu_selection(),
-            palette,
-            editor_menu_mode,
+    }
+
+    let mut refreshed = Vec::with_capacity(refresh.len());
+    let backend = LocalBackend;
+    for target in refresh {
+        match backend.scan_directory(&target.path) {
+            Ok(entries) => refreshed.push(RefreshedPane {
+                pane: target.pane,
+                path: target.path,
+                entries,
+            }),
+            Err(error) => {
+                return Err(JobResult::JobFailed {
+                    pane: target.pane,
+                    path: target.path,
+                    message: error.to_string(),
+                    elapsed_ms: started_at.elapsed().as_millis(),
+                });
+            }
+        }
+    }
+
+    Ok(JobResult::FileOperationCompleted {
+        message: operation_label,
+        refreshed,
+        elapsed_ms: started_at.elapsed().as_millis(),
+    })
+}
+
+fn run_copy_with_progress(
+    source: &Path,
+    destination: &Path,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    copy_path_with_progress(source, destination, collision, &mut |progress| {
+        let _ = send_progress_update(
+            result_tx,
+            "copy",
+            progress.completed,
+            progress.total,
+            progress.current_path,
         );
+    })
+}
+
+fn run_move_with_progress(
+    source: &Path,
+    destination: &Path,
+    collision: CollisionPolicy,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    match rename_path(source, destination, collision) {
+        Ok(()) => {
+            let _ = send_progress_update(result_tx, "move", 1, 1, destination.to_path_buf());
+            Ok(())
+        }
+        Err(error) if is_cross_device_error(&error) => {
+            let total = count_path_entries(source)?.saturating_add(1);
+            let _ = send_progress_update(result_tx, "move", 0, total, source.to_path_buf());
+
+            copy_path_with_progress(source, destination, collision, &mut |progress| {
+                let _ = send_progress_update(
+                    result_tx,
+                    "move",
+                    progress.completed,
+                    total,
+                    progress.current_path,
+                );
+            })?;
+
+            delete_path(source)?;
+            let _ =
+                send_progress_update(result_tx, "move", total, total, destination.to_path_buf());
+            Ok(())
+        }
+        Err(error) => Err(error),
     }
+}
 
-    if let Some(prompt) = state.prompt() {
-        render_prompt(frame, areas[1], prompt, palette);
+fn send_progress_update(
+    result_tx: &Sender<JobResult>,
+    operation: &'static str,
+    completed: u64,
+    total: u64,
+    current_path: PathBuf,
+) -> Result<(), ()> {
+    result_tx
+        .send(JobResult::FileOperationProgress {
+            status: FileOperationStatus {
+                operation,
+                completed,
+                total,
+                current_path,
+            },
+        })
+        .map_err(|_| ())
+}
+
+fn is_cross_device_error(error: &FileSystemError) -> bool {
+    matches!(
+        error,
+        FileSystemError::RenamePath { source, .. } if source.raw_os_error() == Some(EXDEV_ERROR)
+    )
+}
+
+#[cfg(unix)]
+const EXDEV_ERROR: i32 = 18;
+
+#[cfg(not(unix))]
+const EXDEV_ERROR: i32 = -1;
+
+fn primary_path(operation: &FileOperation) -> PathBuf {
+    match operation {
+        FileOperation::Copy { source, .. } => source.clone(),
+        FileOperation::CreateDirectory { path } => path.clone(),
+        FileOperation::CreateFile { path } => path.clone(),
+        FileOperation::Delete { path } => path.clone(),
+        FileOperation::Trash { path } => path.clone(),
+        FileOperation::Move { source, .. } => source.clone(),
+        FileOperation::Rename { source, .. } => source.clone(),
+        FileOperation::ExtractArchive { archive, .. } => archive.clone(),
     }
+}
 
-    if let Some(dialog) = state.dialog() {
-        render_dialog(frame, areas[1], dialog, palette);
+fn describe_operation(operation: &FileOperation) -> String {
+    match operation {
+        FileOperation::Copy { destination, .. } => format!("copied to {}", destination.display()),
+        FileOperation::CreateDirectory { path } => format!("created {}", path.display()),
+        FileOperation::CreateFile { path } => format!("created {}", path.display()),
+        FileOperation::Delete { path } => format!("deleted {}", path.display()),
+        FileOperation::Trash { path } => format!("trashed {}", path.display()),
+        FileOperation::Move { destination, .. } => format!("moved to {}", destination.display()),
+        FileOperation::Rename { destination, .. } => {
+            format!("renamed to {}", destination.display())
+        }
+        FileOperation::ExtractArchive { destination, .. } => {
+            format!("extracted to {}", destination.display())
+        }
     }
+}
 
-    if let Some(collision) = state.collision() {
-        render_collision_dialog(frame, areas[1], collision, palette);
-    }
+fn run_extract_archive(
+    archive: &Path,
+    inner_path: &Path,
+    destination: &Path,
+    result_tx: &Sender<JobResult>,
+) -> Result<(), FileSystemError> {
+    use std::io::Read;
 
-    if let Some(palette_state) = state.palette() {
-        render_command_palette(frame, areas[1], palette_state, palette);
-    }
+    // Open archive file
+    let file = std::fs::File::open(archive).map_err(|source| FileSystemError::CopyPath {
+        from: archive.display().to_string(),
+        to: destination.display().to_string(),
+        source,
+    })?;
 
-    if let Some(settings_state) = state.settings() {
-        render_settings_panel(frame, areas[1], settings_state, state, palette);
-    }
+    // Normalize inner path prefix with forward slashes
+    let inner = inner_path.to_string_lossy().replace("\\", "/");
+    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
 
-    if let Some(bookmarks_state) = state.bookmarks() {
-        render_bookmarks_modal(frame, areas[1], bookmarks_state, &state.config().bookmarks, palette);
-    }
+    let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let lower = name.to_lowercase();
 
-    if let Some(finder_state) = state.file_finder() {
-        render_file_finder(frame, areas[1], finder_state, palette);
+    if lower.ends_with(".zip") {
+        let mut zip = zip::ZipArchive::new(file).map_err(|e| FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })?;
 
-    if let Some(ssh_state) = state.ssh_connect() {
-        render_ssh_connect_dialog(frame, areas[1], ssh_state, &palette);
-    }
-    }
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let entry_name = entry.name().to_string();
+            if !prefix.is_empty() && !entry_name.starts_with(&prefix) {
+                continue;
+            }
+            let rel = if prefix.is_empty() { entry_name.as_str() } else { &entry_name[prefix.len()..] };
+            if rel.is_empty() { continue; }
 
-    let status = Paragraph::new(Line::raw(state.status_line())).style(
-        Style::default()
-            .fg(palette.status_fg)
-            .bg(palette.status_bg)
-            .add_modifier(Modifier::BOLD),
-    );
-    frame.render_widget(status, areas[2]);
+            let out_path = destination.join(rel);
+            if entry.name().ends_with('/') {
+                std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: parent.display().to_string(),
+                        source,
+                    })?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            }
+            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+        }
 
-    LayoutCache {
-        menu_bar: areas[0],
-        left_pane: left_pane_rect,
-        right_pane: right_pane_rect,
-        tools_panel: tools_area_opt,
-        editor_panel: editor_panel_rect,
-        file_preview_panel: file_preview_panel_rect,
-        markdown_preview_panel: markdown_preview_panel_rect,
-        status_bar: areas[2],
-        menu_popup: menu_popup_rect,
+        Ok(())
+    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        // support gzipped tars
+        let archive_reader: Box<dyn Read> = if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+            Box::new(flate2::read::GzDecoder::new(file))
+        } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
+            Box::new(bzip2::read::BzDecoder::new(file))
+        } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
+            Box::new(xz2::read::XzDecoder::new(file))
+        } else {
+            Box::new(file)
+        };
+        let mut ar = tar::Archive::new(archive_reader);
+        for entry in ar.entries().map_err(|e| FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other(e.to_string()),
+        })? {
+            let mut entry = entry.map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let path = entry.path().map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: std::io::Error::other(e.to_string()),
+            })?;
+            let path_str = path.to_string_lossy();
+            if !prefix.is_empty() && !path_str.starts_with(&prefix) {
+                continue;
+            }
+            let rel = if prefix.is_empty() { path_str.as_ref() } else { &path_str[prefix.len()..] };
+            if rel.is_empty() { continue; }
+            let out_path = destination.join(rel);
+            if entry.header().entry_type().is_dir() {
+                std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            } else {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: parent.display().to_string(),
+                        source,
+                    })?;
+                }
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
+                    from: archive.display().to_string(),
+                    to: out_path.display().to_string(),
+                    source,
+                })?;
+            }
+            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+        }
+        Ok(())
+    } else {
+        Err(FileSystemError::CopyPath {
+            from: archive.display().to_string(),
+            to: destination.display().to_string(),
+            source: std::io::Error::other("unsupported archive format"),
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::config::{IconMode, ThemePalette};
-    use crate::editor::EditorBuffer;
-    use crate::fs::EntryKind;
-    use crate::icon::icon_for_kind;
-    use crate::palette::all_entries;
-    use crate::preview::ViewBuffer;
-    use ratatui::layout::Rect;
-    use ratatui::style::{Color, Modifier};
+    use super::*;
 
-    use super::editor::editor_render_state;
-    use super::menu_bar::top_bar_logo_spans;
-    use super::pane::{format_icon_slot, pane_chrome_style};
-    use super::styles::{
-        command_palette_entry_hint_style, command_palette_entry_label_style,
-        command_palette_header_style, elevated_surface_style, overlay_title_style,
-    };
+    #[test]
+    fn git_worker_responds_to_request() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .git_tx
+            .send(GitStatusRequest { pane: PaneId::Left, path: tmp })
+            .unwrap();
+        let result = results
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                JobResult::GitStatusLoaded { pane: PaneId::Left, .. }
+                    | JobResult::GitStatusAbsent { pane: PaneId::Left }
+            ),
+            "unexpected result: {result:?}"
+        );
+    }
 
-    fn test_palette() -> ThemePalette {
-        ThemePalette {
-            menu_bg: Color::Rgb(10, 11, 12),
-            menu_fg: Color::Rgb(20, 21, 22),
-            menu_active_bg: Color::Rgb(30, 31, 32),
-            menu_mnemonic_fg: Color::Rgb(40, 41, 42),
-            border_focus: Color::Rgb(50, 51, 52),
-            border_editor_focus: Color::Rgb(60, 61, 62),
-            selection_bg: Color::Rgb(70, 71, 72),
-            selection_fg: Color::Rgb(80, 81, 82),
-            surface_bg: Color::Rgb(90, 91, 92),
-            tools_bg: Color::Rgb(100, 101, 102),
-            prompt_bg: Color::Rgb(110, 111, 112),
-            prompt_border: Color::Rgb(120, 121, 122),
-            text_primary: Color::Rgb(130, 131, 132),
-            text_muted: Color::Rgb(140, 141, 142),
-            directory_fg: Color::Rgb(150, 151, 152),
-            symlink_fg: Color::Rgb(160, 161, 162),
-            file_fg: Color::Rgb(170, 171, 172),
-            status_bg: Color::Rgb(180, 181, 182),
-            status_fg: Color::Rgb(190, 191, 192),
-            logo_accent: Color::Rgb(200, 201, 202),
-            key_hint_fg: Color::Rgb(210, 211, 212),
-            syntect_theme: "test",
+    #[test]
+    fn worker_channels_can_send_and_receive_scan_request() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Left, path: tmp })
+            .unwrap();
+        let result = results
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(
+            matches!(
+                result,
+                JobResult::DirectoryScanned { pane: PaneId::Left, .. }
+                    | JobResult::JobFailed { pane: PaneId::Left, .. }
+            ),
+            "unexpected result: {result:?}"
+        );
+    }
+
+    #[test]
+    fn finder_worker_returns_find_results() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+        workers
+            .find_tx
+            .send(FindRequest {
+                pane: PaneId::Left,
+                root: tmp,
+                max_depth: 2,
+            })
+            .unwrap();
+
+        loop {
+            let result = results
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            if matches!(result, JobResult::FindResults { pane: PaneId::Left, .. }) {
+                break;
+            }
         }
     }
 
     #[test]
-    fn unicode_icons_use_glyphs() {
-        assert_eq!(icon_for_kind(EntryKind::Directory, IconMode::Unicode), "▣");
-        assert_eq!(icon_for_kind(EntryKind::File, IconMode::Unicode), "•");
-        assert_eq!(icon_for_kind(EntryKind::Symlink, IconMode::Unicode), "↗");
-        assert_eq!(icon_for_kind(EntryKind::Other, IconMode::Unicode), "◦");
-    }
+    fn archive_worker_lists_zip_and_tar() {
+        use std::io::Write;
+        use zip::write::FileOptions;
 
-    #[test]
-    fn ascii_icons_use_labels() {
-        assert_eq!(icon_for_kind(EntryKind::Directory, IconMode::Ascii), "[D]");
-        assert_eq!(icon_for_kind(EntryKind::File, IconMode::Ascii), "[F]");
-        assert_eq!(icon_for_kind(EntryKind::Symlink, IconMode::Ascii), "[L]");
-        assert_eq!(icon_for_kind(EntryKind::Other, IconMode::Ascii), "[?]");
-    }
+        let tmpdir = tempfile::tempdir().unwrap();
+        let archive_path = tmpdir.path().join("test.zip");
 
-    #[test]
-    fn elevated_surface_uses_tools_bg() {
-        let p = test_palette();
-        let s = elevated_surface_style(p);
-        assert_eq!(s.bg, Some(p.tools_bg));
-    }
+        {
+            let file = std::fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"hello").unwrap();
+            zip.add_directory("dir/", FileOptions::default()).unwrap();
+            zip.start_file("dir/b.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"world").unwrap();
+            zip.finish().unwrap();
+        }
 
-    #[test]
-    fn overlay_title_is_bold_and_mnemonic_fg() {
-        let p = test_palette();
-        let s = overlay_title_style(p);
-        assert_eq!(s.fg, Some(p.menu_mnemonic_fg));
-        assert!(s.add_modifier.contains(Modifier::BOLD));
-    }
+        let (workers, results) = spawn_workers();
+        workers
+            .archive_tx
+            .send(ArchiveListRequest { pane: PaneId::Left, archive_path: archive_path.clone(), inner_path: std::path::PathBuf::new() })
+            .unwrap();
 
-    #[test]
-    fn pane_chrome_focused_uses_border_focus_color() {
-        let p = test_palette();
-        let chrome = pane_chrome_style(true, p);
-        assert_eq!(chrome.border.fg, Some(p.border_focus));
-    }
-
-    #[test]
-    fn top_bar_logo_has_five_spans() {
-        let p = test_palette();
-        let spans = top_bar_logo_spans(true, p);
-        assert_eq!(spans.len(), 5);
-        assert_eq!(spans[2].content, "Z");
-    }
-
-    #[test]
-    fn command_palette_selected_entry_uses_selection_bg() {
-        let p = test_palette();
-        let s = command_palette_entry_label_style(true, p);
-        assert_eq!(s.bg, Some(p.selection_bg));
-        assert!(s.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn command_palette_unselected_entry_uses_text_primary() {
-        let p = test_palette();
-        let s = command_palette_entry_label_style(false, p);
-        assert_eq!(s.fg, Some(p.text_primary));
-    }
-
-    #[test]
-    fn command_palette_header_is_muted_and_bold() {
-        let p = test_palette();
-        let s = command_palette_header_style(p);
-        assert_eq!(s.fg, Some(p.text_muted));
-        assert!(s.add_modifier.contains(Modifier::BOLD));
-    }
-
-    #[test]
-    fn command_palette_hint_uses_key_hint_fg() {
-        let p = test_palette();
-        let s = command_palette_entry_hint_style(p);
-        assert_eq!(s.fg, Some(p.key_hint_fg));
-    }
-
-    #[test]
-    fn icon_slot_unicode_appends_two_spaces() {
-        let slot = format_icon_slot("▣", IconMode::Unicode);
-        assert_eq!(slot, "▣  ");
-    }
-
-    #[test]
-    fn icon_slot_ascii_returns_icon_only() {
-        let slot = format_icon_slot("[D]", IconMode::Ascii);
-        assert_eq!(slot, "[D]");
-    }
-
-    #[test]
-    fn all_palette_entries_have_non_empty_labels() {
-        for entry in all_entries() {
-            assert!(!entry.label.is_empty(), "entry label is empty: {:?}", entry);
+        loop {
+            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            if let JobResult::ArchiveListed { pane, archive_path:ap, entries, .. } = res {
+                assert_eq!(pane, PaneId::Left);
+                assert_eq!(ap, archive_path);
+                let names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
+                assert!(names.contains(&"a.txt".to_string()));
+                assert!(names.contains(&"dir".to_string()));
+                break;
+            }
         }
     }
 
     #[test]
-    fn editor_render_state_tracks_viewport() {
-        let mut editor = EditorBuffer::default();
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width: 80,
-            height: 24,
-        };
-        let rs = editor_render_state(&mut editor, area, true);
-        assert_eq!(rs.visible_start, 0);
+    fn file_op_extracts_zip_contents() {
+        use std::io::Write;
+        use zip::write::FileOptions;
+
+        let tmpdir = tempfile::tempdir().unwrap();
+        let archive_path = tmpdir.path().join("test2.zip");
+        let outdir = tmpdir.path().join("out");
+
+        {
+            let file = std::fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            zip.write_all(b"hello").unwrap();
+            zip.finish().unwrap();
+        }
+
+        let (workers, results) = spawn_workers();
+        workers.file_op_tx.send(FileOpRequest {
+            operation: FileOperation::ExtractArchive { archive: archive_path.clone(), inner_path: std::path::PathBuf::new(), destination: outdir.clone() },
+            refresh: vec![],
+            collision: CollisionPolicy::Fail,
+        }).unwrap();
+
+        loop {
+            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            match res {
+                JobResult::FileOperationCompleted { .. } => break,
+                JobResult::JobFailed { .. } => panic!("extract failed"),
+                _ => {}
+            }
+        }
+
+        assert!(outdir.join("a.txt").exists());
+        let contents = std::fs::read_to_string(outdir.join("a.txt")).unwrap();
+        assert_eq!(contents, "hello");
     }
 
     #[test]
-    fn view_buffer_visible_window_returns_correct_slice() {
-        let vb = ViewBuffer::from_plain("line1\nline2\nline3");
-        let (first, window) = vb.visible_window(2);
-        assert_eq!(first, 0);
-        assert_eq!(window.len(), 2);
+    fn watcher_worker_emits_directory_changed() {
+        let (workers, results) = spawn_workers();
+        let root = std::env::temp_dir().join(format!(
+            "zeta-watch-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock should be after unix epoch")
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        workers
+            .watch_tx
+            .send(WatchRequest {
+                paths: vec![root.clone()],
+            })
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        std::fs::write(root.join("created.txt"), "hello").unwrap();
+
+        let mut saw_change = false;
+        for _ in 0..10 {
+            let result = results
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap();
+            if let JobResult::DirectoryChanged { path } = result {
+                if path == root {
+                    saw_change = true;
+                    break;
+                }
+            }
+        }
+
+        let _ = std::fs::remove_file(root.join("created.txt"));
+        let _ = std::fs::remove_dir(&root);
+        assert!(saw_change, "expected watcher to emit DirectoryChanged");
+    }
+
+    #[test]
+    fn workers_process_requests_independently() {
+        let (workers, results) = spawn_workers();
+        let tmp = std::env::temp_dir();
+
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Left, path: tmp.clone() })
+            .unwrap();
+        workers
+            .scan_tx
+            .send(ScanRequest { pane: PaneId::Right, path: tmp.clone() })
+            .unwrap();
+        workers
+            .find_tx
+            .send(FindRequest {
+                pane: PaneId::Left,
+                root: tmp,
+                max_depth: 1,
+            })
+            .unwrap();
+
+        let mut received = 0usize;
+        for _ in 0..3 {
+            if results.recv_timeout(std::time::Duration::from_secs(5)).is_ok() {
+                received += 1;
+            }
+        }
+        assert_eq!(received, 3);
     }
 }
