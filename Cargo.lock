@@ -1945,7 +1945,7 @@ dependencies = [
 
 [[package]]
 name = "zeta"
-version = "0.2.0-dev"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "bzip2",

@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "be408703bd1bdebbdd1631c36ab030b7fd19606ca2d8550fadb0079fe88befd9"
     },
+    "jira-cli": {
+      "source": "code-and-sorts/awesome-copilot-agents",
+      "sourceType": "github",
+      "computedHash": "625fe55d2e7de66a90f9a60bfd571960b7130d20d0feb543b20bb58c1e2a0e91"
+    },
     "rust-engineer": {
       "source": "jeffallan/claude-skills",
       "sourceType": "github",

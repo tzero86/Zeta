@@ -38,14 +38,13 @@ impl PaletteState {
 }
 
 /// Returns all palette entries in display order.
-/// Sorted by category: Navigation, File Ops, Editor, Preview, View / Layout, System.
+/// Sorted by category: Navigation, File Ops, Editor, Preview, View / Layout, Appearance, System.
 pub fn all_entries() -> Vec<PaletteEntry> {
     use crate::action::Action;
     use crate::config::ThemePreset;
     use crate::state::PaneLayout;
 
     vec![
-        // Navigation
         PaletteEntry {
             category: "Navigation",
             label: "Open / enter selection",
@@ -118,7 +117,6 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "Shift+M",
             action: Action::ClearMarks,
         },
-        // File operations
         PaletteEntry {
             category: "File Ops",
             label: "Copy file",
@@ -161,7 +159,6 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "Shift+F7",
             action: Action::OpenNewDirectoryPrompt,
         },
-        // Editor
         PaletteEntry {
             category: "System",
             label: "Open shell in current directory",
@@ -192,7 +189,6 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "Esc",
             action: Action::CloseEditor,
         },
-        // Preview
         PaletteEntry {
             category: "Preview",
             label: "Toggle preview panel",
@@ -205,7 +201,6 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             hint: "Ctrl+W",
             action: Action::CycleFocus,
         },
-        // View / Layout
         PaletteEntry {
             category: "View / Layout",
             label: "Open settings panel",
@@ -225,24 +220,35 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::SetPaneLayout(PaneLayout::Stacked),
         },
         PaletteEntry {
-            category: "View / Layout",
-            label: "Theme: fjord",
-            hint: "",
+            category: "Appearance",
+            label: "Switch theme to: Matrix (default)",
+            hint: "view > matrix",
+            action: Action::SetTheme(ThemePreset::Matrix),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Switch theme to: Norton Commander (classic)",
+            hint: "view > norton",
+            action: Action::SetTheme(ThemePreset::Norton),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Switch theme to: Fjord",
+            hint: "view > fjord",
             action: Action::SetTheme(ThemePreset::Fjord),
         },
         PaletteEntry {
-            category: "View / Layout",
-            label: "Theme: sandbar",
-            hint: "",
+            category: "Appearance",
+            label: "Switch theme to: Sandbar",
+            hint: "view > sandbar",
             action: Action::SetTheme(ThemePreset::Sandbar),
         },
         PaletteEntry {
-            category: "View / Layout",
-            label: "Theme: oxide",
-            hint: "",
+            category: "Appearance",
+            label: "Switch theme to: Oxide",
+            hint: "view > oxide",
             action: Action::SetTheme(ThemePreset::Oxide),
         },
-        // System
         PaletteEntry {
             category: "System",
             label: "Command palette",
@@ -312,7 +318,8 @@ fn category_order(category: &str) -> usize {
         "Editor" => 2,
         "Preview" => 3,
         "View / Layout" => 4,
-        "System" => 5,
+        "Appearance" => 5,
+        "System" => 6,
         _ => usize::MAX,
     }
 }

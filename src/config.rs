@@ -15,6 +15,8 @@ pub enum ThemePreset {
     Fjord,
     Sandbar,
     Oxide,
+    Matrix,
+    Norton,
 }
 
 impl ThemePreset {
@@ -23,6 +25,8 @@ impl ThemePreset {
             Self::Fjord => "fjord",
             Self::Sandbar => "sandbar",
             Self::Oxide => "oxide",
+            Self::Matrix => "matrix",
+            Self::Norton => "norton",
         }
     }
 }
@@ -221,7 +225,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            preset: String::from("fjord"),
+            preset: String::from("matrix"),
             status_bar_label: String::from("Zeta"),
         }
     }
@@ -291,6 +295,16 @@ impl ThemePalette {
             ThemePreset::Oxide => ResolvedTheme {
                 palette: Self::oxide(),
                 preset: String::from("oxide"),
+                warning: None,
+            },
+            ThemePreset::Matrix => ResolvedTheme {
+                palette: Self::matrix(),
+                preset: String::from("matrix"),
+                warning: None,
+            },
+            ThemePreset::Norton => ResolvedTheme {
+                palette: Self::norton(),
+                preset: String::from("norton"),
                 warning: None,
             },
         }
@@ -376,6 +390,62 @@ impl ThemePalette {
             syntect_theme: "base16-mocha.dark",
         }
     }
+
+    fn matrix() -> Self {
+        // Matrix-style colors: black bg, neon green, blue-violet accents
+        Self {
+            menu_bg: Color::Black,
+            menu_fg: Color::Rgb(0, 255, 128),
+            menu_active_bg: Color::Rgb(10, 28, 10),
+            menu_mnemonic_fg: Color::Rgb(0, 255, 0),
+            border_focus: Color::Rgb(0, 200, 64),
+            border_editor_focus: Color::Rgb(44, 213, 255),
+            selection_bg: Color::Rgb(0, 40, 0),
+            selection_fg: Color::Rgb(0, 255, 128),
+            surface_bg: Color::Rgb(8, 18, 8),
+            tools_bg: Color::Rgb(12, 32, 16),
+            prompt_bg: Color::Rgb(12, 32, 16),
+            prompt_border: Color::Rgb(0, 255, 64),
+            text_primary: Color::Rgb(0, 255, 128),
+            text_muted: Color::Rgb(40, 120, 40),
+            directory_fg: Color::Rgb(100, 255, 180),
+            symlink_fg: Color::Rgb(44, 213, 255),
+            file_fg: Color::Rgb(120, 190, 120),
+            status_bg: Color::Rgb(0, 255, 96),
+            status_fg: Color::Black,
+            logo_accent: Color::Rgb(0, 255, 64),
+            key_hint_fg: Color::Rgb(44, 213, 255),
+            syntect_theme: "dracula",
+        }
+    }
+
+    fn norton() -> Self {
+        // Classic Norton Commander: navy blue, gold, white, blue
+        Self {
+            menu_bg: Color::Rgb(0, 14, 64),
+            menu_fg: Color::White,
+            menu_active_bg: Color::Rgb(59, 87, 183),
+            menu_mnemonic_fg: Color::Rgb(255, 220, 60),
+            border_focus: Color::Rgb(243, 205, 57),
+            border_editor_focus: Color::Rgb(112, 181, 255),
+            selection_bg: Color::Rgb(255, 220, 60),
+            selection_fg: Color::Black,
+            surface_bg: Color::Rgb(7, 23, 70),
+            tools_bg: Color::Rgb(32, 42, 87),
+            prompt_bg: Color::Rgb(62, 61, 100),
+            prompt_border: Color::Rgb(112, 181, 255),
+            text_primary: Color::White,
+            text_muted: Color::Rgb(222, 222, 169),
+            directory_fg: Color::Rgb(112, 225, 255),
+            symlink_fg: Color::Rgb(44, 213, 255),
+            file_fg: Color::White,
+            status_bg: Color::Rgb(59, 87, 183),
+            status_fg: Color::White,
+            logo_accent: Color::Rgb(255, 220, 60),
+            key_hint_fg: Color::Rgb(243, 205, 57),
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
 }
 
 impl ThemePreset {
@@ -384,12 +454,15 @@ impl ThemePreset {
             "fjord" => Some(Self::Fjord),
             "sandbar" => Some(Self::Sandbar),
             "oxide" => Some(Self::Oxide),
+            "matrix" => Some(Self::Matrix),
+            "norton" => Some(Self::Norton),
             _ => None,
         }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct KeymapConfig {
     pub quit: String,
     pub switch_pane: String,

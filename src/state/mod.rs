@@ -858,7 +858,9 @@ impl AppState {
                 let next = match current {
                     ThemePreset::Fjord => ThemePreset::Sandbar,
                     ThemePreset::Sandbar => ThemePreset::Oxide,
-                    ThemePreset::Oxide => ThemePreset::Fjord,
+                    ThemePreset::Oxide => ThemePreset::Matrix,
+                    ThemePreset::Matrix => ThemePreset::Norton,
+                    ThemePreset::Norton => ThemePreset::Fjord,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
@@ -1140,6 +1142,8 @@ impl AppState {
                 field: SettingsField::Theme(match self.theme.preset.as_str() {
                     "sandbar" => ThemePreset::Sandbar,
                     "oxide" => ThemePreset::Oxide,
+                    "matrix" => ThemePreset::Matrix,
+                    "norton" => ThemePreset::Norton,
                     _ => ThemePreset::Fjord,
                 }),
             },

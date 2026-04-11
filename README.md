@@ -172,8 +172,8 @@ Config is loaded from (in order of preference):
 3. `~/.config/zeta/config.toml` (Linux/macOS)
 
 ```toml
-# Theme: "oxide" (default) | "fjord" | "sandbar"
-theme = "oxide"
+# Theme: "matrix" (default) | "norton" | "fjord" | "sandbar" | "oxide"
+theme = "matrix"
 
 # Icon mode: "unicode" (default) | "ascii" | "custom"
 # For "custom", install assets/fonts/zeta-icons.ttf in your terminal first.
