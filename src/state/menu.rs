@@ -19,6 +19,7 @@ pub fn menu_tabs(editor_mode: bool) -> Vec<MenuTab> {
             MenuTab { id: MenuId::Edit, label: " Edit ", mnemonic: 'e' },
             MenuTab { id: MenuId::Search, label: " Search ", mnemonic: 's' },
             MenuTab { id: MenuId::View, label: " View ", mnemonic: 'v' },
+            MenuTab { id: MenuId::Themes, label: " Themes ", mnemonic: 't' },
             MenuTab { id: MenuId::Help, label: " Help ", mnemonic: 'h' },
         ]
     } else {
@@ -26,6 +27,7 @@ pub fn menu_tabs(editor_mode: bool) -> Vec<MenuTab> {
             MenuTab { id: MenuId::File, label: " File ", mnemonic: 'f' },
             MenuTab { id: MenuId::Navigate, label: " Navigate ", mnemonic: 'n' },
             MenuTab { id: MenuId::View, label: " View ", mnemonic: 'v' },
+            MenuTab { id: MenuId::Themes, label: " Themes ", mnemonic: 't' },
             MenuTab { id: MenuId::Help, label: " Help ", mnemonic: 'h' },
         ]
     }
@@ -53,17 +55,21 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             MenuId::View => vec![
                 MenuItem { label: "Fullscreen Editor", shortcut: "Shift+F11", mnemonic: 'f', action: Action::ToggleEditorFullscreen },
                 MenuItem { label: "Settings", shortcut: "Ctrl+O", mnemonic: 's', action: Action::OpenSettingsPanel },
-                MenuItem { label: "Theme: Matrix (default)", shortcut: "M", mnemonic: 'm', action: Action::SetTheme(ThemePreset::Matrix) },
-                MenuItem { label: "Theme: Norton Commander", shortcut: "N", mnemonic: 'n', action: Action::SetTheme(ThemePreset::Norton) },
-                MenuItem { label: "Theme: Fjord", shortcut: "1", mnemonic: 'f', action: Action::SetTheme(ThemePreset::Fjord) },
-                MenuItem { label: "Theme: Sandbar", shortcut: "2", mnemonic: 's', action: Action::SetTheme(ThemePreset::Sandbar) },
-                MenuItem { label: "Theme: Oxide", shortcut: "3", mnemonic: 'o', action: Action::SetTheme(ThemePreset::Oxide) },
+                MenuItem { label: "Themes...", shortcut: "T", mnemonic: 't', action: Action::OpenMenu(MenuId::Themes) },
             ],
             MenuId::Help => vec![
                 MenuItem { label: "Help", shortcut: "F1", mnemonic: 'h', action: Action::OpenHelpDialog },
                 MenuItem { label: "About Zeta", shortcut: "Enter", mnemonic: 'a', action: Action::OpenAboutDialog },
             ],
+            MenuId::Themes => vec![
+                MenuItem { label: "Theme: Matrix (default)", shortcut: "M", mnemonic: 'm', action: Action::SetTheme(ThemePreset::Matrix) },
+                MenuItem { label: "Theme: Norton Commander", shortcut: "N", mnemonic: 'n', action: Action::SetTheme(ThemePreset::Norton) },
+                MenuItem { label: "Theme: Fjord", shortcut: "F", mnemonic: 'f', action: Action::SetTheme(ThemePreset::Fjord) },
+                MenuItem { label: "Theme: Sandbar", shortcut: "S", mnemonic: 's', action: Action::SetTheme(ThemePreset::Sandbar) },
+                MenuItem { label: "Theme: Oxide", shortcut: "O", mnemonic: 'o', action: Action::SetTheme(ThemePreset::Oxide) },
+            ],
             MenuId::Navigate => vec![],
+
         };
     }
 
@@ -88,22 +94,20 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             MenuItem { label: "Refresh", shortcut: "r", mnemonic: 'r', action: Action::Refresh },
             MenuItem { label: "Switch Pane", shortcut: "Tab", mnemonic: 's', action: Action::FocusNextPane },
         ],
-        MenuId::View => {
-            let mut items = vec![
-                MenuItem { label: "Toggle Hidden Files", shortcut: ".", mnemonic: 'h', action: Action::ToggleHiddenFiles },
-                MenuItem { label: "Settings", shortcut: "Ctrl+O", mnemonic: 's', action: Action::OpenSettingsPanel },
-                MenuItem { label: "Layout: Side by Side", shortcut: "4", mnemonic: 'l', action: Action::SetPaneLayout(PaneLayout::SideBySide) },
-                MenuItem { label: "Layout: Stacked", shortcut: "5", mnemonic: 'k', action: Action::SetPaneLayout(PaneLayout::Stacked) }
-            ];
-            // Add a separator for themes
-            items.push(MenuItem { label: "-- Themes --", shortcut: "", mnemonic: '-', action: Action::CloseMenu });
-            items.push(MenuItem { label: "Theme: Matrix (default)", shortcut: "M", mnemonic: 'm', action: Action::SetTheme(ThemePreset::Matrix) });
-            items.push(MenuItem { label: "Theme: Norton Commander", shortcut: "N", mnemonic: 'n', action: Action::SetTheme(ThemePreset::Norton) });
-            items.push(MenuItem { label: "Theme: Fjord", shortcut: "F", mnemonic: 'f', action: Action::SetTheme(ThemePreset::Fjord) });
-            items.push(MenuItem { label: "Theme: Sandbar", shortcut: "S", mnemonic: 's', action: Action::SetTheme(ThemePreset::Sandbar) });
-            items.push(MenuItem { label: "Theme: Oxide", shortcut: "O", mnemonic: 'o', action: Action::SetTheme(ThemePreset::Oxide) });
-            items
-        },
+        MenuId::View => vec![
+            MenuItem { label: "Toggle Hidden Files", shortcut: ".", mnemonic: 'h', action: Action::ToggleHiddenFiles },
+            MenuItem { label: "Settings", shortcut: "Ctrl+O", mnemonic: 's', action: Action::OpenSettingsPanel },
+            MenuItem { label: "Layout: Side by Side", shortcut: "4", mnemonic: 'l', action: Action::SetPaneLayout(PaneLayout::SideBySide) },
+            MenuItem { label: "Layout: Stacked", shortcut: "5", mnemonic: 'k', action: Action::SetPaneLayout(PaneLayout::Stacked) },
+            MenuItem { label: "Themes...", shortcut: "T", mnemonic: 't', action: Action::OpenMenu(MenuId::Themes) },
+        ],
+        MenuId::Themes => vec![
+            MenuItem { label: "Theme: Matrix (default)", shortcut: "M", mnemonic: 'm', action: Action::SetTheme(ThemePreset::Matrix) },
+            MenuItem { label: "Theme: Norton Commander", shortcut: "N", mnemonic: 'n', action: Action::SetTheme(ThemePreset::Norton) },
+            MenuItem { label: "Theme: Fjord", shortcut: "F", mnemonic: 'f', action: Action::SetTheme(ThemePreset::Fjord) },
+            MenuItem { label: "Theme: Sandbar", shortcut: "S", mnemonic: 's', action: Action::SetTheme(ThemePreset::Sandbar) },
+            MenuItem { label: "Theme: Oxide", shortcut: "O", mnemonic: 'o', action: Action::SetTheme(ThemePreset::Oxide) },
+        ],
         MenuId::Help => vec![
             MenuItem { label: "Help", shortcut: "F1", mnemonic: 'h', action: Action::OpenHelpDialog },
             MenuItem { label: "About Zeta", shortcut: "Enter", mnemonic: 'a', action: Action::OpenAboutDialog },

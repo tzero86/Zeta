@@ -2,3 +2,5 @@
 .claude/
 .idea/
 .worktrees/
+node_modules/
+.pi/
