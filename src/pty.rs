@@ -80,7 +80,7 @@ impl PlatformPty {
         let proc = conpty::ProcessOptions::default()
             .set_console_size(Some((cols as i16, rows as i16)))
             .spawn(cmd)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         Ok(Self {
             proc,
@@ -91,32 +91,32 @@ impl PlatformPty {
 
     fn take_reader(&mut self) -> io::Result<Box<dyn Read + Send>> {
         if self.reader_taken {
-            return Err(io::Error::new(io::ErrorKind::Other, "reader already taken"));
+            return Err(io::Error::other("reader already taken"));
         }
         self.reader_taken = true;
         let pipe = self
             .proc
             .output()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         Ok(Box::new(pipe))
     }
 
     fn take_writer(&mut self) -> io::Result<Box<dyn Write + Send>> {
         if self.writer_taken {
-            return Err(io::Error::new(io::ErrorKind::Other, "writer already taken"));
+            return Err(io::Error::other("writer already taken"));
         }
         self.writer_taken = true;
         let pipe = self
             .proc
             .input()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         Ok(Box::new(pipe))
     }
 
     fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
         self.proc
             .resize(cols as i16, rows as i16)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn exit_waiter(&self) -> io::Result<Box<dyn FnOnce() + Send>> {
@@ -174,7 +174,7 @@ impl PlatformPty {
         let child = pair
             .slave
             .spawn_command(cmd)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         // Drop the slave so the child is the sole console owner.
         drop(pair.slave);
