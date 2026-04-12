@@ -17,6 +17,8 @@ pub enum ThemePreset {
     Oxide,
     Matrix,
     Norton,
+    Neon,
+    Monochrome,
 }
 
 impl ThemePreset {
@@ -27,6 +29,8 @@ impl ThemePreset {
             Self::Oxide => "oxide",
             Self::Matrix => "matrix",
             Self::Norton => "norton",
+            Self::Neon => "neon",
+            Self::Monochrome => "monochrome",
         }
     }
 }
@@ -225,7 +229,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            preset: String::from("matrix"),
+            preset: String::from("neon"),
             status_bar_label: String::from("Zeta"),
         }
     }
@@ -270,10 +274,10 @@ impl ThemePalette {
         match ThemePreset::from_name(&config.preset) {
             Some(preset) => Self::from_preset(preset),
             None => ResolvedTheme {
-                palette: Self::fjord(),
-                preset: String::from("fjord"),
+                palette: Self::neon(),
+                preset: String::from("neon"),
                 warning: Some(format!(
-                    "unknown theme preset '{}', using fjord",
+                    "unknown theme preset '{}', using neon",
                     config.preset
                 )),
             },
@@ -305,6 +309,16 @@ impl ThemePalette {
             ThemePreset::Norton => ResolvedTheme {
                 palette: Self::norton(),
                 preset: String::from("norton"),
+                warning: None,
+            },
+            ThemePreset::Neon => ResolvedTheme {
+                palette: Self::neon(),
+                preset: String::from("neon"),
+                warning: None,
+            },
+            ThemePreset::Monochrome => ResolvedTheme {
+                palette: Self::monochrome(),
+                preset: String::from("monochrome"),
                 warning: None,
             },
         }
@@ -419,6 +433,62 @@ impl ThemePalette {
         }
     }
 
+    fn neon() -> Self {
+        // High-vibrancy Neon theme: Deep Black, Cyan, Magenta, Yellow
+        Self {
+            menu_bg: Color::Rgb(10, 10, 15),
+            menu_fg: Color::Rgb(0, 255, 255), // Cyan
+            menu_active_bg: Color::Rgb(30, 30, 45),
+            menu_mnemonic_fg: Color::Rgb(255, 0, 255), // Magenta
+            border_focus: Color::Rgb(0, 255, 255),     // Cyan
+            border_editor_focus: Color::Rgb(255, 255, 0), // Yellow
+            selection_bg: Color::Rgb(0, 255, 255),
+            selection_fg: Color::Black,
+            surface_bg: Color::Black,
+            tools_bg: Color::Rgb(15, 15, 20),
+            prompt_bg: Color::Rgb(10, 10, 15),
+            prompt_border: Color::Rgb(255, 0, 255),
+            text_primary: Color::Rgb(220, 220, 240),
+            text_muted: Color::Rgb(100, 100, 130),
+            directory_fg: Color::Rgb(0, 255, 255),
+            symlink_fg: Color::Rgb(255, 0, 255),
+            file_fg: Color::Rgb(200, 200, 220),
+            status_bg: Color::Rgb(0, 255, 255),
+            status_fg: Color::Black,
+            logo_accent: Color::Rgb(255, 0, 255),
+            key_hint_fg: Color::Rgb(0, 255, 255),
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
+
+    fn monochrome() -> Self {
+        // Minimalist B&W theme with functional status colors
+        Self {
+            menu_bg: Color::Rgb(20, 20, 20),
+            menu_fg: Color::White,
+            menu_active_bg: Color::Rgb(50, 50, 50),
+            menu_mnemonic_fg: Color::Rgb(180, 180, 180),
+            border_focus: Color::White,
+            border_editor_focus: Color::White,
+            selection_bg: Color::White,
+            selection_fg: Color::Black,
+            surface_bg: Color::Black,
+            tools_bg: Color::Black,
+            prompt_bg: Color::Rgb(15, 15, 15),
+            prompt_border: Color::White,
+            text_primary: Color::White,
+            text_muted: Color::Rgb(100, 100, 100),
+            directory_fg: Color::White,
+            symlink_fg: Color::Rgb(180, 180, 180),
+            file_fg: Color::Rgb(200, 200, 200),
+            status_bg: Color::White,
+            status_fg: Color::Black,
+            logo_accent: Color::White,
+            key_hint_fg: Color::White,
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
+
     fn norton() -> Self {
         // Classic Norton Commander: navy blue, gold, white, blue
         Self {
@@ -456,6 +526,8 @@ impl ThemePreset {
             "oxide" => Some(Self::Oxide),
             "matrix" => Some(Self::Matrix),
             "norton" => Some(Self::Norton),
+            "neon" => Some(Self::Neon),
+            "monochrome" => Some(Self::Monochrome),
             _ => None,
         }
     }

@@ -227,7 +227,19 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Matrix (default)",
+            label: "Switch theme to: Neon (default)",
+            hint: "view > neon",
+            action: Action::SetTheme(ThemePreset::Neon),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Switch theme to: Monochrome (B&W)",
+            hint: "view > monochrome",
+            action: Action::SetTheme(ThemePreset::Monochrome),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Switch theme to: Matrix",
             hint: "view > matrix",
             action: Action::SetTheme(ThemePreset::Matrix),
         },

@@ -182,7 +182,19 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             MenuId::Themes => vec![
                 MenuItem {
-                    label: "Theme: Matrix (default)",
+                    label: "Theme: Neon (default)",
+                    shortcut: "E",
+                    mnemonic: 'e',
+                    action: Action::SetTheme(ThemePreset::Neon),
+                },
+                MenuItem {
+                    label: "Theme: Monochrome",
+                    shortcut: "O",
+                    mnemonic: 'o',
+                    action: Action::SetTheme(ThemePreset::Monochrome),
+                },
+                MenuItem {
+                    label: "Theme: Matrix",
                     shortcut: "M",
                     mnemonic: 'm',
                     action: Action::SetTheme(ThemePreset::Matrix),
@@ -207,8 +219,8 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                 },
                 MenuItem {
                     label: "Theme: Oxide",
-                    shortcut: "O",
-                    mnemonic: 'o',
+                    shortcut: "X",
+                    mnemonic: 'x',
                     action: Action::SetTheme(ThemePreset::Oxide),
                 },
             ],
