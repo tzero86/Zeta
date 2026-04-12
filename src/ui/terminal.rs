@@ -27,18 +27,32 @@ pub fn render_terminal(
     if let Ok(parser) = terminal.parser.lock() {
         let screen = parser.screen();
         let (rows, cols) = screen.size();
+        let (cursor_row, cursor_col) = screen.cursor_position();
+
+        // Calculate vertical scroll offset to keep cursor visible
+        let scroll_top = if (cursor_row as u16) < inner.height {
+            0
+        } else {
+            (cursor_row as u16).saturating_sub(inner.height.saturating_sub(1))
+        };
 
         for row in 0..rows {
-            if row as u16 >= inner.height {
+            let visible_row = (row as i32) - (scroll_top as i32);
+            if visible_row < 0 {
+                continue;
+            }
+            if visible_row >= inner.height as i32 {
                 break;
             }
+            
+            let y = inner.y + visible_row as u16;
+
             for col in 0..cols {
                 if col as u16 >= inner.width {
                     break;
                 }
                 let cell = screen.cell(row, col).unwrap();
                 let x = inner.x + col as u16;
-                let y = inner.y + row as u16;
 
                 let mut style = Style::default();
                 
@@ -62,20 +76,30 @@ pub fn render_terminal(
                 }
 
                 frame.buffer_mut().cell_mut((x, y)).map(|c| {
-                    c.set_char(cell.contents().chars().next().unwrap_or(' ')).set_style(style);
+                    c.set_symbol(&cell.contents()).set_style(style);
                 });
             }
         }
         
         // Render cursor
         if focused {
-            let (cursor_row, cursor_col) = screen.cursor_position();
-            if (cursor_row as u16) < inner.height && (cursor_col as u16) < inner.width {
+            let visible_cursor_row = (cursor_row as i32) - (scroll_top as i32);
+            if visible_cursor_row >= 0 && (visible_cursor_row as u16) < inner.height && (cursor_col as u16) < inner.width {
                 let x = inner.x + cursor_col as u16;
-                let y = inner.y + cursor_row as u16;
+                let y = inner.y + visible_cursor_row as u16;
                 frame.buffer_mut().cell_mut((x, y)).map(|c| {
                     c.set_style(Style::default().add_modifier(Modifier::REVERSED));
                 });
+            }
+        }
+
+        // Diagnostic overlay if no bytes received
+        if terminal.bytes_received == 0 {
+            let msg = " [ Waiting for shell output... ] ";
+            let x = inner.x + (inner.width.saturating_sub(msg.len() as u16)) / 2;
+            let y = inner.y + inner.height / 2;
+            if x < inner.x + inner.width && y < inner.y + inner.height {
+                frame.buffer_mut().set_string(x, y, msg, Style::default().fg(palette.text_muted));
             }
         }
     }

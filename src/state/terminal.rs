@@ -10,6 +10,7 @@ pub struct TerminalState {
     pub parser: Arc<Mutex<vt100::Parser>>,
     pub rows: u16,
     pub cols: u16,
+    pub bytes_received: u64,
 }
 
 impl Default for TerminalState {
@@ -20,6 +21,7 @@ impl Default for TerminalState {
             parser: Arc::new(Mutex::new(vt100::Parser::new(24, 80, 0))),
             rows: 24,
             cols: 80,
+            bytes_received: 0,
         }
     }
 }
@@ -32,6 +34,7 @@ impl Clone for TerminalState {
             parser: Arc::clone(&self.parser),
             rows: self.rows,
             cols: self.cols,
+            bytes_received: self.bytes_received,
         }
     }
 }
@@ -43,6 +46,7 @@ impl fmt::Debug for TerminalState {
             .field("focused", &self.focused)
             .field("rows", &self.rows)
             .field("cols", &self.cols)
+            .field("bytes_received", &self.bytes_received)
             .finish()
     }
 }
@@ -56,6 +60,7 @@ impl TerminalState {
         self.open = !self.open;
         if self.open {
             self.focused = true;
+            self.bytes_received = 0;
             // Clear current screen by creating a new parser
             if let Ok(mut parser) = self.parser.lock() {
                 *parser = vt100::Parser::new(self.rows, self.cols, 0);
@@ -83,6 +88,7 @@ impl TerminalState {
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) {
+        self.bytes_received += bytes.len() as u64;
         if let Ok(mut parser) = self.parser.lock() {
             parser.process(bytes);
         }
