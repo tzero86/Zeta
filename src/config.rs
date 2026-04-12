@@ -442,11 +442,11 @@ impl ThemePalette {
             menu_mnemonic_fg: Color::Rgb(255, 0, 255), // Magenta
             border_focus: Color::Rgb(0, 255, 255),     // Cyan
             border_editor_focus: Color::Rgb(255, 255, 0), // Yellow
-            selection_bg: Color::Rgb(0, 255, 255),
-            selection_fg: Color::Black,
-            surface_bg: Color::Black,
-            tools_bg: Color::Rgb(15, 15, 20),
-            prompt_bg: Color::Rgb(10, 10, 15),
+            selection_bg: Color::Rgb(0, 100, 100), // Darker cyan for selection background
+            selection_fg: Color::White,        // White for selection text
+            surface_bg: Color::Rgb(8, 8, 12),  // Very dark blue-gray
+            tools_bg: Color::Rgb(20, 20, 30),  // Slightly lighter for hierarchy
+            prompt_bg: Color::Rgb(15, 15, 25), // Consistent with tools_bg
             prompt_border: Color::Rgb(255, 0, 255),
             text_primary: Color::Rgb(220, 220, 240),
             text_muted: Color::Rgb(100, 100, 130),
@@ -472,19 +472,19 @@ impl ThemePalette {
             border_editor_focus: Color::White,
             selection_bg: Color::White,
             selection_fg: Color::Black,
-            surface_bg: Color::Black,
-            tools_bg: Color::Black,
-            prompt_bg: Color::Rgb(15, 15, 15),
+            surface_bg: Color::Rgb(10, 10, 10), // Very dark gray
+            tools_bg: Color::Rgb(25, 25, 25),  // Slightly lighter for hierarchy
+            prompt_bg: Color::Rgb(20, 20, 20), // Consistent with tools_bg
             prompt_border: Color::White,
             text_primary: Color::White,
             text_muted: Color::Rgb(100, 100, 100),
             directory_fg: Color::White,
             symlink_fg: Color::Rgb(180, 180, 180),
             file_fg: Color::Rgb(200, 200, 200),
-            status_bg: Color::White,
-            status_fg: Color::Black,
-            logo_accent: Color::White,
-            key_hint_fg: Color::White,
+            status_bg: Color::Rgb(30, 30, 30), // Subtle dark gray
+            status_fg: Color::White,          // White text for status bar
+            logo_accent: Color::Green,        // Green for git-like status or accent
+            key_hint_fg: Color::Rgb(150, 150, 150), // Gray for key hints
             syntect_theme: "base16-ocean.dark",
         }
     }
