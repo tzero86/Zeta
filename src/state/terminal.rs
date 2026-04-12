@@ -56,6 +56,7 @@ impl TerminalState {
         self.open = !self.open;
         if self.open {
             self.focused = true;
+            // Clear current screen by creating a new parser
             if let Ok(mut parser) = self.parser.lock() {
                 *parser = vt100::Parser::new(self.rows, self.cols, 0);
             }

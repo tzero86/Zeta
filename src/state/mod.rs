@@ -137,10 +137,26 @@ impl AppState {
         commands.extend(self.panes.apply(&action)?);
         commands.extend(self.editor.apply(&action)?);
         commands.extend(self.preview.apply(&action, &self.panes.focus)?);
-        commands.extend(
-            self.terminal
-                .apply(&action, self.panes.active_pane().cwd.clone())?,
-        );
+        match action {
+            Action::ToggleTerminal => {
+                let was_open = self.terminal.is_open();
+                commands.extend(
+                    self.terminal
+                        .apply(&action, self.panes.active_pane().cwd.clone())?,
+                );
+                if !was_open && self.terminal.is_open() {
+                    self.status_message = String::from("terminal opened");
+                } else if was_open && !self.terminal.is_open() {
+                    self.status_message = String::from("terminal closed");
+                }
+            }
+            _ => {
+                commands.extend(
+                    self.terminal
+                        .apply(&action, self.panes.active_pane().cwd.clone())?,
+                );
+            }
+        }
         commands.extend(self.apply_view(&action)?);
         Ok(commands)
     }

@@ -235,10 +235,10 @@ pub struct WorkerChannels {
 /// `Receiver<JobResult>`. Each worker processes its queue sequentially; because
 /// the queues are independent, a slow file operation never delays a scan.
 pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
-    let (result_tx, result_rx) = bounded::<JobResult>(64);
+    let (result_tx, result_rx) = bounded::<JobResult>(512);
 
     // --- Scan worker ---
-    let (scan_tx, scan_rx) = bounded::<ScanRequest>(16);
+    let (scan_tx, scan_rx) = bounded::<ScanRequest>(32);
     {
         let result_tx = result_tx.clone();
         thread::Builder::new()
@@ -270,7 +270,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     }
 
     // --- File operation worker ---
-    let (file_op_tx, file_op_rx) = bounded::<FileOpRequest>(8);
+    let (file_op_tx, file_op_rx) = bounded::<FileOpRequest>(16);
     {
         let result_tx = result_tx.clone();
         thread::Builder::new()
@@ -291,7 +291,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     }
 
     // --- Preview worker ---
-    let (preview_tx, preview_rx) = bounded::<PreviewRequest>(8);
+    let (preview_tx, preview_rx) = bounded::<PreviewRequest>(16);
     {
         let result_tx_preview = result_tx.clone();
         thread::Builder::new()
@@ -1529,12 +1529,9 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                             if n == 0 {
                                                 break;
                                             }
-                                            if result_tx_inner
-                                                .send(JobResult::TerminalOutput(buffer[..n].to_vec()))
-                                                .is_err()
-                                            {
-                                                break;
-                                            }
+                                            // Non-blocking send to prevent reader from hanging if UI is slow
+                                            let _ = result_tx_inner
+                                                .try_send(JobResult::TerminalOutput(buffer[..n].to_vec()));
                                         }
                                     })
                                     .expect("failed to spawn terminal reader thread");

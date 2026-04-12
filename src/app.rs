@@ -83,7 +83,7 @@ impl App {
                     // We need to calculate the actual inner size used by vt100
                     // Let's call resize. It only emits a command if the size actually changed.
                     for cmd in self.state.terminal.resize(inner_rows, t_area.width) {
-                        self.execute_command(cmd)?;
+                        self.execute_command_try(cmd)?;
                     }
                 }
             }
@@ -92,6 +92,16 @@ impl App {
             self.process_next_event()?;
         }
 
+        Ok(())
+    }
+
+    fn execute_command_try(&mut self, command: Command) -> Result<()> {
+        match command {
+            Command::ResizeTerminal { cols, rows } => {
+                let _ = self.workers.terminal_tx.try_send(crate::jobs::TerminalRequest::Resize { cols, rows });
+            }
+            other => self.execute_command(other)?,
+        }
         Ok(())
     }
 
