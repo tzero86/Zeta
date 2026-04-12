@@ -25,6 +25,8 @@ flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
 tempfile = "3"
+portable-pty = "0.9"
+vt100 = "0.15"
 
 [profile.release]
 opt-level = "z"     # optimise for binary size

@@ -67,7 +67,7 @@ a wave ships.
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 8A | `2026-04-12-wave8a-embedded-terminal.md` | Fully embedded terminal emulator (PTY + rendering) | 📋 |
+| 8A | `2026-04-12-wave8a-embedded-terminal.md` | Fully embedded terminal emulator (PTY + rendering) | ✅ |
 
 ---
 

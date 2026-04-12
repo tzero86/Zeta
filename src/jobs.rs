@@ -113,6 +113,20 @@ pub struct WatchRequest {
     pub paths: Vec<PathBuf>,
 }
 
+#[derive(Clone, Debug)]
+pub enum TerminalRequest {
+    Spawn {
+        cwd: PathBuf,
+        cols: u16,
+        rows: u16,
+    },
+    Write(Vec<u8>),
+    Resize {
+        cols: u16,
+        rows: u16,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // Result types (unchanged public surface)
 // ---------------------------------------------------------------------------
@@ -181,6 +195,7 @@ pub enum JobResult {
     DirectoryChanged {
         path: PathBuf,
     },
+    TerminalOutput(Vec<u8>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -213,6 +228,7 @@ pub struct WorkerChannels {
     pub watch_tx: Sender<WatchRequest>,
     pub archive_tx: Sender<ArchiveListRequest>,
     pub sftp_tx: Sender<SftpRequest>,
+    pub terminal_tx: Sender<TerminalRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -737,6 +753,18 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn sftp worker");
     }
 
+    // --- Terminal worker ---
+    let (terminal_tx, terminal_rx) = bounded::<TerminalRequest>(16);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-terminal".into())
+            .spawn(move || {
+                run_terminal_worker(terminal_rx, result_tx);
+            })
+            .expect("failed to spawn terminal worker");
+    }
+
     (
         WorkerChannels {
             scan_tx,
@@ -748,6 +776,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             watch_tx,
             archive_tx,
             sftp_tx,
+            terminal_tx,
         },
         result_rx,
     )
@@ -1454,7 +1483,102 @@ fn run_extract_archive(
     }
 }
 
-#[cfg(test)]
+/// Terminal worker: handles PTY spawn and raw I/O.
+pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Sender<JobResult>) {
+    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+    use std::io::{Read, Write};
+
+    let pty_system = native_pty_system();
+    let mut pair: Option<portable_pty::PtyPair> = None;
+    let mut writer: Option<Box<dyn Write + Send>> = None;
+
+    for req in terminal_rx {
+        match req {
+            TerminalRequest::Spawn { cwd, cols, rows } => {
+                // If there's an existing terminal, we just replace it for now (simpler)
+                match pty_system.openpty(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                }) {
+                    Ok(p) => {
+                        let shell = if cfg!(windows) {
+                            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+                        } else {
+                            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
+                        };
+
+                        let mut cmd = CommandBuilder::new(shell);
+                        cmd.cwd(cwd);
+
+                        match p.slave.spawn_command(cmd) {
+                            Ok(_) => {
+                                let mut reader = p.master.try_clone_reader().unwrap();
+                                let writer_inner = p.master.take_writer().unwrap();
+                                writer = Some(writer_inner);
+                                pair = Some(p);
+
+                                // Start a dedicated thread to read from PTY
+                                let result_tx_inner = result_tx.clone();
+                                thread::Builder::new()
+                                    .name("zeta-terminal-reader".into())
+                                    .spawn(move || {
+                                        let mut buffer = [0u8; 1024];
+                                        while let Ok(n) = reader.read(&mut buffer) {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            if result_tx_inner
+                                                .send(JobResult::TerminalOutput(buffer[..n].to_vec()))
+                                                .is_err()
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    })
+                                    .expect("failed to spawn terminal reader thread");
+                            }
+                            Err(e) => {
+                                let _ = result_tx.send(JobResult::JobFailed {
+                                    pane: PaneId::Left, // dummy
+                                    path: PathBuf::new(),
+                                    message: format!("Failed to spawn terminal: {e}"),
+                                    elapsed_ms: 0,
+                                });
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let _ = result_tx.send(JobResult::JobFailed {
+                            pane: PaneId::Left, // dummy
+                            path: PathBuf::new(),
+                            message: format!("Failed to open PTY: {e}"),
+                            elapsed_ms: 0,
+                        });
+                    }
+                }
+            }
+            TerminalRequest::Write(bytes) => {
+                if let Some(w) = &mut writer {
+                    let _ = w.write_all(&bytes);
+                    let _ = w.flush();
+                }
+            }
+            TerminalRequest::Resize { cols, rows } => {
+                if let Some(p) = &pair {
+                    let _ = p.master.resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                }
+            }
+        }
+    }
+}
+
 mod tests {
     use super::*;
 

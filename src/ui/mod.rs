@@ -7,9 +7,10 @@ mod menu_bar;
 mod overlay;
 mod palette;
 mod pane;
-mod preview;
+pub mod preview;
 mod settings;
 pub mod ssh;
+pub mod terminal;
 mod styles;
 
 pub mod layout_cache;
@@ -42,6 +43,7 @@ use ratatui::widgets::Borders;
 /// Render the full TUI. Returns a `LayoutCache` recording each panel's `Rect`
 /// so the event loop can use it for mouse hit-testing without re-running layout.
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
+    let mut cache = LayoutCache::default();
     let palette = state.theme().palette;
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -73,8 +75,24 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
     let panes_pct = 100 - tools_pct;
 
+    let (main_content_area, terminal_area) = if state.terminal.is_open() {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
+            .split(areas[1]);
+        (splits[0], Some(splits[1]))
+    } else {
+        (areas[1], None)
+    };
+
+    if let Some(t_area) = terminal_area {
+        cache.terminal_panel = Some(t_area);
+        let focused = state.focus_layer() == crate::state::FocusLayer::Terminal;
+        crate::ui::terminal::render_terminal(frame, t_area, &state.terminal, palette, focused);
+    }
+
     let (pane_area, tools_area_opt) = if editor_fullscreen {
-        (Rect::default(), Some(areas[1]))
+        (Rect::default(), Some(main_content_area))
     } else if show_tools {
         let vertical = Layout::default()
             .direction(Direction::Vertical)
@@ -82,10 +100,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 Constraint::Percentage(panes_pct),
                 Constraint::Percentage(tools_pct),
             ])
-            .split(areas[1]);
+            .split(main_content_area);
         (vertical[0], Some(vertical[1]))
     } else {
-        (areas[1], None)
+        (main_content_area, None)
     };
 
     let mut left_pane_rect = Rect::default();
@@ -311,6 +329,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         markdown_preview_panel: markdown_preview_panel_rect,
         status_bar: areas[2],
         menu_popup: menu_popup_rect,
+        terminal_panel: terminal_area,
     }
 }
 

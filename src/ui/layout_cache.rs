@@ -19,6 +19,7 @@ pub struct LayoutCache {
     pub status_bar: Rect,
     /// Bounding box of the open menu popup (border included), or `None`.
     pub menu_popup: Option<Rect>,
+    pub terminal_panel: Option<Rect>,
 }
 
 /// Returns `true` if the terminal cell at (`col`, `row`) falls inside `rect`.

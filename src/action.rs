@@ -52,6 +52,8 @@ pub enum Action {
     CycleFocus,
     FocusPreviewPanel,
     OpenShell,
+    ToggleTerminal,
+    TerminalInput(Vec<u8>),
     OpenArchive {
         path: std::path::PathBuf,
     },
@@ -181,6 +183,14 @@ pub enum Command {
         refresh: Vec<RefreshTarget>,
         collision: CollisionPolicy,
     },
+    SpawnTerminal {
+        cwd: PathBuf,
+    },
+    WriteTerminal(Vec<u8>),
+    ResizeTerminal {
+        cols: u16,
+        rows: u16,
+    },
     ScanPane {
         pane: PaneId,
         path: PathBuf,
@@ -300,7 +310,7 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
-            KeyCode::F(2) => Some(Self::OpenShell),
+            KeyCode::F(2) => Some(Self::ToggleTerminal),
             KeyCode::Char('P') if key_event.modifiers == KeyModifiers::SHIFT => {
                 Some(Self::OpenCommandPalette)
             }
@@ -436,6 +446,45 @@ impl Action {
             {
                 Some(Self::FileFinderInput(ch))
             }
+            _ => None,
+        }
+    }
+
+    pub fn from_terminal_key_event(key_event: KeyEvent) -> Option<Self> {
+        // Toggle key: F2 or Ctrl+T or Ctrl+\ 
+        if key_event.code == KeyCode::F(2) || (key_event.code == KeyCode::Char('\\') && key_event.modifiers == KeyModifiers::CONTROL) {
+            return Some(Self::ToggleTerminal);
+        }
+
+        // Map some common keys to terminal sequences
+        match key_event.code {
+            KeyCode::Char(c) => {
+                if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                    if c >= 'a' && c <= 'z' {
+                        return Some(Self::TerminalInput(vec![c as u8 - b'a' + 1]));
+                    }
+                    if c >= 'A' && c <= 'Z' {
+                        return Some(Self::TerminalInput(vec![c as u8 - b'A' + 1]));
+                    }
+                    match c {
+                        '[' => return Some(Self::TerminalInput(vec![27])),
+                        '\\' => return Some(Self::TerminalInput(vec![28])),
+                        ']' => return Some(Self::TerminalInput(vec![29])),
+                        '^' => return Some(Self::TerminalInput(vec![30])),
+                        '_' => return Some(Self::TerminalInput(vec![31])),
+                        _ => {}
+                    }
+                }
+                Some(Self::TerminalInput(c.to_string().into_bytes()))
+            }
+            KeyCode::Enter => Some(Self::TerminalInput(vec![b'\r'])),
+            KeyCode::Backspace => Some(Self::TerminalInput(vec![127])),
+            KeyCode::Tab => Some(Self::TerminalInput(vec![b'\t'])),
+            KeyCode::Esc => Some(Self::TerminalInput(vec![27])),
+            KeyCode::Up => Some(Self::TerminalInput(vec![27, b'[', b'A'])),
+            KeyCode::Down => Some(Self::TerminalInput(vec![27, b'[', b'B'])),
+            KeyCode::Right => Some(Self::TerminalInput(vec![27, b'[', b'C'])),
+            KeyCode::Left => Some(Self::TerminalInput(vec![27, b'[', b'D'])),
             _ => None,
         }
     }

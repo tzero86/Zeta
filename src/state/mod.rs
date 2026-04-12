@@ -8,6 +8,7 @@ pub mod preview_state;
 mod prompt;
 mod settings;
 pub mod ssh;
+pub mod terminal;
 mod types;
 
 pub use editor_state::EditorState;
@@ -43,6 +44,7 @@ pub struct AppState {
     pub overlay: OverlayState,
     pub preview: PreviewState,
     pub editor: EditorState,
+    pub terminal: crate::state::terminal::TerminalState,
     // Shared config/theme/status — not owned by any single sub-state
     config_path: String,
     config: AppConfig,
@@ -90,6 +92,7 @@ impl AppState {
                 loaded_config.config.preview_on_selection,
             ),
             editor: EditorState::default(),
+            terminal: crate::state::terminal::TerminalState::default(),
             config_path: loaded_config.path.display().to_string(),
             config: loaded_config.config.clone(),
             icon_mode: loaded_config.config.icon_mode,
@@ -134,6 +137,10 @@ impl AppState {
         commands.extend(self.panes.apply(&action)?);
         commands.extend(self.editor.apply(&action)?);
         commands.extend(self.preview.apply(&action, &self.panes.focus)?);
+        commands.extend(
+            self.terminal
+                .apply(&action, self.panes.active_pane().cwd.clone())?,
+        );
         commands.extend(self.apply_view(&action)?);
         Ok(commands)
     }
@@ -282,23 +289,38 @@ impl AppState {
             Action::CycleFocus => {
                 self.editor.markdown_preview_focused = false;
                 let preview_available = self.preview.panel_open && self.preview.view.is_some();
-                self.panes.focus = match self.panes.focus {
-                    PaneFocus::Left => {
-                        if preview_available {
-                            self.status_message = String::from(
-                                "preview panel focused  (Ctrl+W to cycle, Esc to return)",
-                            );
-                            PaneFocus::Preview
-                        } else {
-                            PaneFocus::Right
+                let terminal_open = self.terminal.is_open();
+
+                // If terminal is open and focused, focus Left pane
+                if terminal_open && self.terminal.focused {
+                    self.terminal.focused = false;
+                    self.panes.focus = PaneFocus::Left;
+                    self.status_message = String::from("focus returned to left pane");
+                } else if terminal_open && !self.terminal.focused && self.panes.focus == PaneFocus::Right {
+                    // If we're on Right pane and terminal is open, focus terminal next
+                    self.terminal.focused = true;
+                    self.status_message = String::from(
+                        "terminal focused (Ctrl+W to cycle, Esc to return)",
+                    );
+                } else {
+                    self.panes.focus = match self.panes.focus {
+                        PaneFocus::Left => {
+                            if preview_available {
+                                self.status_message = String::from(
+                                    "preview panel focused (Ctrl+W to cycle, Esc to return)",
+                                );
+                                PaneFocus::Preview
+                            } else {
+                                PaneFocus::Right
+                            }
                         }
-                    }
-                    PaneFocus::Right => PaneFocus::Left,
-                    PaneFocus::Preview => {
-                        self.status_message = String::from("focus returned to left pane");
-                        PaneFocus::Left
-                    }
-                };
+                        PaneFocus::Right => PaneFocus::Left,
+                        PaneFocus::Preview => {
+                            self.status_message = String::from("focus returned to left pane");
+                            PaneFocus::Left
+                        }
+                    };
+                }
             }
             Action::FocusNextPane => {
                 self.editor.markdown_preview_focused = false;
@@ -863,11 +885,12 @@ impl AppState {
                 // Prepend a ".." entry so users can click to navigate to the parent.
                 let mut all_entries = entries;
                 if let Some(parent) = path.parent() {
+                    let parent_path: PathBuf = parent.to_path_buf();
                     all_entries.insert(
                         0,
                         crate::fs::EntryInfo {
                             name: String::from(".."),
-                            path: parent.to_path_buf(),
+                            path: parent_path,
                             kind: EntryKind::Directory,
                             size_bytes: None,
                             modified: None,
@@ -990,6 +1013,9 @@ impl AppState {
             }
             JobResult::DirectoryChanged { path } => {
                 self.status_message = format!("filesystem changed: {}", path.display());
+            }
+            JobResult::TerminalOutput(bytes) => {
+                self.terminal.process_output(&bytes);
             }
             JobResult::ArchiveListed {
                 pane,
@@ -1161,6 +1187,9 @@ impl AppState {
         }
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);
+        }
+        if self.terminal.is_open() && self.terminal.focused {
+            return FocusLayer::Terminal;
         }
         if self.panes.active_pane().filter_active {
             return FocusLayer::PaneFilter;
@@ -1339,7 +1368,7 @@ impl AppState {
                 let current = status
                     .current_path
                     .file_name()
-                    .and_then(|value| value.to_str())
+                    .and_then(|value: &std::ffi::OsStr| value.to_str())
                     .unwrap_or(".");
                 format!(
                     " | {}:{}/{} {}",

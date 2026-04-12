@@ -72,6 +72,22 @@ impl App {
                 cache = ui::render(frame, &mut self.state);
             })?;
             self.layout_cache = cache;
+
+            // Terminal resize logic
+            if let Some(t_area) = cache.terminal_panel {
+                // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
+                let inner_rows = t_area.height.saturating_sub(1);
+                
+                // Let's re-read render_terminal in src/ui/terminal.rs
+                if self.state.terminal.is_open() {
+                    // We need to calculate the actual inner size used by vt100
+                    // Let's call resize. It only emits a command if the size actually changed.
+                    for cmd in self.state.terminal.resize(inner_rows, t_area.width) {
+                        self.execute_command(cmd)?;
+                    }
+                }
+            }
+
             self.state.mark_drawn();
             self.process_next_event()?;
         }
@@ -442,6 +458,28 @@ impl App {
                     path: std::path::PathBuf::from(home),
                 })?;
             }
+            Command::SpawnTerminal { cwd } => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Spawn {
+                        cwd,
+                        cols: self.state.terminal.cols,
+                        rows: self.state.terminal.rows,
+                    })
+                    .context("failed to queue terminal spawn job")?;
+            }
+            Command::WriteTerminal(bytes) => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Write(bytes))
+                    .context("failed to queue terminal write job")?;
+            }
+            Command::ResizeTerminal { cols, rows } => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Resize { cols, rows })
+                    .context("failed to queue terminal resize job")?;
+            }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
             }
@@ -485,6 +523,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
+        FocusLayer::Terminal => Action::from_terminal_key_event(key_event),
         FocusLayer::MarkdownPreview => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
@@ -645,6 +684,17 @@ fn route_mouse_event(
                 }
             }
 
+            if let Some(terminal_rect) = cache.terminal_panel {
+                if rect_contains(terminal_rect, col, row) {
+                    if focus != FocusLayer::Terminal {
+                        return Some(Action::ToggleTerminal); // Toggle will focus if not open, but here it's open
+                        // Actually, ToggleTerminal on open terminal might close it?
+                        // Let's use a dedicated FocusTerminal action or just logic.
+                    }
+                    return None;
+                }
+            }
+
             // Click on left or right pane.
             if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
@@ -654,6 +704,7 @@ fn route_mouse_event(
                 if focus == FocusLayer::Editor
                     || focus == FocusLayer::Preview
                     || focus == FocusLayer::MarkdownPreview
+                    || focus == FocusLayer::Terminal
                 {
                     return Some(Action::CycleFocus);
                 }
