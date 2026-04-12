@@ -13,6 +13,7 @@ pub mod jobs;
 pub mod palette;
 pub mod pane;
 pub mod preview;
+pub mod pty;
 pub mod state;
 pub mod ui;
 

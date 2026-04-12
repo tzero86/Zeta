@@ -43,7 +43,6 @@ use ratatui::widgets::Borders;
 /// Render the full TUI. Returns a `LayoutCache` recording each panel's `Rect`
 /// so the event loop can use it for mouse hit-testing without re-running layout.
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
-    let mut cache = LayoutCache::default();
     let palette = state.theme().palette;
     let areas = Layout::default()
         .direction(Direction::Vertical)
@@ -86,7 +85,6 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     };
 
     if let Some(t_area) = terminal_area {
-        cache.terminal_panel = Some(t_area);
         let focused = state.focus_layer() == crate::state::FocusLayer::Terminal;
         crate::ui::terminal::render_terminal(frame, t_area, &state.terminal, palette, focused);
     }

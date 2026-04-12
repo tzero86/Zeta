@@ -30,10 +30,10 @@ pub fn render_terminal(
         let (cursor_row, cursor_col) = screen.cursor_position();
 
         // Calculate vertical scroll offset to keep cursor visible
-        let scroll_top = if (cursor_row as u16) < inner.height {
+        let scroll_top = if cursor_row < inner.height {
             0
         } else {
-            (cursor_row as u16).saturating_sub(inner.height.saturating_sub(1))
+            cursor_row.saturating_sub(inner.height.saturating_sub(1))
         };
 
         for row in 0..rows {
@@ -48,11 +48,11 @@ pub fn render_terminal(
             let y = inner.y + visible_row as u16;
 
             for col in 0..cols {
-                if col as u16 >= inner.width {
+                if col >= inner.width {
                     break;
                 }
                 let cell = screen.cell(row, col).unwrap();
-                let x = inner.x + col as u16;
+                let x = inner.x + col;
 
                 let mut style = Style::default();
                 
@@ -75,21 +75,23 @@ pub fn render_terminal(
                     style = style.add_modifier(Modifier::UNDERLINED);
                 }
 
-                frame.buffer_mut().cell_mut((x, y)).map(|c| {
-                    c.set_symbol(&cell.contents()).set_style(style);
-                });
+                if let Some(c) = frame.buffer_mut().cell_mut((x, y)) {
+                    let contents = cell.contents();
+                    c.set_symbol(if contents.is_empty() { " " } else { &contents })
+                        .set_style(style);
+                }
             }
         }
         
         // Render cursor
         if focused {
             let visible_cursor_row = (cursor_row as i32) - (scroll_top as i32);
-            if visible_cursor_row >= 0 && (visible_cursor_row as u16) < inner.height && (cursor_col as u16) < inner.width {
-                let x = inner.x + cursor_col as u16;
+            if visible_cursor_row >= 0 && (visible_cursor_row as u16) < inner.height && cursor_col < inner.width {
+                let x = inner.x + cursor_col;
                 let y = inner.y + visible_cursor_row as u16;
-                frame.buffer_mut().cell_mut((x, y)).map(|c| {
+                if let Some(c) = frame.buffer_mut().cell_mut((x, y)) {
                     c.set_style(Style::default().add_modifier(Modifier::REVERSED));
-                });
+                }
             }
         }
 

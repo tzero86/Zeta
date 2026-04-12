@@ -28,6 +28,9 @@ tempfile = "3"
 portable-pty = "0.9"
 vt100 = "0.15"
 
+[target.'cfg(windows)'.dependencies]
+conpty = "0.7"
+
 [profile.release]
 opt-level = "z"     # optimise for binary size
 lto = true          # link-time optimisation removes dead code across crates

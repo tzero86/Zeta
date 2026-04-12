@@ -460,10 +460,10 @@ impl Action {
         match key_event.code {
             KeyCode::Char(c) => {
                 if key_event.modifiers.contains(KeyModifiers::CONTROL) {
-                    if c >= 'a' && c <= 'z' {
+                    if c.is_ascii_lowercase() {
                         return Some(Self::TerminalInput(vec![c as u8 - b'a' + 1]));
                     }
-                    if c >= 'A' && c <= 'Z' {
+                    if c.is_ascii_uppercase() {
                         return Some(Self::TerminalInput(vec![c as u8 - b'A' + 1]));
                     }
                     match c {
@@ -477,7 +477,13 @@ impl Action {
                 }
                 Some(Self::TerminalInput(c.to_string().into_bytes()))
             }
-            KeyCode::Enter => Some(Self::TerminalInput(vec![b'\r'])),
+            KeyCode::Enter => {
+                if cfg!(windows) {
+                    Some(Self::TerminalInput(vec![b'\r', b'\n']))
+                } else {
+                    Some(Self::TerminalInput(vec![b'\r']))
+                }
+            }
             KeyCode::Backspace => Some(Self::TerminalInput(vec![127])),
             KeyCode::Tab => Some(Self::TerminalInput(vec![b'\t'])),
             KeyCode::Esc => Some(Self::TerminalInput(vec![27])),
@@ -901,7 +907,7 @@ mod tests {
         );
         assert_eq!(
             Action::from_pane_key_event(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE), &keymap),
-            Some(Action::OpenShell)
+            Some(Action::ToggleTerminal)
         );
     }
 

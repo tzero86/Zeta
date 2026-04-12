@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::Receiver;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -77,12 +77,12 @@ impl App {
             if let Some(t_area) = cache.terminal_panel {
                 // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
                 let inner_rows = t_area.height.saturating_sub(1);
+                let inner_cols = t_area.width;
                 
-                // Let's re-read render_terminal in src/ui/terminal.rs
-                if self.state.terminal.is_open() {
+                if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
                     // We need to calculate the actual inner size used by vt100
                     // Let's call resize. It only emits a command if the size actually changed.
-                    for cmd in self.state.terminal.resize(inner_rows, t_area.width) {
+                    for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
                         self.execute_command_try(cmd)?;
                     }
                 }
@@ -106,39 +106,33 @@ impl App {
     }
 
     fn process_next_event(&mut self) -> Result<()> {
-        let Some(app_event) = self.next_event()? else {
+        // First, drain ALL pending job results to keep the UI in sync with workers.
+        while let Ok(result) = self.job_results.try_recv() {
+            self.handle_event(AppEvent::Job(result))?;
+        }
+
+        // Then process at most one input/resize event per frame.
+        if !event::poll(Duration::from_millis(16)).context("failed to poll terminal events")? {
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
             }
             return Ok(());
-        };
-
-        self.handle_event(app_event)?;
-
-        Ok(())
-    }
-
-    fn next_event(&mut self) -> Result<Option<AppEvent>> {
-        match self.job_results.try_recv() {
-            Ok(result) => return Ok(Some(AppEvent::Job(result))),
-            Err(TryRecvError::Disconnected) => {
-                anyhow::bail!("background worker disconnected")
-            }
-            Err(TryRecvError::Empty) => {}
-        }
-
-        if !event::poll(Duration::from_millis(250)).context("failed to poll terminal events")? {
-            return Ok(None);
         }
 
         match event::read().context("failed to read terminal event")? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                Ok(Some(AppEvent::Input(key_event)))
+                self.handle_event(AppEvent::Input(key_event))?;
             }
-            Event::Mouse(mouse_event) => Ok(Some(AppEvent::Mouse(mouse_event))),
-            Event::Resize(width, height) => Ok(Some(AppEvent::Resize { width, height })),
-            _ => Ok(None),
+            Event::Mouse(mouse_event) => {
+                self.handle_event(AppEvent::Mouse(mouse_event))?;
+            }
+            Event::Resize(width, height) => {
+                self.handle_event(AppEvent::Resize { width, height })?;
+            }
+            _ => {}
         }
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
@@ -863,6 +857,7 @@ mod tests {
                 height: 1,
             },
             menu_popup: None,
+            terminal_panel: None,
         }
     }
 

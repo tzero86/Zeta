@@ -38,7 +38,7 @@ pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AppState {
     pub panes: PaneSetState,
     pub overlay: OverlayState,
@@ -1033,6 +1033,13 @@ impl AppState {
             JobResult::TerminalOutput(bytes) => {
                 self.terminal.process_output(&bytes);
             }
+            JobResult::TerminalDiagnostic(msg) => {
+                self.status_message = format!("[Terminal] {}", msg);
+            }
+            JobResult::TerminalExited => {
+                self.terminal.close();
+                self.status_message = String::from("terminal session ended");
+            }
             JobResult::ArchiveListed {
                 pane,
                 archive_path,
@@ -1740,6 +1747,7 @@ mod tests {
             pending_reveal: None,
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
+            terminal: crate::state::terminal::TerminalState::default(),
         }
     }
 

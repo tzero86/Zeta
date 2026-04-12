@@ -196,6 +196,8 @@ pub enum JobResult {
         path: PathBuf,
     },
     TerminalOutput(Vec<u8>),
+    TerminalDiagnostic(String),
+    TerminalExited,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1484,97 +1486,71 @@ fn run_extract_archive(
 }
 
 /// Terminal worker: handles PTY spawn and raw I/O.
+///
+/// Uses `conpty` on Windows and `portable-pty` on Unix via [`crate::pty::PtySession`].
 pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Sender<JobResult>) {
-    use portable_pty::{native_pty_system, CommandBuilder, PtySize};
     use std::io::{Read, Write};
 
-    let pty_system = native_pty_system();
-    let mut pair: Option<portable_pty::PtyPair> = None;
+    let mut session: Option<crate::pty::PtySession> = None;
     let mut writer: Option<Box<dyn Write + Send>> = None;
-    let mut _child: Option<Box<dyn portable_pty::Child>> = None;
 
     for req in terminal_rx {
         match req {
             TerminalRequest::Spawn { cwd, cols, rows } => {
-                // Diagnostic log
-                let _ = result_tx.send(JobResult::TerminalOutput(
-                    format!("\r\n[Zeta] Requesting PTY {}x{} in {:?}...\r\n", cols, rows, cwd).into_bytes(),
-                ));
+                let safe_cols = if cols == 0 { 80 } else { cols };
+                let safe_rows = if rows == 0 { 24 } else { rows };
 
-                match pty_system.openpty(PtySize {
-                    rows,
-                    cols,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                }) {
-                    Ok(p) => {
-                        let shell = if cfg!(windows) {
-                            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
-                        } else {
-                            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string())
-                        };
+                match crate::pty::PtySession::spawn(&cwd, safe_cols, safe_rows) {
+                    Ok(mut pty) => {
+                        match (pty.take_reader(), pty.take_writer()) {
+                            (Ok(mut r), Ok(w)) => {
+                                // Start a dedicated thread to read from PTY
+                                let result_tx_inner = result_tx.clone();
+                                thread::Builder::new()
+                                    .name("zeta-terminal-reader".into())
+                                    .spawn(move || {
+                                        let mut buffer = [0u8; 8192];
+                                        while let Ok(n) = r.read(&mut buffer) {
+                                            if n == 0 {
+                                                break;
+                                            }
+                                            // Non-blocking send to prevent reader from hanging if UI is slow
+                                            let _ = result_tx_inner.try_send(JobResult::TerminalOutput(
+                                                buffer[..n].to_vec(),
+                                            ));
+                                        }
+                                    })
+                                    .expect("failed to spawn terminal reader thread");
 
-                        let mut cmd = CommandBuilder::new(&shell);
-                        cmd.cwd(cwd);
+                                // Start a dedicated thread to watch for process exit
+                                if let Ok(waiter) = pty.exit_waiter() {
+                                    let result_tx_exit = result_tx.clone();
+                                    thread::Builder::new()
+                                        .name("zeta-terminal-watcher".into())
+                                        .spawn(move || {
+                                            waiter();
+                                            let _ = result_tx_exit.send(JobResult::TerminalExited);
+                                        })
+                                        .expect("failed to spawn terminal watcher thread");
+                                }
 
-                        let _ = result_tx.send(JobResult::TerminalOutput(
-                            format!("[Zeta] Spawning shell: {}\r\n", shell).into_bytes(),
-                        ));
-
-                        match p.slave.spawn_command(cmd) {
-                            Ok(c) => {
-                                let _ = result_tx.send(JobResult::TerminalOutput(
-                                    format!("[Zeta] Shell spawned (PID: {:?})\r\n", c.process_id()).into_bytes(),
+                                let _ = result_tx.send(JobResult::TerminalDiagnostic(
+                                    "Terminal ready".to_string(),
                                 ));
 
-                                let reader = p.master.try_clone_reader();
-                                let writer_inner = p.master.take_writer();
-
-                                if let (Ok(mut r), Ok(mut w)) = (reader, writer_inner) {
-                                    // Manually trigger a prompt if it's cmd.exe
-                                    if shell.to_lowercase().contains("cmd.exe") {
-                                        let _ = w.write_all(b"\r\n");
-                                        let _ = w.flush();
-                                    }
-
-                                    writer = Some(w);
-                                    _child = Some(c);
-                                    pair = Some(p);
-
-                                    // Start a dedicated thread to read from PTY
-                                    let result_tx_inner = result_tx.clone();
-                                    thread::Builder::new()
-                                        .name("zeta-terminal-reader".into())
-                                        .spawn(move || {
-                                            let mut buffer = [0u8; 4096];
-                                            while let Ok(n) = r.read(&mut buffer) {
-                                                if n == 0 {
-                                                    break;
-                                                }
-                                                // Non-blocking send to prevent reader from hanging if UI is slow
-                                                let _ = result_tx_inner.try_send(JobResult::TerminalOutput(
-                                                    buffer[..n].to_vec(),
-                                                ));
-                                            }
-                                            let _ = result_tx_inner.send(JobResult::TerminalOutput(
-                                                b"\r\n[Zeta] Shell process exited.\r\n".to_vec(),
-                                            ));
-                                        })
-                                        .expect("failed to spawn terminal reader thread");
-                                } else {
-                                    let _ = result_tx.send(JobResult::JobFailed {
-                                        pane: PaneId::Left,
-                                        path: PathBuf::new(),
-                                        message: "Failed to clone PTY reader/writer".to_string(),
-                                        elapsed_ms: 0,
-                                    });
-                                }
+                                writer = Some(w);
+                                session = Some(pty);
                             }
-                            Err(e) => {
+                            (r_res, w_res) => {
+                                let msg = format!(
+                                    "PTY I/O setup failed: reader={:?}, writer={:?}",
+                                    r_res.err(),
+                                    w_res.err(),
+                                );
                                 let _ = result_tx.send(JobResult::JobFailed {
                                     pane: PaneId::Left,
                                     path: PathBuf::new(),
-                                    message: format!("Failed to spawn shell '{}': {}", shell, e),
+                                    message: msg,
                                     elapsed_ms: 0,
                                 });
                             }
@@ -1584,7 +1560,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                         let _ = result_tx.send(JobResult::JobFailed {
                             pane: PaneId::Left,
                             path: PathBuf::new(),
-                            message: format!("Failed to open PTY: {e}"),
+                            message: format!("Failed to spawn terminal: {e}"),
                             elapsed_ms: 0,
                         });
                     }
@@ -1597,19 +1573,17 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                 }
             }
             TerminalRequest::Resize { cols, rows } => {
-                if let Some(p) = &pair {
-                    let _ = p.master.resize(PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
+                if let Some(s) = &mut session {
+                    let safe_cols = if cols == 0 { 80 } else { cols };
+                    let safe_rows = if rows == 0 { 24 } else { rows };
+                    let _ = s.resize(safe_cols, safe_rows);
                 }
             }
         }
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
