@@ -1,8 +1,8 @@
 use std::path::Path;
 
 use crate::action::CollisionPolicy;
+use crate::fs::backend::{CopyProgress, FsBackend};
 use crate::fs::{EntryInfo, FileSystemError};
-use crate::fs::backend::{FsBackend, CopyProgress};
 
 /// Local filesystem backend that delegates to existing fs functions
 pub struct LocalBackend;
@@ -26,7 +26,11 @@ impl FsBackend for LocalBackend {
         })
     }
 
-    fn create_directory(&self, path: &Path, collision: CollisionPolicy) -> Result<(), FileSystemError> {
+    fn create_directory(
+        &self,
+        path: &Path,
+        collision: CollisionPolicy,
+    ) -> Result<(), FileSystemError> {
         crate::fs::create_directory(path, collision)
     }
 
@@ -34,12 +38,22 @@ impl FsBackend for LocalBackend {
         crate::fs::delete_path(path)
     }
 
-    fn rename_path(&self, src: &Path, dst: &Path, collision: CollisionPolicy) -> Result<(), FileSystemError> {
+    fn rename_path(
+        &self,
+        src: &Path,
+        dst: &Path,
+        collision: CollisionPolicy,
+    ) -> Result<(), FileSystemError> {
         crate::fs::rename_path(src, dst, collision)
     }
 
-    fn copy_path(&self, src: &Path, dst: &Path, collision: CollisionPolicy,
-                 progress: &mut dyn CopyProgress) -> Result<(), FileSystemError> {
+    fn copy_path(
+        &self,
+        src: &Path,
+        dst: &Path,
+        collision: CollisionPolicy,
+        progress: &mut dyn CopyProgress,
+    ) -> Result<(), FileSystemError> {
         // We need to create a closure that calls the progress callback
         crate::fs::copy_path_with_progress(src, dst, collision, &mut |op_progress| {
             progress(op_progress);
@@ -51,15 +65,18 @@ impl FsBackend for LocalBackend {
     }
 
     fn metadata(&self, path: &Path) -> Result<EntryInfo, FileSystemError> {
-        let metadata = path.metadata().map_err(|source| FileSystemError::ReadEntryType {
-            path: path.display().to_string(),
-            source,
-        })?;
-        
-        let name = path.file_name()
+        let metadata = path
+            .metadata()
+            .map_err(|source| FileSystemError::ReadEntryType {
+                path: path.display().to_string(),
+                source,
+            })?;
+
+        let name = path
+            .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_else(|| path.display().to_string());
-        
+
         let kind = if metadata.is_dir() {
             crate::fs::EntryKind::Directory
         } else if metadata.is_file() {
@@ -69,12 +86,16 @@ impl FsBackend for LocalBackend {
         } else {
             crate::fs::EntryKind::Other
         };
-        
+
         Ok(EntryInfo {
             name,
             path: path.to_path_buf(),
             kind,
-            size_bytes: if metadata.is_file() { Some(metadata.len()) } else { None },
+            size_bytes: if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            },
             modified: metadata.modified().ok(),
         })
     }

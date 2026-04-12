@@ -1,6 +1,7 @@
 pub mod action;
 pub mod app;
 pub mod config;
+pub mod diff;
 pub mod editor;
 pub mod event;
 pub mod finder;
@@ -11,7 +12,6 @@ pub mod icon;
 pub mod jobs;
 pub mod palette;
 pub mod pane;
-pub mod diff;
 pub mod preview;
 pub mod state;
 pub mod ui;

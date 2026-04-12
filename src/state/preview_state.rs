@@ -39,7 +39,11 @@ impl PreviewState {
 
     pub fn request_debounced_preview(&mut self, path: PathBuf) {
         self.requested_path = Some(path.clone());
-        if let Some((_, cached)) = self.cache.iter().find(|(cached_path, _)| *cached_path == path) {
+        if let Some((_, cached)) = self
+            .cache
+            .iter()
+            .find(|(cached_path, _)| *cached_path == path)
+        {
             self.view = Some((path, cached.clone()));
             self.pending_request = None;
             return;
@@ -67,11 +71,7 @@ impl PreviewState {
         }
     }
 
-    pub fn apply(
-        &mut self,
-        action: &Action,
-        focus: &PaneFocus,
-    ) -> Result<Vec<Command>> {
+    pub fn apply(&mut self, action: &Action, focus: &PaneFocus) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
         match action {
             Action::ClearPreview => {
@@ -87,7 +87,11 @@ impl PreviewState {
             }
             Action::PreviewFile { path } => {
                 self.requested_path = Some(path.clone());
-                if let Some((_, cached)) = self.cache.iter().find(|(cached_path, _)| cached_path == path) {
+                if let Some((_, cached)) = self
+                    .cache
+                    .iter()
+                    .find(|(cached_path, _)| cached_path == path)
+                {
                     self.view = Some((path.clone(), cached.clone()));
                 } else {
                     commands.push(Command::PreviewFile { path: path.clone() });
@@ -156,9 +160,11 @@ mod tests {
     #[test]
     fn toggle_panel_flips_state() {
         let mut s = PreviewState::new(false, true);
-        s.apply(&Action::TogglePreviewPanel, &PaneFocus::Left).unwrap();
+        s.apply(&Action::TogglePreviewPanel, &PaneFocus::Left)
+            .unwrap();
         assert!(s.panel_open);
-        s.apply(&Action::TogglePreviewPanel, &PaneFocus::Left).unwrap();
+        s.apply(&Action::TogglePreviewPanel, &PaneFocus::Left)
+            .unwrap();
         assert!(!s.panel_open);
     }
 
@@ -177,10 +183,12 @@ mod tests {
             PathBuf::from("/tmp/a.txt"),
             ViewBuffer::from_plain("line1\nline2\nline3"),
         ));
-        s.apply(&Action::ScrollPreviewDown, &PaneFocus::Left).unwrap();
+        s.apply(&Action::ScrollPreviewDown, &PaneFocus::Left)
+            .unwrap();
         let row = s.view.as_ref().unwrap().1.scroll_row;
         assert_eq!(row, 0);
-        s.apply(&Action::ScrollPreviewDown, &PaneFocus::Preview).unwrap();
+        s.apply(&Action::ScrollPreviewDown, &PaneFocus::Preview)
+            .unwrap();
         let row = s.view.as_ref().unwrap().1.scroll_row;
         assert_eq!(row, 1);
     }

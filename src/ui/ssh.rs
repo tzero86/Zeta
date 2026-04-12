@@ -58,29 +58,16 @@ pub fn render_ssh_connect_dialog(
     } else {
         format!("Address: {}", state.address)
     };
-    let address_paragraph = Paragraph::new(address_label)
-        .style(modal_backdrop_style(*palette));
+    let address_paragraph = Paragraph::new(address_label).style(modal_backdrop_style(*palette));
     frame.render_widget(address_paragraph, chunks[0]);
 
     // Auth method
     let auth_text = match state.auth_method {
-        SshAuthMethod::Password => {
-            if state.focused_field == SshDialogField::Credential {
-                "Auth: [Password] / Key File".to_string()
-            } else {
-                "Auth: Password / [Key File]".to_string()
-            }
-        }
-        SshAuthMethod::KeyFile => {
-            if state.focused_field == SshDialogField::Credential {
-                "Auth: [Password] / Key File".to_string()
-            } else {
-                "Auth: Password / [Key File]".to_string()
-            }
-        }
+        SshAuthMethod::Password => "Auth: [Password] / Key File / Agent".to_string(),
+        SshAuthMethod::KeyFile => "Auth: Password / [Key File] / Agent".to_string(),
+        SshAuthMethod::Agent => "Auth: Password / Key File / [Agent]".to_string(),
     };
-    let auth_paragraph = Paragraph::new(auth_text)
-        .style(modal_backdrop_style(*palette));
+    let auth_paragraph = Paragraph::new(auth_text).style(modal_backdrop_style(*palette));
     frame.render_widget(auth_paragraph, chunks[1]);
 
     // Credential field
@@ -89,25 +76,31 @@ pub fn render_ssh_connect_dialog(
     } else {
         state.credential.clone()
     };
-    let credential_label = if state.focused_field == SshDialogField::Credential {
-        format!("{}: {}█", 
-            if state.auth_method == SshAuthMethod::Password { "Password" } else { "Key File" },
-            credential_display
-        )
-    } else {
-        format!("{}: {}", 
-            if state.auth_method == SshAuthMethod::Password { "Password" } else { "Key File" },
-            credential_display
-        )
+
+    let cred_name = match state.auth_method {
+        SshAuthMethod::Password => "Password",
+        SshAuthMethod::KeyFile => "Key File",
+        SshAuthMethod::Agent => "Agent (not used)",
     };
-    let credential_paragraph = Paragraph::new(credential_label)
-        .style(modal_backdrop_style(*palette));
+
+    let credential_label = if state.focused_field == SshDialogField::Credential {
+        format!("{}: {}█", cred_name, credential_display)
+    } else {
+        format!("{}: {}", cred_name, credential_display)
+    };
+    let credential_paragraph =
+        Paragraph::new(credential_label).style(modal_backdrop_style(*palette));
     frame.render_widget(credential_paragraph, chunks[2]);
 
     // Error message
     if let Some(error) = &state.error {
-        let error_paragraph = Paragraph::new(format!("Error: {}", error))
-            .style(Style::default().fg(ratatui::style::Color::Red));
+        let display_error = if error.contains("failed:") {
+            error.clone()
+        } else {
+            format!("Error: {}", error)
+        };
+        let error_paragraph =
+            Paragraph::new(display_error).style(Style::default().fg(ratatui::style::Color::Red));
         frame.render_widget(error_paragraph, chunks[3]);
     }
 

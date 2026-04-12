@@ -1,7 +1,7 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Instant;
-use std::io::Read;
 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
@@ -9,9 +9,9 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
-    copy_path_with_progress, count_path_entries, create_directory, create_file, delete_path,
-    looks_like_binary, rename_path, trash_path, EntryInfo, FileSystemError,
-    backend::FsBackend, local::LocalBackend,
+    backend::FsBackend, copy_path_with_progress, count_path_entries, create_directory, create_file,
+    delete_path, local::LocalBackend, looks_like_binary, rename_path, trash_path, EntryInfo,
+    FileSystemError,
 };
 use crate::pane::PaneId;
 
@@ -204,15 +204,15 @@ pub struct FileOperationStatus {
 
 /// Three typed senders — one per dedicated worker thread.
 pub struct WorkerChannels {
-    pub scan_tx:    Sender<ScanRequest>,
+    pub scan_tx: Sender<ScanRequest>,
     pub file_op_tx: Sender<FileOpRequest>,
     pub preview_tx: Sender<PreviewRequest>,
-    pub editor_tx:  Sender<EditorLoadRequest>,
-    pub git_tx:     Sender<GitStatusRequest>,
-    pub find_tx:    Sender<FindRequest>,
-    pub watch_tx:   Sender<WatchRequest>,
+    pub editor_tx: Sender<EditorLoadRequest>,
+    pub git_tx: Sender<GitStatusRequest>,
+    pub find_tx: Sender<FindRequest>,
+    pub watch_tx: Sender<WatchRequest>,
     pub archive_tx: Sender<ArchiveListRequest>,
-    pub sftp_tx:    Sender<SftpRequest>,
+    pub sftp_tx: Sender<SftpRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -261,12 +261,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .name("zeta-file-op".into())
             .spawn(move || {
                 for req in file_op_rx {
-                    let outcome = run_file_operation(
-                        req.operation,
-                        req.refresh,
-                        req.collision,
-                        &result_tx,
-                    );
+                    let outcome =
+                        run_file_operation(req.operation, req.refresh, req.collision, &result_tx);
                     let job_result = match outcome {
                         Ok(r) | Err(r) => r,
                     };
@@ -288,11 +284,17 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                 for req in preview_rx {
                     let view = if req.archive.is_none() {
                         load_preview_content(&req.path, &req.syntect_theme)
-                    } else if let (Some(archive_path), Some(inner_path)) = (req.archive.clone(), req.inner_path.clone()) {
+                    } else if let (Some(archive_path), Some(inner_path)) =
+                        (req.archive.clone(), req.inner_path.clone())
+                    {
                         // Attempt to extract single file from archive into memory
                         match std::fs::File::open(&archive_path) {
                             Ok(f) => {
-                                let name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                                let name = archive_path
+                                    .file_name()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
                                 if name.ends_with(".zip") {
                                     match zip::ZipArchive::new(f) {
                                         Ok(mut za) => {
@@ -302,18 +304,30 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                                     let mut buf = Vec::new();
                                                     use std::io::Read;
                                                     let _ = entry.read_to_end(&mut buf);
-                                                    load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme)
+                                                    load_preview_from_bytes(
+                                                        &buf,
+                                                        &inner_path,
+                                                        &req.syntect_theme,
+                                                    )
                                                 }
-                                                Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                                Err(_) => crate::preview::ViewBuffer::from_plain(
+                                                    "[empty file]",
+                                                ),
                                             }
                                         }
-                                        Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                                        Err(_) => {
+                                            crate::preview::ViewBuffer::from_plain("[empty file]")
+                                        }
                                     }
                                 } else {
                                     // Try tar variants with decompression based on extension
-                                    let archive_reader: Box<dyn std::io::Read> = if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+                                    let archive_reader: Box<dyn std::io::Read> = if name
+                                        .ends_with(".tar.gz")
+                                        || name.ends_with(".tgz")
+                                    {
                                         Box::new(flate2::read::GzDecoder::new(f))
-                                    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+                                    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2")
+                                    {
                                         Box::new(bzip2::read::BzDecoder::new(f))
                                     } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
                                         Box::new(xz2::read::XzDecoder::new(f))
@@ -334,7 +348,15 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                             }
                                         }
                                     }
-                                    if let Some(buf) = found { load_preview_from_bytes(&buf, &inner_path, &req.syntect_theme) } else { crate::preview::ViewBuffer::from_plain("[empty file]") }
+                                    if let Some(buf) = found {
+                                        load_preview_from_bytes(
+                                            &buf,
+                                            &inner_path,
+                                            &req.syntect_theme,
+                                        )
+                                    } else {
+                                        crate::preview::ViewBuffer::from_plain("[empty file]")
+                                    }
                                 }
                             }
                             Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
@@ -343,7 +365,10 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                         load_preview_content(&req.path, &req.syntect_theme)
                     };
                     if result_tx_preview
-                        .send(JobResult::PreviewLoaded { path: req.path, view })
+                        .send(JobResult::PreviewLoaded {
+                            path: req.path,
+                            view,
+                        })
                         .is_err()
                     {
                         break;
@@ -388,8 +413,11 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .spawn(move || {
                 for req in git_rx {
                     let result = match crate::git::fetch_status(&req.path) {
-                        Some(status) => JobResult::GitStatusLoaded { pane: req.pane, status },
-                        None         => JobResult::GitStatusAbsent { pane: req.pane },
+                        Some(status) => JobResult::GitStatusLoaded {
+                            pane: req.pane,
+                            status,
+                        },
+                        None => JobResult::GitStatusAbsent { pane: req.pane },
                     };
                     if result_tx.send(result).is_err() {
                         break;
@@ -450,23 +478,57 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             let mut seen = std::collections::BTreeSet::new();
                             let mut entries: Vec<EntryInfo> = Vec::new();
                             let inner = req.inner_path.to_string_lossy().replace("\\", "/");
-                            let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+                            let prefix = if inner.is_empty() {
+                                String::new()
+                            } else if inner.ends_with('/') {
+                                inner.clone()
+                            } else {
+                                format!("{}/", inner)
+                            };
 
                             for i in 0..archive.len() {
                                 if let Ok(file) = archive.by_index(i) {
                                     let name = file.name().to_string();
-                                    let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
-                                    if rest.is_empty() { continue; }
+                                    let rest = if prefix.is_empty() {
+                                        name.as_str()
+                                    } else if name.starts_with(&prefix) {
+                                        &name[prefix.len()..]
+                                    } else {
+                                        continue;
+                                    };
+                                    if rest.is_empty() {
+                                        continue;
+                                    }
                                     let first = rest.split('/').next().unwrap().to_string();
-                                    if !seen.insert(first.clone()) { continue; }
+                                    if !seen.insert(first.clone()) {
+                                        continue;
+                                    }
                                     let is_dir = rest.contains('/') || name.ends_with('/');
-                                    let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
-                                    let size_bytes = if kind == crate::fs::EntryKind::File { Some(file.size()) } else { None };
-                                    entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                                    let kind = if is_dir {
+                                        crate::fs::EntryKind::Directory
+                                    } else {
+                                        crate::fs::EntryKind::File
+                                    };
+                                    let size_bytes = if kind == crate::fs::EntryKind::File {
+                                        Some(file.size())
+                                    } else {
+                                        None
+                                    };
+                                    entries.push(EntryInfo {
+                                        name: first.clone(),
+                                        path: archive_path.join(first),
+                                        kind,
+                                        size_bytes,
+                                        modified: None,
+                                    });
                                 }
                             }
 
-                            entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                            entries.sort_by(|l, r| {
+                                l.kind
+                                    .cmp(&r.kind)
+                                    .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
+                            });
                             let _ = result_tx.send(JobResult::ArchiveListed {
                                 pane: req.pane,
                                 archive_path: archive_path.clone(),
@@ -479,7 +541,11 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                     }
 
                     // Fall back to tar variants (plain tar, tar.gz, tar.bz2, tar.xz).
-                    let ext_name = archive_path.file_name().and_then(|s| s.to_str()).unwrap_or("").to_lowercase();
+                    let ext_name = archive_path
+                        .file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
                     let tar_file = match std::fs::File::open(&archive_path) {
                         Ok(f) => f,
                         Err(err) => {
@@ -493,39 +559,74 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                         }
                     };
 
-                    let reader: Box<dyn std::io::Read> = if ext_name.ends_with(".tar.gz") || ext_name.ends_with(".tgz") {
-                        Box::new(flate2::read::GzDecoder::new(tar_file))
-                    } else if ext_name.ends_with(".tar.bz2") || ext_name.ends_with(".tbz2") {
-                        Box::new(bzip2::read::BzDecoder::new(tar_file))
-                    } else if ext_name.ends_with(".tar.xz") || ext_name.ends_with(".txz") {
-                        Box::new(xz2::read::XzDecoder::new(tar_file))
-                    } else {
-                        Box::new(tar_file)
-                    };
+                    let reader: Box<dyn std::io::Read> =
+                        if ext_name.ends_with(".tar.gz") || ext_name.ends_with(".tgz") {
+                            Box::new(flate2::read::GzDecoder::new(tar_file))
+                        } else if ext_name.ends_with(".tar.bz2") || ext_name.ends_with(".tbz2") {
+                            Box::new(bzip2::read::BzDecoder::new(tar_file))
+                        } else if ext_name.ends_with(".tar.xz") || ext_name.ends_with(".txz") {
+                            Box::new(xz2::read::XzDecoder::new(tar_file))
+                        } else {
+                            Box::new(tar_file)
+                        };
 
                     let mut ar = tar::Archive::new(reader);
                     let mut seen = std::collections::BTreeSet::new();
                     let mut entries: Vec<EntryInfo> = Vec::new();
                     let inner = req.inner_path.to_string_lossy().replace("\\", "/");
-                    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+                    let prefix = if inner.is_empty() {
+                        String::new()
+                    } else if inner.ends_with('/') {
+                        inner.clone()
+                    } else {
+                        format!("{}/", inner)
+                    };
 
                     if let Ok(entries_iter) = ar.entries() {
                         for entry in entries_iter.flatten() {
                             if let Ok(path) = entry.path() {
                                 let name = path.to_string_lossy().to_string();
-                                let rest = if prefix.is_empty() { name.as_str() } else if name.starts_with(&prefix) { &name[prefix.len()..] } else { continue };
-                                if rest.is_empty() { continue; }
+                                let rest = if prefix.is_empty() {
+                                    name.as_str()
+                                } else if name.starts_with(&prefix) {
+                                    &name[prefix.len()..]
+                                } else {
+                                    continue;
+                                };
+                                if rest.is_empty() {
+                                    continue;
+                                }
                                 let first = rest.split('/').next().unwrap().to_string();
-                                if !seen.insert(first.clone()) { continue; }
+                                if !seen.insert(first.clone()) {
+                                    continue;
+                                }
                                 let is_dir = rest.contains('/');
-                                let kind = if is_dir { crate::fs::EntryKind::Directory } else { crate::fs::EntryKind::File };
-                                let size_bytes = if kind == crate::fs::EntryKind::File { Some(entry.size()) } else { None };
-                                entries.push(EntryInfo { name: first.clone(), path: archive_path.join(first), kind, size_bytes, modified: None });
+                                let kind = if is_dir {
+                                    crate::fs::EntryKind::Directory
+                                } else {
+                                    crate::fs::EntryKind::File
+                                };
+                                let size_bytes = if kind == crate::fs::EntryKind::File {
+                                    Some(entry.size())
+                                } else {
+                                    None
+                                };
+                                entries.push(EntryInfo {
+                                    name: first.clone(),
+                                    path: archive_path.join(first),
+                                    kind,
+                                    size_bytes,
+                                    modified: None,
+                                });
                             }
                         }
                     }
 
-                    entries.sort_by(|l, r| l.kind.cmp(&r.kind).then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase())));
+                    entries.sort_by(|l, r| {
+                        l.kind
+                            .cmp(&r.kind)
+                            .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
+                    });
                     let _ = result_tx.send(JobResult::ArchiveListed {
                         pane: req.pane,
                         archive_path,
@@ -545,12 +646,21 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
         thread::Builder::new()
             .name("zeta-sftp".into())
             .spawn(move || {
-                let mut sessions: std::collections::HashMap<SessionId, crate::fs::sftp::SftpBackend> = std::collections::HashMap::new();
-                
+                let mut sessions: std::collections::HashMap<
+                    SessionId,
+                    crate::fs::sftp::SftpBackend,
+                > = std::collections::HashMap::new();
+
                 for req in sftp_rx {
                     match req {
-                        SftpRequest::Connect { address, auth_method, credential, reply } => {
-                            let result: Result<(SessionId, crate::fs::sftp::SftpBackend), String> = connect_sftp(&address, auth_method, &credential);
+                        SftpRequest::Connect {
+                            address,
+                            auth_method,
+                            credential,
+                            reply,
+                        } => {
+                            let result: Result<(SessionId, crate::fs::sftp::SftpBackend), String> =
+                                connect_sftp(&address, auth_method, &credential, None);
                             match result {
                                 Ok((session_id, backend)) => {
                                     sessions.insert(session_id.clone(), backend);
@@ -579,7 +689,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                         path: req.path,
                                         message: format!("SFTP scan failed: {}", e),
                                         elapsed_ms: started_at.elapsed().as_millis(),
-                                    }
+                                    },
                                 };
                                 let _ = result_tx.send(job_result);
                             }
@@ -588,15 +698,15 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             // Handle cross-backend file operations
                             let started_at = Instant::now();
                             let pane = req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left);
-                            
+
                             // Get source and destination backends
-                            let src_backend = req.src_session.as_ref()
-                                .and_then(|id| sessions.get(id));
-                            let dst_backend = req.dst_session.as_ref()
-                                .and_then(|id| sessions.get(id));
+                            let src_backend =
+                                req.src_session.as_ref().and_then(|id| sessions.get(id));
+                            let dst_backend =
+                                req.dst_session.as_ref().and_then(|id| sessions.get(id));
                             // Use src_backend as fallback for remote→remote in same session
                             let dst_backend = dst_backend.or(src_backend);
-                            
+
                             let result = execute_sftp_file_op(
                                 &req.operation,
                                 src_backend,
@@ -605,7 +715,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                 &result_tx,
                                 pane,
                             );
-                            
+
                             let job_result = match result {
                                 Ok(msg) => JobResult::FileOperationCompleted {
                                     message: msg,
@@ -711,7 +821,9 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if name.starts_with('.') || matches!(name, "target" | "node_modules" | "__pycache__" | ".git") {
+        if name.starts_with('.')
+            || matches!(name, "target" | "node_modules" | "__pycache__" | ".git")
+        {
             continue;
         }
         if path.is_dir() {
@@ -730,7 +842,11 @@ fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::Vie
     load_preview_from_bytes(&bytes, path, syntect_theme)
 }
 
-fn load_preview_from_bytes(bytes: &[u8], path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
+fn load_preview_from_bytes(
+    bytes: &[u8],
+    path: &Path,
+    syntect_theme: &str,
+) -> crate::preview::ViewBuffer {
     if bytes.is_empty() {
         return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
@@ -769,20 +885,61 @@ fn load_preview_from_bytes(bytes: &[u8], path: &Path, syntect_theme: &str) -> cr
 }
 
 /// Verify SSH host key against known_hosts for security
-/// Returns Ok(()) if host is known and key matches, or if no verification is needed
-/// Note: This implementation skips full verification for simplicity.
-/// TODO: Implement proper known_hosts verification using ssh2::KnownHosts
-fn verify_host_key(_host: &str, _port: u16, _session: &ssh2::Session) -> Result<(), String> {
-    // For now, accept all host keys (security risk in untrusted networks)
-    // This is listed as a known limitation in the Wave 7A plan
-    // Future: Use ssh2::KnownHosts to check ~/.ssh/known_hosts
-    Ok(())
+fn verify_host_key(
+    host: &str,
+    port: u16,
+    session: &ssh2::Session,
+    known_hosts_file: Option<&std::path::Path>,
+) -> Result<(), String> {
+    let mut known_hosts = session
+        .known_hosts()
+        .map_err(|e| format!("Connection failed: Failed to initialize known_hosts: {}", e))?;
+
+    // Attempt to read known_hosts file
+    let default_path = std::env::var("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("~"))
+        .join(".ssh")
+        .join("known_hosts");
+
+    let known_hosts_path = known_hosts_file.unwrap_or(&default_path);
+
+    if known_hosts_path.exists() {
+        known_hosts
+            .read_file(known_hosts_path, ssh2::KnownHostFileKind::OpenSSH)
+            .map_err(|e| format!("Connection failed: Failed to read known_hosts file: {}", e))?;
+    } else {
+        return Err(
+            "Connection failed: ~/.ssh/known_hosts file not found. Host key verification required."
+                .to_string(),
+        );
+    }
+
+    let (key, _key_type) = session
+        .host_key()
+        .ok_or("Connection failed: Server did not provide a host key")?;
+
+    match known_hosts.check_port(host, port, key) {
+        ssh2::CheckResult::Match => Ok(()),
+        ssh2::CheckResult::NotFound => Err(format!(
+            "Connection failed: Host key for {}:{} not found in known_hosts",
+            host, port
+        )),
+        ssh2::CheckResult::Mismatch => {
+            Err("WARNING: Host key changed! Please investigate manually.".to_string())
+        }
+        ssh2::CheckResult::Failure => {
+            Err("Connection failed: Host key verification failed".to_string())
+        }
+    }
 }
 
 /// Parse SSH address in format user@host:port or user@host
 fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
-    let (user, rest) = address.split_once('@').ok_or("Address must be in format user@host:port")?;
-    
+    let (user, rest) = address
+        .split_once('@')
+        .ok_or("Address must be in format user@host:port")?;
+
     let (host, port) = match rest.rsplit_once(':') {
         Some((h, p)) => {
             let port = p.parse().map_err(|_| "Invalid port number")?;
@@ -790,7 +947,7 @@ fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
         }
         None => (rest, 22u16),
     };
-    
+
     Ok((user.to_string(), host.to_string(), port))
 }
 
@@ -799,44 +956,72 @@ fn connect_sftp(
     address: &str,
     auth_method: crate::state::ssh::SshAuthMethod,
     credential: &str,
+    known_hosts_file: Option<&std::path::Path>,
 ) -> Result<(SessionId, crate::fs::sftp::SftpBackend), String> {
     use std::net::TcpStream;
-    
+
     let (user, host, port) = parse_ssh_address(address)?;
-    
+
     // Create session ID for tracking
     let session_id = format!("{}@{}:{}", user, host, port);
-    
+
     // Connect to SSH server
     let tcp = TcpStream::connect((host.as_str(), port))
         .map_err(|e| format!("Connection failed: {}", e))?;
-    
-    let mut session = ssh2::Session::new()
-        .map_err(|e| format!("Failed to create session: {}", e))?;
-    
+
+    let mut session =
+        ssh2::Session::new().map_err(|e| format!("Failed to create session: {}", e))?;
+
     session.set_tcp_stream(tcp);
-    session.handshake()
+    session
+        .handshake()
         .map_err(|e| format!("Handshake failed: {}", e))?;
-    
+
     // Verify host key (security best practice)
-    verify_host_key(&host, port, &session)?;
-    
-    // Authenticate
-    match auth_method {
-        crate::state::ssh::SshAuthMethod::Password => {
-            session.userauth_password(&user, credential)
-                .map_err(|e| format!("Authentication failed: {}", e))?;
+    verify_host_key(&host, port, &session, known_hosts_file)?;
+
+    // Attempt SSH Agent authentication first
+    let mut authenticated = false;
+
+    if let Ok(mut agent) = session.agent() {
+        if agent.connect().is_ok() && agent.list_identities().is_ok() {
+            if let Ok(identities) = agent.identities() {
+                for identity in identities {
+                    if agent.userauth(&user, &identity).is_ok() {
+                        authenticated = true;
+                        break;
+                    }
+                }
+            }
         }
-        crate::state::ssh::SshAuthMethod::KeyFile => {
-            session.userauth_pubkey_file(&user, None, std::path::Path::new(credential), None)
-                .map_err(|e| format!("Key authentication failed: {}", e))?;
+        let _ = agent.disconnect();
+    }
+
+    // Authenticate with fallback if agent failed
+    if !authenticated {
+        match auth_method {
+            crate::state::ssh::SshAuthMethod::Password => {
+                session
+                    .userauth_password(&user, credential)
+                    .map_err(|e| format!("Authentication failed: {}", e))?;
+            }
+            crate::state::ssh::SshAuthMethod::KeyFile => {
+                session
+                    .userauth_pubkey_file(&user, None, std::path::Path::new(credential), None)
+                    .map_err(|e| format!("Key authentication failed: {}", e))?;
+            }
+            crate::state::ssh::SshAuthMethod::Agent => {
+                return Err(
+                    "Agent authentication failed and no other credential provided".to_string(),
+                );
+            }
         }
     }
-    
+
     // Create SFTP backend
     let backend = crate::fs::sftp::SftpBackend::new(session, std::path::PathBuf::from("/"))
         .map_err(|e| format!("Failed to initialize SFTP: {}", e))?;
-    
+
     Ok((session_id, backend))
 }
 
@@ -850,41 +1035,52 @@ fn execute_sftp_file_op(
     _pane: crate::pane::PaneId,
 ) -> Result<String, (PathBuf, String)> {
     use crate::fs::backend::FsBackend;
-    
+
     match operation {
-        FileOperation::Copy { source, destination } => {
+        FileOperation::Copy {
+            source,
+            destination,
+        } => {
             // Cross-backend copy: read from source, write to destination
             let contents = if let Some(backend) = src_backend {
-                backend.read_file(source)
+                backend
+                    .read_file(source)
                     .map_err(|e| (source.clone(), e.to_string()))?
             } else {
                 // Local source
-                std::fs::read(source)
-                    .map_err(|e| (source.clone(), e.to_string()))?
+                std::fs::read(source).map_err(|e| (source.clone(), e.to_string()))?
             };
-            
+
             if let Some(backend) = dst_backend {
-                backend.write_file(destination, &contents)
+                backend
+                    .write_file(destination, &contents)
                     .map_err(|e| (destination.clone(), e.to_string()))?;
             } else {
                 // Local destination
                 std::fs::write(destination, &contents)
                     .map_err(|e| (destination.clone(), e.to_string()))?;
             }
-            
-            Ok(format!("Copied {} to {}", source.display(), destination.display()))
+
+            Ok(format!(
+                "Copied {} to {}",
+                source.display(),
+                destination.display()
+            ))
         }
         FileOperation::Delete { path } => {
             if let Some(backend) = src_backend {
-                backend.delete_path(path)
+                backend
+                    .delete_path(path)
                     .map_err(|e| (path.clone(), e.to_string()))?;
             } else {
-                std::fs::remove_file(path)
-                    .map_err(|e| (path.clone(), e.to_string()))?;
+                std::fs::remove_file(path).map_err(|e| (path.clone(), e.to_string()))?;
             }
             Ok(format!("Deleted {}", path.display()))
         }
-        _ => Err((PathBuf::new(), "Operation not yet implemented for SFTP".to_string())),
+        _ => Err((
+            PathBuf::new(),
+            "Operation not yet implemented for SFTP".to_string(),
+        )),
     }
 }
 
@@ -904,20 +1100,27 @@ fn run_file_operation(
         .unwrap_or(PaneId::Left);
 
     let op_result = match &operation {
-        FileOperation::Copy { source, destination } => {
-            run_copy_with_progress(source, destination, collision, result_tx)
-        }
+        FileOperation::Copy {
+            source,
+            destination,
+        } => run_copy_with_progress(source, destination, collision, result_tx),
         FileOperation::CreateDirectory { path } => create_directory(path, collision),
         FileOperation::CreateFile { path } => create_file(path, collision),
         FileOperation::Delete { path } => delete_path(path),
         FileOperation::Trash { path } => trash_path(path),
-        FileOperation::Move { source, destination } => {
-            run_move_with_progress(source, destination, collision, result_tx)
-        }
-        FileOperation::Rename { source, destination } => rename_path(source, destination, collision),
-        FileOperation::ExtractArchive { archive, inner_path, destination } => {
-            run_extract_archive(archive, inner_path, destination, result_tx)
-        }
+        FileOperation::Move {
+            source,
+            destination,
+        } => run_move_with_progress(source, destination, collision, result_tx),
+        FileOperation::Rename {
+            source,
+            destination,
+        } => rename_path(source, destination, collision),
+        FileOperation::ExtractArchive {
+            archive,
+            inner_path,
+            destination,
+        } => run_extract_archive(archive, inner_path, destination, result_tx),
     };
 
     if let Err(error) = op_result {
@@ -1094,7 +1297,13 @@ fn run_extract_archive(
 
     // Normalize inner path prefix with forward slashes
     let inner = inner_path.to_string_lossy().replace("\\", "/");
-    let prefix = if inner.is_empty() { String::new() } else if inner.ends_with('/') { inner.clone() } else { format!("{}/", inner) };
+    let prefix = if inner.is_empty() {
+        String::new()
+    } else if inner.ends_with('/') {
+        inner.clone()
+    } else {
+        format!("{}/", inner)
+    };
 
     let name = archive.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let lower = name.to_lowercase();
@@ -1116,8 +1325,14 @@ fn run_extract_archive(
             if !prefix.is_empty() && !entry_name.starts_with(&prefix) {
                 continue;
             }
-            let rel = if prefix.is_empty() { entry_name.as_str() } else { &entry_name[prefix.len()..] };
-            if rel.is_empty() { continue; }
+            let rel = if prefix.is_empty() {
+                entry_name.as_str()
+            } else {
+                &entry_name[prefix.len()..]
+            };
+            if rel.is_empty() {
+                continue;
+            }
 
             let out_path = destination.join(rel);
             if entry.name().ends_with('/') {
@@ -1128,21 +1343,27 @@ fn run_extract_archive(
                 })?;
             } else {
                 if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
-                        from: archive.display().to_string(),
-                        to: parent.display().to_string(),
-                        source,
+                    std::fs::create_dir_all(parent).map_err(|source| {
+                        FileSystemError::CopyPath {
+                            from: archive.display().to_string(),
+                            to: parent.display().to_string(),
+                            source,
+                        }
                     })?;
                 }
-                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
-                    from: archive.display().to_string(),
-                    to: out_path.display().to_string(),
-                    source,
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| {
+                    FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: out_path.display().to_string(),
+                        source,
+                    }
                 })?;
-                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
-                    from: archive.display().to_string(),
-                    to: out_path.display().to_string(),
-                    source,
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| {
+                    FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: out_path.display().to_string(),
+                        source,
+                    }
                 })?;
             }
             let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
@@ -1151,7 +1372,8 @@ fn run_extract_archive(
         Ok(())
     } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
         // support gzipped tars
-        let archive_reader: Box<dyn Read> = if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
+        let archive_reader: Box<dyn Read> = if lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
+        {
             Box::new(flate2::read::GzDecoder::new(file))
         } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
             Box::new(bzip2::read::BzDecoder::new(file))
@@ -1180,8 +1402,14 @@ fn run_extract_archive(
             if !prefix.is_empty() && !path_str.starts_with(&prefix) {
                 continue;
             }
-            let rel = if prefix.is_empty() { path_str.as_ref() } else { &path_str[prefix.len()..] };
-            if rel.is_empty() { continue; }
+            let rel = if prefix.is_empty() {
+                path_str.as_ref()
+            } else {
+                &path_str[prefix.len()..]
+            };
+            if rel.is_empty() {
+                continue;
+            }
             let out_path = destination.join(rel);
             if entry.header().entry_type().is_dir() {
                 std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
@@ -1191,21 +1419,27 @@ fn run_extract_archive(
                 })?;
             } else {
                 if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent).map_err(|source| FileSystemError::CopyPath {
-                        from: archive.display().to_string(),
-                        to: parent.display().to_string(),
-                        source,
+                    std::fs::create_dir_all(parent).map_err(|source| {
+                        FileSystemError::CopyPath {
+                            from: archive.display().to_string(),
+                            to: parent.display().to_string(),
+                            source,
+                        }
                     })?;
                 }
-                let mut outfile = std::fs::File::create(&out_path).map_err(|source| FileSystemError::CopyPath {
-                    from: archive.display().to_string(),
-                    to: out_path.display().to_string(),
-                    source,
+                let mut outfile = std::fs::File::create(&out_path).map_err(|source| {
+                    FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: out_path.display().to_string(),
+                        source,
+                    }
                 })?;
-                std::io::copy(&mut entry, &mut outfile).map_err(|source| FileSystemError::CopyPath {
-                    from: archive.display().to_string(),
-                    to: out_path.display().to_string(),
-                    source,
+                std::io::copy(&mut entry, &mut outfile).map_err(|source| {
+                    FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: out_path.display().to_string(),
+                        source,
+                    }
                 })?;
             }
             let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
@@ -1230,7 +1464,10 @@ mod tests {
         let tmp = std::env::temp_dir();
         workers
             .git_tx
-            .send(GitStatusRequest { pane: PaneId::Left, path: tmp })
+            .send(GitStatusRequest {
+                pane: PaneId::Left,
+                path: tmp,
+            })
             .unwrap();
         let result = results
             .recv_timeout(std::time::Duration::from_secs(5))
@@ -1238,8 +1475,10 @@ mod tests {
         assert!(
             matches!(
                 result,
-                JobResult::GitStatusLoaded { pane: PaneId::Left, .. }
-                    | JobResult::GitStatusAbsent { pane: PaneId::Left }
+                JobResult::GitStatusLoaded {
+                    pane: PaneId::Left,
+                    ..
+                } | JobResult::GitStatusAbsent { pane: PaneId::Left }
             ),
             "unexpected result: {result:?}"
         );
@@ -1251,7 +1490,10 @@ mod tests {
         let tmp = std::env::temp_dir();
         workers
             .scan_tx
-            .send(ScanRequest { pane: PaneId::Left, path: tmp })
+            .send(ScanRequest {
+                pane: PaneId::Left,
+                path: tmp,
+            })
             .unwrap();
         let result = results
             .recv_timeout(std::time::Duration::from_secs(5))
@@ -1259,8 +1501,13 @@ mod tests {
         assert!(
             matches!(
                 result,
-                JobResult::DirectoryScanned { pane: PaneId::Left, .. }
-                    | JobResult::JobFailed { pane: PaneId::Left, .. }
+                JobResult::DirectoryScanned {
+                    pane: PaneId::Left,
+                    ..
+                } | JobResult::JobFailed {
+                    pane: PaneId::Left,
+                    ..
+                }
             ),
             "unexpected result: {result:?}"
         );
@@ -1283,7 +1530,13 @@ mod tests {
             let result = results
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap();
-            if matches!(result, JobResult::FindResults { pane: PaneId::Left, .. }) {
+            if matches!(
+                result,
+                JobResult::FindResults {
+                    pane: PaneId::Left,
+                    ..
+                }
+            ) {
                 break;
             }
         }
@@ -1311,12 +1564,24 @@ mod tests {
         let (workers, results) = spawn_workers();
         workers
             .archive_tx
-            .send(ArchiveListRequest { pane: PaneId::Left, archive_path: archive_path.clone(), inner_path: std::path::PathBuf::new() })
+            .send(ArchiveListRequest {
+                pane: PaneId::Left,
+                archive_path: archive_path.clone(),
+                inner_path: std::path::PathBuf::new(),
+            })
             .unwrap();
 
         loop {
-            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-            if let JobResult::ArchiveListed { pane, archive_path:ap, entries, .. } = res {
+            let res = results
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            if let JobResult::ArchiveListed {
+                pane,
+                archive_path: ap,
+                entries,
+                ..
+            } = res
+            {
                 assert_eq!(pane, PaneId::Left);
                 assert_eq!(ap, archive_path);
                 let names: Vec<_> = entries.iter().map(|e| e.name.clone()).collect();
@@ -1345,17 +1610,26 @@ mod tests {
         }
 
         let (workers, results) = spawn_workers();
-        workers.file_op_tx.send(FileOpRequest {
-            backend: BackendRef::Local,
-            operation: FileOperation::ExtractArchive { archive: archive_path.clone(), inner_path: std::path::PathBuf::new(), destination: outdir.clone() },
-            refresh: vec![],
-            collision: CollisionPolicy::Fail,
-            src_session: None,
-            dst_session: None,
-        }).unwrap();
+        workers
+            .file_op_tx
+            .send(FileOpRequest {
+                backend: BackendRef::Local,
+                operation: FileOperation::ExtractArchive {
+                    archive: archive_path.clone(),
+                    inner_path: std::path::PathBuf::new(),
+                    destination: outdir.clone(),
+                },
+                refresh: vec![],
+                collision: CollisionPolicy::Fail,
+                src_session: None,
+                dst_session: None,
+            })
+            .unwrap();
 
         loop {
-            let res = results.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            let res = results
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
             match res {
                 JobResult::FileOperationCompleted { .. } => break,
                 JobResult::JobFailed { .. } => panic!("extract failed"),
@@ -1413,11 +1687,17 @@ mod tests {
 
         workers
             .scan_tx
-            .send(ScanRequest { pane: PaneId::Left, path: tmp.clone() })
+            .send(ScanRequest {
+                pane: PaneId::Left,
+                path: tmp.clone(),
+            })
             .unwrap();
         workers
             .scan_tx
-            .send(ScanRequest { pane: PaneId::Right, path: tmp.clone() })
+            .send(ScanRequest {
+                pane: PaneId::Right,
+                path: tmp.clone(),
+            })
             .unwrap();
         workers
             .find_tx
@@ -1430,7 +1710,10 @@ mod tests {
 
         let mut received = 0usize;
         for _ in 0..3 {
-            if results.recv_timeout(std::time::Duration::from_secs(5)).is_ok() {
+            if results
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .is_ok()
+            {
                 received += 1;
             }
         }

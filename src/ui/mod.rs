@@ -2,15 +2,15 @@ mod bookmarks;
 mod code_view;
 mod editor;
 mod finder;
-mod menu_bar;
 pub mod markdown;
+mod menu_bar;
 mod overlay;
 mod palette;
 mod pane;
 mod preview;
 mod settings;
-mod styles;
 pub mod ssh;
+mod styles;
 
 pub mod layout_cache;
 pub use layout_cache::LayoutCache;
@@ -26,7 +26,6 @@ use crate::state::{AppState, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
-use crate::ui::ssh::render_ssh_connect_dialog;
 use crate::ui::markdown::render_markdown_preview;
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
@@ -36,6 +35,7 @@ use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
 use crate::ui::preview::render_preview_panel;
 use crate::ui::settings::render_settings_panel;
+use crate::ui::ssh::render_ssh_connect_dialog;
 
 use ratatui::widgets::Borders;
 
@@ -63,7 +63,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let has_editor = state.editor().is_some();
     let editor_fullscreen = has_editor && state.is_editor_fullscreen();
     let show_md_preview = has_editor && state.is_markdown_preview_visible();
-    let pane_navigation_mode = matches!(state.focus_layer(), crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter);
+    let pane_navigation_mode = matches!(
+        state.focus_layer(),
+        crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter
+    );
     let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
     let show_tools = has_editor || is_preview_open;
 
@@ -151,10 +154,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             let (editor_area, md_area_opt) = if show_md_preview {
                 let halves = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Percentage(50),
-                        Constraint::Percentage(50),
-                    ])
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(tools_area);
                 (halves[0], Some(halves[1]))
             } else {
@@ -203,12 +203,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         );
                     } else {
                         render_markdown_preview(
-                            frame,
-                            md_area,
-                            &source,
-                            palette,
-                            md_scroll,
-                            md_focused,
+                            frame, md_area, &source, palette, md_scroll, md_focused,
                         );
                     }
                 }
@@ -281,7 +276,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     }
 
     if let Some(bookmarks_state) = state.bookmarks() {
-        render_bookmarks_modal(frame, areas[1], bookmarks_state, &state.config().bookmarks, palette);
+        render_bookmarks_modal(
+            frame,
+            areas[1],
+            bookmarks_state,
+            &state.config().bookmarks,
+            palette,
+        );
     }
 
     if let Some(finder_state) = state.file_finder() {

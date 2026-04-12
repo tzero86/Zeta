@@ -83,12 +83,18 @@ pub enum FileSystemError {
     #[error("{message}")]
     Other { message: String },
     #[error("failed to move {src} to {dst}: {source}")]
-    MoveEntry { src: String, dst: String, source: io::Error },
+    MoveEntry {
+        src: String,
+        dst: String,
+        source: io::Error,
+    },
     #[error("failed to copy {src} to {dst}: {source}")]
-    CopyEntry { src: String, dst: String, source: io::Error },
+    CopyEntry {
+        src: String,
+        dst: String,
+        source: io::Error,
+    },
 }
-
-
 
 pub mod backend;
 pub mod local;
@@ -157,19 +163,18 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
         });
     }
 
-// Helper function for archive extension detection
-fn is_archive_extension(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".zip")
-        || lower.ends_with(".tar")
-        || lower.ends_with(".tar.gz")
-        || lower.ends_with(".tgz")
-        || lower.ends_with(".tar.bz2")
-        || lower.ends_with(".tbz2")
-        || lower.ends_with(".tar.xz")
-        || lower.ends_with(".txz")
-}
-
+    // Helper function for archive extension detection
+    fn is_archive_extension(name: &str) -> bool {
+        let lower = name.to_lowercase();
+        lower.ends_with(".zip")
+            || lower.ends_with(".tar")
+            || lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".tar.bz2")
+            || lower.ends_with(".tbz2")
+            || lower.ends_with(".tar.xz")
+            || lower.ends_with(".txz")
+    }
 
     results.sort_by(|left, right| {
         left.kind

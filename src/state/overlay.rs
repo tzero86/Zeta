@@ -262,7 +262,8 @@ impl OverlayState {
                 if let Some(ModalState::Menu { id, selection }) = &self.modal {
                     let id = *id;
                     let sel = *selection;
-                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned() {
+                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned()
+                    {
                         self.close_all();
                         commands.push(Command::DispatchAction(item.action.clone()));
                     }

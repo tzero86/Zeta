@@ -20,6 +20,7 @@ pub enum SshAuthMethod {
     #[default]
     Password,
     KeyFile,
+    Agent,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Default)]

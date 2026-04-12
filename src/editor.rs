@@ -185,8 +185,7 @@ impl EditorBuffer {
     }
 
     pub fn move_right(&mut self) {
-        self.cursor_char_idx =
-            (self.cursor_char_idx + 1).min(self.text.len_chars());
+        self.cursor_char_idx = (self.cursor_char_idx + 1).min(self.text.len_chars());
     }
 
     pub fn move_up(&mut self) {
@@ -212,7 +211,9 @@ impl EditorBuffer {
     /// Undo the most recent edit.
     pub fn undo(&mut self) {
         // Clone to avoid borrowing `self` while mutating it.
-        let Some(edit) = self.history.pop_undo().cloned() else { return };
+        let Some(edit) = self.history.pop_undo().cloned() else {
+            return;
+        };
         let insert_end = edit.char_start + edit.inserted.chars().count();
         if insert_end > edit.char_start {
             self.text.remove(edit.char_start..insert_end);
@@ -226,7 +227,9 @@ impl EditorBuffer {
 
     /// Redo the most recently undone edit.
     pub fn redo(&mut self) {
-        let Some(edit) = self.history.pop_redo().cloned() else { return };
+        let Some(edit) = self.history.pop_redo().cloned() else {
+            return;
+        };
         let removed_end = edit.char_start + edit.removed.chars().count();
         if removed_end > edit.char_start {
             self.text.remove(edit.char_start..removed_end);
@@ -245,8 +248,9 @@ impl EditorBuffer {
 
     pub fn save(&mut self) -> Result<(), EditorError> {
         let path = self.path.clone().ok_or(EditorError::MissingPath)?;
-        std_fs::write(&path, self.text.to_string()).map_err(|source| {
-            EditorError::WriteFile { path: path.display().to_string(), source }
+        std_fs::write(&path, self.text.to_string()).map_err(|source| EditorError::WriteFile {
+            path: path.display().to_string(),
+            source,
         })?;
         self.is_dirty = false;
         Ok(())
@@ -316,8 +320,7 @@ impl EditorBuffer {
                     })
                     .collect(),
             };
-            self.highlight_cache =
-                Some((self.edit_version, syntect_theme.to_string(), all_lines));
+            self.highlight_cache = Some((self.edit_version, syntect_theme.to_string(), all_lines));
         }
 
         let (start, _) = self.visible_line_window(height);
@@ -520,9 +523,15 @@ pub enum EditorError {
     #[error("editor buffer has no file path")]
     MissingPath,
     #[error("failed to read editor file {path}: {source}")]
-    ReadFile { path: String, source: std::io::Error },
+    ReadFile {
+        path: String,
+        source: std::io::Error,
+    },
     #[error("failed to write editor file {path}: {source}")]
-    WriteFile { path: String, source: std::io::Error },
+    WriteFile {
+        path: String,
+        source: std::io::Error,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -811,7 +820,9 @@ mod tests {
     #[test]
     fn large_file_insert_does_not_degrade_linearly() {
         let mut buf = EditorBuffer::default();
-        let big = (0..10_000).map(|i| format!("line {i}\n")).collect::<String>();
+        let big = (0..10_000)
+            .map(|i| format!("line {i}\n"))
+            .collect::<String>();
         buf.insert(0, &big);
         let start = Instant::now();
         for ch in "hello world".chars() {

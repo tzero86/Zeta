@@ -4,8 +4,8 @@ use std::sync::Arc;
 use ssh2::{Session, Sftp};
 
 use crate::action::CollisionPolicy;
-use crate::fs::{EntryInfo, FileSystemError, EntryKind};
-use crate::fs::backend::{FsBackend, CopyProgress};
+use crate::fs::backend::{CopyProgress, FsBackend};
+use crate::fs::{EntryInfo, EntryKind, FileSystemError};
 
 /// SFTP filesystem backend that operates over SSH
 pub struct SftpBackend {
@@ -18,11 +18,9 @@ pub struct SftpBackend {
 impl SftpBackend {
     /// Create a new SftpBackend from an established SSH session
     pub fn new(session: Session, base_path: PathBuf) -> Result<Self, FileSystemError> {
-        let sftp = session
-            .sftp()
-            .map_err(|e| FileSystemError::Other {
-                message: format!("Failed to initialize SFTP session: {}", e),
-            })?;
+        let sftp = session.sftp().map_err(|e| FileSystemError::Other {
+            message: format!("Failed to initialize SFTP session: {}", e),
+        })?;
 
         Ok(Self {
             sftp: Arc::new(sftp),
@@ -50,16 +48,17 @@ impl SftpBackend {
         };
 
         EntryInfo {
-            name: path.file_name()
+            name: path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("")
                 .to_string(),
             path: path.to_path_buf(),
             kind,
             size_bytes: Some(stat.size.unwrap_or(0)),
-            modified: stat.mtime.map(|mtime| {
-                std::time::UNIX_EPOCH + std::time::Duration::from_secs(mtime)
-            }),
+            modified: stat
+                .mtime
+                .map(|mtime| std::time::UNIX_EPOCH + std::time::Duration::from_secs(mtime)),
         }
     }
 }
@@ -70,11 +69,13 @@ impl FsBackend for SftpBackend {
         let path_str = remote_path.to_string_lossy();
 
         // Read directory entries
-        let entries = self.sftp.readdir(&remote_path)
-            .map_err(|e| FileSystemError::ReadEntryType {
-                path: path_str.to_string(),
-                source: std::io::Error::other(e),
-            })?;
+        let entries =
+            self.sftp
+                .readdir(&remote_path)
+                .map_err(|e| FileSystemError::ReadEntryType {
+                    path: path_str.to_string(),
+                    source: std::io::Error::other(e),
+                })?;
 
         let mut result = Vec::new();
 
@@ -91,8 +92,7 @@ impl FsBackend for SftpBackend {
 
         // Convert SFTP entries to EntryInfo
         for (entry_path, stat) in entries {
-            let relative_path = entry_path.strip_prefix(&remote_path)
-                .unwrap_or(&entry_path);
+            let relative_path = entry_path.strip_prefix(&remote_path).unwrap_or(&entry_path);
 
             // Skip current directory "." entry
             if relative_path == Path::new(".") {
@@ -109,18 +109,21 @@ impl FsBackend for SftpBackend {
         let remote_path = self.resolve_path(path);
         let path_str = remote_path.to_string_lossy();
 
-        let mut file = self.sftp.open(&remote_path)
-            .map_err(|e| FileSystemError::ReadEntryType {
-                path: path_str.to_string(),
-                source: std::io::Error::other(e),
-            })?;
+        let mut file =
+            self.sftp
+                .open(&remote_path)
+                .map_err(|e| FileSystemError::ReadEntryType {
+                    path: path_str.to_string(),
+                    source: std::io::Error::other(e),
+                })?;
 
         let mut contents = Vec::new();
-        std::io::Read::read_to_end(&mut file, &mut contents)
-            .map_err(|e| FileSystemError::ReadEntryType {
+        std::io::Read::read_to_end(&mut file, &mut contents).map_err(|e| {
+            FileSystemError::ReadEntryType {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),
-            })?;
+            }
+        })?;
 
         Ok(contents)
     }
@@ -129,22 +132,29 @@ impl FsBackend for SftpBackend {
         let remote_path = self.resolve_path(path);
         let path_str = remote_path.to_string_lossy();
 
-        let mut file = self.sftp.create(&remote_path)
+        let mut file = self
+            .sftp
+            .create(&remote_path)
             .map_err(|e| FileSystemError::CreateFile {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),
             })?;
 
-        std::io::Write::write_all(&mut file, contents)
-            .map_err(|e| FileSystemError::CreateFile {
+        std::io::Write::write_all(&mut file, contents).map_err(|e| {
+            FileSystemError::CreateFile {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),
-            })?;
+            }
+        })?;
 
         Ok(())
     }
 
-    fn create_directory(&self, path: &Path, collision: CollisionPolicy) -> Result<(), FileSystemError> {
+    fn create_directory(
+        &self,
+        path: &Path,
+        collision: CollisionPolicy,
+    ) -> Result<(), FileSystemError> {
         let remote_path = self.resolve_path(path);
         let path_str = remote_path.to_string_lossy();
 
@@ -154,7 +164,10 @@ impl FsBackend for SftpBackend {
                 CollisionPolicy::Fail => {
                     return Err(FileSystemError::CreateDirectory {
                         path: path_str.to_string(),
-                        source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Directory exists"),
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "Directory exists",
+                        ),
                     });
                 }
                 CollisionPolicy::Overwrite => {
@@ -164,7 +177,8 @@ impl FsBackend for SftpBackend {
             }
         }
 
-        self.sftp.mkdir(&remote_path, 0o755)
+        self.sftp
+            .mkdir(&remote_path, 0o755)
             .map_err(|e| FileSystemError::CreateDirectory {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),
@@ -177,7 +191,9 @@ impl FsBackend for SftpBackend {
         let remote_path = self.resolve_path(path);
         let path_str = remote_path.to_string_lossy();
 
-        let stat = self.sftp.stat(&remote_path)
+        let stat = self
+            .sftp
+            .stat(&remote_path)
             .map_err(|e| FileSystemError::DeleteEntry {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),
@@ -187,7 +203,8 @@ impl FsBackend for SftpBackend {
             self.sftp.rmdir(&remote_path)
         } else {
             self.sftp.unlink(&remote_path)
-        }.map_err(|e| FileSystemError::DeleteEntry {
+        }
+        .map_err(|e| FileSystemError::DeleteEntry {
             path: path_str.to_string(),
             source: std::io::Error::other(e),
         })?;
@@ -195,7 +212,12 @@ impl FsBackend for SftpBackend {
         Ok(())
     }
 
-    fn rename_path(&self, src: &Path, dst: &Path, collision: CollisionPolicy) -> Result<(), FileSystemError> {
+    fn rename_path(
+        &self,
+        src: &Path,
+        dst: &Path,
+        collision: CollisionPolicy,
+    ) -> Result<(), FileSystemError> {
         let src_path = self.resolve_path(src);
         let dst_path = self.resolve_path(dst);
         let dst_str = dst_path.to_string_lossy();
@@ -207,7 +229,10 @@ impl FsBackend for SftpBackend {
                     return Err(FileSystemError::MoveEntry {
                         src: src_path.to_string_lossy().to_string(),
                         dst: dst_str.to_string(),
-                        source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Destination exists"),
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "Destination exists",
+                        ),
                     });
                 }
                 CollisionPolicy::Overwrite => {
@@ -217,7 +242,8 @@ impl FsBackend for SftpBackend {
             }
         }
 
-        self.sftp.rename(&src_path, &dst_path, None)
+        self.sftp
+            .rename(&src_path, &dst_path, None)
             .map_err(|e| FileSystemError::MoveEntry {
                 src: src_path.to_string_lossy().to_string(),
                 dst: dst_str.to_string(),
@@ -227,8 +253,13 @@ impl FsBackend for SftpBackend {
         Ok(())
     }
 
-    fn copy_path(&self, src: &Path, dst: &Path, collision: CollisionPolicy,
-                 progress: &mut dyn CopyProgress) -> Result<(), FileSystemError> {
+    fn copy_path(
+        &self,
+        src: &Path,
+        dst: &Path,
+        collision: CollisionPolicy,
+        progress: &mut dyn CopyProgress,
+    ) -> Result<(), FileSystemError> {
         let src_path = self.resolve_path(src);
         let dst_path = self.resolve_path(dst);
         let dst_str = dst_path.to_string_lossy();
@@ -240,7 +271,10 @@ impl FsBackend for SftpBackend {
                     return Err(FileSystemError::CopyEntry {
                         src: src_path.to_string_lossy().to_string(),
                         dst: dst_str.to_string(),
-                        source: std::io::Error::new(std::io::ErrorKind::AlreadyExists, "Destination exists"),
+                        source: std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "Destination exists",
+                        ),
                     });
                 }
                 CollisionPolicy::Overwrite => {
@@ -281,7 +315,9 @@ impl FsBackend for SftpBackend {
         let remote_path = self.resolve_path(path);
         let path_str = remote_path.to_string_lossy();
 
-        let stat = self.sftp.stat(&remote_path)
+        let stat = self
+            .sftp
+            .stat(&remote_path)
             .map_err(|e| FileSystemError::ReadEntryType {
                 path: path_str.to_string(),
                 source: std::io::Error::other(e),

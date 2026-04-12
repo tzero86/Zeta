@@ -15,11 +15,18 @@ pub fn render_file_finder(
     state: &FileFinderState,
     palette: ThemePalette,
 ) {
-    let width = ((area.width as f32 * 0.90) as u16).clamp(50, 100).min(area.width);
+    let width = ((area.width as f32 * 0.90) as u16)
+        .clamp(50, 100)
+        .min(area.width);
     let height = (18u16).min(area.height.saturating_sub(2)).max(6);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    let popup = Rect { x, y, width, height };
+    let popup = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
 
     let block = Block::default()
         .title(Span::styled(" File Finder ", overlay_title_style(palette)))
@@ -51,11 +58,17 @@ pub fn render_file_finder(
             Style::default().fg(palette.text_muted),
         )),
     ])
-    .style(Style::default().fg(palette.text_primary).bg(palette.tools_bg));
+    .style(
+        Style::default()
+            .fg(palette.text_primary)
+            .bg(palette.tools_bg),
+    );
     frame.render_widget(input, chunks[0]);
 
     let visible_height = chunks[1].height as usize;
-    let scroll_start = state.selection.saturating_sub(visible_height.saturating_sub(1));
+    let scroll_start = state
+        .selection
+        .saturating_sub(visible_height.saturating_sub(1));
     let items: Vec<ListItem> = if state.filtered.is_empty() {
         vec![ListItem::new(Span::styled(
             " no matches ",
@@ -93,7 +106,10 @@ pub fn render_file_finder(
             })
             .collect()
     };
-    frame.render_widget(List::new(items).style(elevated_surface_style(palette)), chunks[1]);
+    frame.render_widget(
+        List::new(items).style(elevated_surface_style(palette)),
+        chunks[1],
+    );
 
     let footer = Paragraph::new("Type to search • Enter to jump • Esc to close")
         .style(overlay_footer_style(palette));

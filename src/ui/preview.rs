@@ -214,7 +214,11 @@ pub fn render_preview_panel(
             if cheap_mode {
                 if v.is_markdown() {
                     if let Some(source) = v.markdown_source() {
-                        let text: String = source.lines().take(inner.height as usize).collect::<Vec<_>>().join("\n");
+                        let text: String = source
+                            .lines()
+                            .take(inner.height as usize)
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         frame.render_widget(
                             Paragraph::new(text).style(Style::default().bg(palette.tools_bg)),
                             inner,
@@ -225,7 +229,11 @@ pub fn render_preview_panel(
                     let (_, window) = v.visible_window(height);
                     let text = window
                         .iter()
-                        .map(|line| line.iter().map(|(_, _, text)| text.as_str()).collect::<String>())
+                        .map(|line| {
+                            line.iter()
+                                .map(|(_, _, text)| text.as_str())
+                                .collect::<String>()
+                        })
                         .collect::<Vec<_>>()
                         .join("\n");
                     frame.render_widget(

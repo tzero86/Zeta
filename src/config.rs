@@ -461,7 +461,6 @@ impl ThemePreset {
     }
 }
 
-
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct KeymapConfig {
     pub quit: String,
@@ -620,7 +619,10 @@ mod tests {
 
         assert_eq!(
             config.bookmarks,
-            vec![PathBuf::from("/tmp/projects"), PathBuf::from("/tmp/downloads")]
+            vec![
+                PathBuf::from("/tmp/projects"),
+                PathBuf::from("/tmp/downloads")
+            ]
         );
     }
 

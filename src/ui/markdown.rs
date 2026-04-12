@@ -79,7 +79,11 @@ pub fn parse_markdown_lines_with_palette(
         // ── Fenced code block ────────────────────────────────────────────
         if raw_line.trim_start().starts_with("```") {
             in_fence = !in_fence;
-            let marker = if in_fence { "┌─ code " } else { "└───────" };
+            let marker = if in_fence {
+                "┌─ code "
+            } else {
+                "└───────"
+            };
             output.push(Line::from(vec![Span::styled(
                 marker.to_string(),
                 Style::default().fg(palette.text_muted),
@@ -106,9 +110,7 @@ pub fn parse_markdown_lines_with_palette(
             };
             output.push(Line::from(vec![Span::styled(
                 text,
-                Style::default()
-                    .fg(colour)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(colour).add_modifier(Modifier::BOLD),
             )]));
             if add_rule {
                 output.push(Line::from(vec![Span::styled(
@@ -129,7 +131,10 @@ pub fn parse_markdown_lines_with_palette(
         }
 
         // ── Blockquote ────────────────────────────────────────────────────
-        if let Some(rest) = raw_line.strip_prefix("> ").or_else(|| raw_line.strip_prefix(">")) {
+        if let Some(rest) = raw_line
+            .strip_prefix("> ")
+            .or_else(|| raw_line.strip_prefix(">"))
+        {
             let mut spans = vec![Span::styled(
                 "▍ ".to_string(),
                 Style::default().fg(palette.text_muted),
@@ -202,9 +207,7 @@ fn parse_inline(text: &str, palette: ThemePalette) -> Vec<Span<'static>> {
             }
             i += 2;
             let mut inner = String::new();
-            while i + 1 < chars.len()
-                && !(chars[i] == marker[0] && chars[i + 1] == marker[1])
-            {
+            while i + 1 < chars.len() && !(chars[i] == marker[0] && chars[i + 1] == marker[1]) {
                 inner.push(chars[i]);
                 i += 1;
             }
@@ -305,13 +308,15 @@ fn heading_level(line: &str) -> Option<usize> {
 fn is_hr(line: &str) -> bool {
     let t = line.trim();
     (t.starts_with("---") || t.starts_with("===") || t.starts_with("***"))
-        && t.chars().all(|c| c == '-' || c == '=' || c == '*' || c == ' ')
+        && t.chars()
+            .all(|c| c == '-' || c == '=' || c == '*' || c == ' ')
         && t.len() >= 3
 }
 
 fn strip_bullet(line: &str) -> Option<&str> {
     let trimmed = line.trim_start();
-    if let Some(rest) = trimmed.strip_prefix("- ")
+    if let Some(rest) = trimmed
+        .strip_prefix("- ")
         .or_else(|| trimmed.strip_prefix("* "))
         .or_else(|| trimmed.strip_prefix("+ "))
     {
@@ -349,7 +354,10 @@ mod tests {
         let lines = parse_markdown_lines("# Hello World");
         assert_eq!(lines.len(), 2, "h1 should produce heading + rule");
         assert!(
-            lines[0].spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD)),
+            lines[0]
+                .spans
+                .iter()
+                .any(|s| s.style.add_modifier.contains(Modifier::BOLD)),
             "h1 span should be bold"
         );
     }
@@ -358,7 +366,10 @@ mod tests {
     fn heading2_produces_bold_line_no_rule() {
         let lines = parse_markdown_lines("## Section");
         assert_eq!(lines.len(), 1, "h2 should produce only the heading line");
-        assert!(lines[0].spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD)));
+        assert!(lines[0]
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD)));
     }
 
     #[test]
@@ -414,7 +425,10 @@ mod tests {
     fn inline_bold_applies_bold_modifier() {
         let lines = parse_markdown_lines("this is **bold** text");
         assert!(
-            lines[0].spans.iter().any(|s| s.style.add_modifier.contains(Modifier::BOLD)),
+            lines[0]
+                .spans
+                .iter()
+                .any(|s| s.style.add_modifier.contains(Modifier::BOLD)),
             "**bold** should produce a bold span"
         );
     }
@@ -423,7 +437,10 @@ mod tests {
     fn inline_italic_applies_italic_modifier() {
         let lines = parse_markdown_lines("this is *italic* text");
         assert!(
-            lines[0].spans.iter().any(|s| s.style.add_modifier.contains(Modifier::ITALIC)),
+            lines[0]
+                .spans
+                .iter()
+                .any(|s| s.style.add_modifier.contains(Modifier::ITALIC)),
             "*italic* should produce an italic span"
         );
     }
@@ -432,7 +449,10 @@ mod tests {
     fn inline_code_applies_reversed_modifier() {
         let lines = parse_markdown_lines("run `cargo test` now");
         assert!(
-            lines[0].spans.iter().any(|s| s.style.add_modifier.contains(Modifier::REVERSED)),
+            lines[0]
+                .spans
+                .iter()
+                .any(|s| s.style.add_modifier.contains(Modifier::REVERSED)),
             "`code` should be reversed"
         );
     }

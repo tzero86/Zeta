@@ -31,7 +31,9 @@ impl DialogState {
                 String::from(" \\$$$$ \\$$$$$$$$ \\$$$$  \\$$$$$$$   \\$$$$   \\$$$$$$$"),
                 String::new(),
                 String::from("## Overview"),
-                String::from("Zeta is a keyboard-first dual-pane file manager and lightweight editor."),
+                String::from(
+                    "Zeta is a keyboard-first dual-pane file manager and lightweight editor.",
+                ),
                 format!("  Version\t{} — Beta Release", env!("CARGO_PKG_VERSION")),
                 String::from("  Author\ttzero86"),
                 String::new(),
@@ -45,7 +47,9 @@ impl DialogState {
                 String::new(),
                 String::from("## Features"),
                 String::from("  Dual panes\tBrowse side-by-side or stacked"),
-                String::from("  SSH/SFTP\tConnect to remote servers (Ctrl+R or 'ssh' in command palette)"),
+                String::from(
+                    "  SSH/SFTP\tConnect to remote servers (Ctrl+R or 'ssh' in command palette)",
+                ),
                 String::from("  Archive browsing\tOpen .zip/.tar/.gz/.bz2/.xz like folders"),
                 String::from("  Diff mode\tF10 highlights unique/changed entries"),
                 String::from("  Mouse\tClick selects, double-click opens, wheel scrolls"),
@@ -190,7 +194,9 @@ impl CollisionState {
             FileOperation::Trash { path } => format!("trash {}", path.display()),
             FileOperation::Move { source, .. } => format!("move {}", source.display()),
             FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
-            FileOperation::ExtractArchive { archive, .. } => format!("extract {}", archive.display()),
+            FileOperation::ExtractArchive { archive, .. } => {
+                format!("extract {}", archive.display())
+            }
         }
     }
 

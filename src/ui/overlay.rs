@@ -28,7 +28,12 @@ pub fn expanded_modal_backdrop(area: Rect, popup: Rect) -> Rect {
     }
 }
 
-pub fn render_modal_backdrop(frame: &mut Frame<'_>, area: Rect, popup: Rect, palette: ThemePalette) {
+pub fn render_modal_backdrop(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    popup: Rect,
+    palette: ThemePalette,
+) {
     let backdrop = expanded_modal_backdrop(area, popup);
     frame.render_widget(Clear, backdrop);
     frame.render_widget(

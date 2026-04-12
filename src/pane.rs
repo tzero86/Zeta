@@ -52,8 +52,14 @@ impl SortMode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PaneMode {
     Real,
-    Archive { source: PathBuf, inner_path: PathBuf },
-    Remote { address: String, base_path: PathBuf },
+    Archive {
+        source: PathBuf,
+        inner_path: PathBuf,
+    },
+    Remote {
+        address: String,
+        base_path: PathBuf,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -414,25 +420,29 @@ impl PaneState {
     fn rebuild_cache(&self) {
         let indices: Vec<usize> = (0..self.entries.len()).collect();
         // Always pin ".." at index 0, sort/filter everything else.
-        let (parent_indices, mut rest_indices): (Vec<usize>, Vec<usize>) =
-            indices.into_iter().partition(|&i| self.entries[i].name == "..");
+        let (parent_indices, mut rest_indices): (Vec<usize>, Vec<usize>) = indices
+            .into_iter()
+            .partition(|&i| self.entries[i].name == "..");
 
         rest_indices.sort_by(|&left_idx, &right_idx| {
             let left = &self.entries[left_idx];
             let right = &self.entries[right_idx];
             match self.sort_mode {
-                SortMode::Name => {
-                    dir_first(left, right)
-                        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-                }
-                SortMode::NameDesc => {
-                    dir_first(left, right)
-                        .then_with(|| right.name.to_lowercase().cmp(&left.name.to_lowercase()))
-                }
-                SortMode::Size => dir_first(left, right)
-                    .then_with(|| left.size_bytes.unwrap_or(0).cmp(&right.size_bytes.unwrap_or(0))),
-                SortMode::SizeDesc => dir_first(left, right)
-                    .then_with(|| right.size_bytes.unwrap_or(0).cmp(&left.size_bytes.unwrap_or(0))),
+                SortMode::Name => dir_first(left, right)
+                    .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+                SortMode::NameDesc => dir_first(left, right)
+                    .then_with(|| right.name.to_lowercase().cmp(&left.name.to_lowercase())),
+                SortMode::Size => dir_first(left, right).then_with(|| {
+                    left.size_bytes
+                        .unwrap_or(0)
+                        .cmp(&right.size_bytes.unwrap_or(0))
+                }),
+                SortMode::SizeDesc => dir_first(left, right).then_with(|| {
+                    right
+                        .size_bytes
+                        .unwrap_or(0)
+                        .cmp(&left.size_bytes.unwrap_or(0))
+                }),
                 SortMode::Modified => {
                     dir_first(left, right).then_with(|| left.modified.cmp(&right.modified))
                 }
@@ -567,7 +577,11 @@ mod tests {
 
     #[test]
     fn sort_by_size_desc_orders_largest_first() {
-        let mut pane = pane_with_entries(vec![file("small.txt"), file("large.txt"), file("medium.txt")]);
+        let mut pane = pane_with_entries(vec![
+            file("small.txt"),
+            file("large.txt"),
+            file("medium.txt"),
+        ]);
         pane.entries[0].size_bytes = Some(10);
         pane.entries[1].size_bytes = Some(9999);
         pane.entries[2].size_bytes = Some(500);
@@ -640,7 +654,8 @@ mod tests {
 
     #[test]
     fn filter_active_hides_non_matching_entries() {
-        let mut pane = pane_with_entries(vec![file("main.rs"), file("README.md"), file("Cargo.toml")]);
+        let mut pane =
+            pane_with_entries(vec![file("main.rs"), file("README.md"), file("Cargo.toml")]);
         pane.filter_active = true;
         pane.filter_query = String::from("read");
         let names: Vec<_> = pane
@@ -663,7 +678,10 @@ mod tests {
         let mut pane = pane_with_entries(vec![file("README.md"), file("main.rs")]);
         pane.filter_active = true;
         pane.filter_query = String::from("read");
-        assert_eq!(pane.selected_entry().map(|e| e.name.as_str()), Some("README.md"));
+        assert_eq!(
+            pane.selected_entry().map(|e| e.name.as_str()),
+            Some("README.md")
+        );
     }
 
     #[test]

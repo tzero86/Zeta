@@ -60,7 +60,14 @@ a wave ships.
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP remote pane via ssh2 + FsBackend trait refactor | 📋 |
+| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP Remote pane via ssh2 + FsBackend trait refactor | 📋 |
+| 7B | `2026-04-12-wave7b-ssh-agent.md` | SSH Agent and Host Key Verification | ✅ |
+
+### Phase 8 — Embedded Terminal
+
+| Wave | Plan | Summary | Status |
+|---|---|---|---|
+| 8A | `2026-04-12-wave8a-embedded-terminal.md` | Fully embedded terminal emulator (PTY + rendering) | 📋 |
 
 ---
 
@@ -82,3 +89,5 @@ a wave ships.
 | ZTA-156 — Wave 6A: Archive Browsing | 6A |
 | ZTA-157 — Wave 6B: Directory Diff Mode | 6B |
 | ZTA-168 — Wave 7A: SSH/SFTP Remote Filesystems | 7A |
+| ZTA-169 — Wave 7B: SSH Agent and Host Key Verification | 7B |
+| ZTA-170 — Wave 8A: Embedded Terminal | 8A |

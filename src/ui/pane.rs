@@ -121,8 +121,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
             .enumerate()
             .map(|(index, entry)| {
                 let diff_colour = if state.diff_mode {
-                    state.diff_map.get(&entry.name)
-                        .map(|s| s.colour(is_left))
+                    state.diff_map.get(&entry.name).map(|s| s.colour(is_left))
                 } else {
                     None
                 };
@@ -192,10 +191,10 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     let icon_slot = format_icon_slot(icon, icon_mode);
     let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);
     let prefix_width = display_width(&prefix) + 2; // +2 for git indicator + space
-    // Git status indicator — always 1 char wide so column alignment is stable.
+                                                   // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
-        None    => (' ', palette.text_muted),
+        None => (' ', palette.text_muted),
     };
     let meta_width = display_width(&meta);
     let content_width = available_width.saturating_sub(2);
@@ -218,7 +217,14 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         Span::styled(format!("{} ", icon_slot), row_styles.icon),
         Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
         Span::raw(" "),
-        Span::styled(name, if let Some(dc) = diff_colour { row_styles.name.fg(dc) } else { row_styles.name }),
+        Span::styled(
+            name,
+            if let Some(dc) = diff_colour {
+                row_styles.name.fg(dc)
+            } else {
+                row_styles.name
+            },
+        ),
         Span::styled(" ".repeat(spacer_width), Style::default()),
         Span::styled(meta, row_styles.meta),
     ]))
