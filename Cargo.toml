@@ -1,20 +1,22 @@
 [package]
 name = "zeta"
-version = "0.2.0"
+version = "0.3.1"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
 crossbeam-channel = "0.5"
 crossterm = "0.28"
+dirs = "5"
 notify = "6"
 ratatui = "0.29"
 ropey = "1.6"
 serde = { version = "1.0", features = ["derive"] }
 trash = { version = "3", default-features = false, features = ["coinit_apartmentthreaded"] }
-syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes", "default-themes"] }
+syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes"] }
 thiserror = "2.0"
 toml = "0.8"
+ssh2 = "0.9"
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 unicode-width = "0.2"
 zip = "0.6"
@@ -23,6 +25,11 @@ flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
 tempfile = "3"
+portable-pty = "0.9"
+vt100 = "0.15"
+
+[target.'cfg(windows)'.dependencies]
+conpty = "0.7"
 
 [profile.release]
 opt-level = "z"     # optimise for binary size
@@ -30,3 +37,4 @@ lto = true          # link-time optimisation removes dead code across crates
 codegen-units = 1   # single codegen unit improves LTO and size
 strip = true        # strip debug symbols from the binary
 panic = "abort"     # smaller panic handler, no unwinding machinery
+overflow-checks = false  # elide overflow checks; saves code size and a branch per arithmetic op

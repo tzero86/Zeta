@@ -52,7 +52,11 @@ pub enum Action {
     CycleFocus,
     FocusPreviewPanel,
     OpenShell,
-    OpenArchive { path: std::path::PathBuf },
+    ToggleTerminal,
+    TerminalInput(Vec<u8>),
+    OpenArchive {
+        path: std::path::PathBuf,
+    },
     ExitArchive,
     AddBookmark,
     OpenBookmarks,
@@ -70,6 +74,10 @@ pub enum Action {
     ScrollPreviewUp,
     ScrollPreviewPageDown,
     ScrollPreviewPageUp,
+    ScrollDialogDown,
+    ScrollDialogUp,
+    ScrollDialogPageDown,
+    ScrollDialogPageUp,
     MenuActivate,
     /// Mouse click on a menu item — set selection to `index` and activate.
     MenuClickItem(usize),
@@ -97,7 +105,9 @@ pub enum Action {
     OpenRenamePrompt,
     OpenSelectedInEditor,
     OpenSettingsPanel,
-    PreviewFile { path: PathBuf },
+    PreviewFile {
+        path: PathBuf,
+    },
     PromptBackspace,
     PromptCancel,
     PromptInput(char),
@@ -118,7 +128,10 @@ pub enum Action {
     ScrollMarkdownPreviewPageUp,
     ScrollMarkdownPreviewPageDown,
     Quit,
-    Resize { width: u16, height: u16 },
+    Resize {
+        width: u16,
+        height: u16,
+    },
     OpenCommandPalette,
     CloseCommandPalette,
     OpenFileFinder,
@@ -129,6 +142,14 @@ pub enum Action {
     FileFinderMoveDown,
     FileFinderMoveUp,
     CloseSettingsPanel,
+    OpenSshConnect,
+    SshDialogInput(char),
+    SshDialogBackspace,
+    SshDialogToggleField,
+    SshDialogToggleAuthMethod,
+    SshConnectConfirm,
+    SshDisconnect,
+    CloseSshConnect,
     PaletteInput(char),
     PaletteBackspace,
     PaletteConfirm,
@@ -141,9 +162,15 @@ pub enum Action {
     ToggleDiffMode,
     DiffSyncToOther,
     /// Mouse click on a pane entry row.
-    PaneClick { left_pane: bool, row: usize },
+    PaneClick {
+        left_pane: bool,
+        row: usize,
+    },
     /// Mouse double-click on a pane entry row (enter dir / open file).
-    PaneDoubleClick { left_pane: bool, row: usize },
+    PaneDoubleClick {
+        left_pane: bool,
+        row: usize,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -160,6 +187,14 @@ pub enum Command {
         refresh: Vec<RefreshTarget>,
         collision: CollisionPolicy,
     },
+    SpawnTerminal {
+        cwd: PathBuf,
+    },
+    WriteTerminal(Vec<u8>),
+    ResizeTerminal {
+        cols: u16,
+        rows: u16,
+    },
     ScanPane {
         pane: PaneId,
         path: PathBuf,
@@ -175,6 +210,15 @@ pub enum Command {
     },
     OpenShell {
         path: PathBuf,
+    },
+    ConnectSSH {
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        pane: PaneId,
+    },
+    DisconnectSSH {
+        pane: PaneId,
     },
     SaveEditor,
 }
@@ -270,8 +314,10 @@ impl Action {
 
         match key_event.code {
             KeyCode::F(1) => Some(Self::OpenHelpDialog),
-            KeyCode::F(2) => Some(Self::OpenShell),
-            KeyCode::Char('P') if key_event.modifiers == KeyModifiers::SHIFT => Some(Self::OpenCommandPalette),
+            KeyCode::F(2) => Some(Self::ToggleTerminal),
+            KeyCode::Char('P') if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::OpenCommandPalette)
+            }
             KeyCode::F(3) if key_event.modifiers == KeyModifiers::ALT => {
                 Some(Self::FocusPreviewPanel)
             }
@@ -291,7 +337,9 @@ impl Action {
                 Some(Self::OpenNewDirectoryPrompt)
             }
             KeyCode::F(10) => Some(Self::ToggleDiffMode),
-            KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::DiffSyncToOther),
+            KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::DiffSyncToOther)
+            }
             KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char(' ') => Some(Self::ToggleMark),
@@ -406,6 +454,75 @@ impl Action {
         }
     }
 
+    pub fn from_terminal_key_event(key_event: KeyEvent) -> Option<Self> {
+        // Toggle key: F2 or Ctrl+T or Ctrl+\
+        if key_event.code == KeyCode::F(2)
+            || (key_event.code == KeyCode::Char('\\')
+                && key_event.modifiers == KeyModifiers::CONTROL)
+        {
+            return Some(Self::ToggleTerminal);
+        }
+
+        // Map some common keys to terminal sequences
+        match key_event.code {
+            KeyCode::Char(c) => {
+                if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                    if c.is_ascii_lowercase() {
+                        return Some(Self::TerminalInput(vec![c as u8 - b'a' + 1]));
+                    }
+                    if c.is_ascii_uppercase() {
+                        return Some(Self::TerminalInput(vec![c as u8 - b'A' + 1]));
+                    }
+                    match c {
+                        '[' => return Some(Self::TerminalInput(vec![27])),
+                        '\\' => return Some(Self::TerminalInput(vec![28])),
+                        ']' => return Some(Self::TerminalInput(vec![29])),
+                        '^' => return Some(Self::TerminalInput(vec![30])),
+                        '_' => return Some(Self::TerminalInput(vec![31])),
+                        _ => {}
+                    }
+                }
+                Some(Self::TerminalInput(c.to_string().into_bytes()))
+            }
+            KeyCode::Enter => {
+                if cfg!(windows) {
+                    Some(Self::TerminalInput(vec![b'\r', b'\n']))
+                } else {
+                    Some(Self::TerminalInput(vec![b'\r']))
+                }
+            }
+            KeyCode::Backspace => Some(Self::TerminalInput(vec![127])),
+            KeyCode::Tab => Some(Self::TerminalInput(vec![b'\t'])),
+            KeyCode::Esc => Some(Self::TerminalInput(vec![27])),
+            KeyCode::Up => Some(Self::TerminalInput(vec![27, b'[', b'A'])),
+            KeyCode::Down => Some(Self::TerminalInput(vec![27, b'[', b'B'])),
+            KeyCode::Right => Some(Self::TerminalInput(vec![27, b'[', b'C'])),
+            KeyCode::Left => Some(Self::TerminalInput(vec![27, b'[', b'D'])),
+            _ => None,
+        }
+    }
+
+    /// Keys when the SSH connect dialog is open. Consumes ALL input.
+    pub fn from_ssh_connect_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseSshConnect),
+            KeyCode::Enter => Some(Self::SshConnectConfirm),
+            KeyCode::Backspace => Some(Self::SshDialogBackspace),
+            KeyCode::Tab => Some(Self::SshDialogToggleField),
+            KeyCode::Char(' ')
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SshDialogToggleAuthMethod)
+            }
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SshDialogInput(ch))
+            }
+            _ => None,
+        }
+    }
+
     /// Keys when the preview panel has focus. Consumes ALL input.
     pub fn from_preview_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
@@ -429,9 +546,9 @@ impl Action {
     /// Keys when the markdown preview split has keyboard focus.
     pub fn from_markdown_preview_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
-            KeyCode::Up       => Some(Self::ScrollMarkdownPreviewUp),
-            KeyCode::Down     => Some(Self::ScrollMarkdownPreviewDown),
-            KeyCode::PageUp   => Some(Self::ScrollMarkdownPreviewPageUp),
+            KeyCode::Up => Some(Self::ScrollMarkdownPreviewUp),
+            KeyCode::Down => Some(Self::ScrollMarkdownPreviewDown),
+            KeyCode::PageUp => Some(Self::ScrollMarkdownPreviewPageUp),
             KeyCode::PageDown => Some(Self::ScrollMarkdownPreviewPageDown),
             // Esc or Tab returns focus to the editor.
             KeyCode::Esc | KeyCode::Tab => Some(Self::FocusMarkdownPreview),
@@ -598,6 +715,10 @@ impl Action {
             {
                 Some(Self::OpenBookmarks)
             }
+            KeyCode::Down => Some(Self::ScrollDialogDown),
+            KeyCode::Up => Some(Self::ScrollDialogUp),
+            KeyCode::PageDown => Some(Self::ScrollDialogPageDown),
+            KeyCode::PageUp => Some(Self::ScrollDialogPageUp),
             _ => None,
         }
     }
@@ -637,14 +758,20 @@ mod tests {
     #[test]
     fn from_palette_key_event_handles_esc() {
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        assert_eq!(Action::from_palette_key_event(key), Some(Action::CloseCommandPalette));
+        assert_eq!(
+            Action::from_palette_key_event(key),
+            Some(Action::CloseCommandPalette)
+        );
     }
 
     #[test]
     fn from_pane_key_event_handles_quit() {
         let keymap = RuntimeKeymap::default();
         let key = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
-        assert_eq!(Action::from_pane_key_event(key, &keymap), Some(Action::Quit));
+        assert_eq!(
+            Action::from_pane_key_event(key, &keymap),
+            Some(Action::Quit)
+        );
     }
 
     #[test]
@@ -665,15 +792,24 @@ mod tests {
         };
 
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::Quit)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::FocusNextPane)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+                &keymap
+            ),
             Some(Action::Refresh)
         );
     }
@@ -683,7 +819,10 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::MoveSelectionDown)
         );
         assert_eq!(
@@ -699,11 +838,17 @@ mod tests {
             Some(Action::NavigateToParent)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::ToggleMark)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('M'), KeyModifiers::SHIFT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('M'), KeyModifiers::SHIFT),
+                &keymap
+            ),
             Some(Action::ClearMarks)
         );
     }
@@ -737,7 +882,10 @@ mod tests {
             Some(Action::OpenPermanentDeletePrompt)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Insert, KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::OpenNewFilePrompt)
         );
         assert_eq!(
@@ -745,23 +893,32 @@ mod tests {
             Some(Action::OpenNewDirectoryPrompt)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+                &keymap
+            ),
             Some(Action::SaveEditor)
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+                &keymap
+            ),
             Some(Action::AddBookmark)
         );
         assert_eq!(
             Action::from_pane_key_event(
-                KeyEvent::new(KeyCode::Char('B'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+                KeyEvent::new(
+                    KeyCode::Char('B'),
+                    KeyModifiers::CONTROL | KeyModifiers::SHIFT
+                ),
                 &keymap,
             ),
             Some(Action::OpenBookmarks)
         );
         assert_eq!(
             Action::from_pane_key_event(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE), &keymap),
-            Some(Action::OpenShell)
+            Some(Action::ToggleTerminal)
         );
     }
 
@@ -790,15 +947,24 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::OpenMenu(MenuId::File))
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('v'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::OpenMenu(MenuId::View))
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('h'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::OpenMenu(MenuId::Help))
         );
         assert_eq!(

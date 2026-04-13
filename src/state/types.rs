@@ -38,6 +38,8 @@ pub enum FocusLayer {
     Preview,
     /// Keyboard focus is on the markdown preview split within the editor panel.
     MarkdownPreview,
+    /// The embedded terminal emulator is focused.
+    Terminal,
     /// A modal overlay is open; only modal-specific keys are processed.
     Modal(ModalKind),
 }
@@ -53,6 +55,7 @@ pub enum ModalKind {
     Settings,
     Bookmarks,
     FileFinder,
+    SshConnect,
 }
 
 #[cfg(test)]

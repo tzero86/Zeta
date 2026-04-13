@@ -28,6 +28,18 @@ Norton Commander workflow, modern TUI, written in Rust.
 - Hidden file toggle, sort by name / size / extension / modified date
 - Navigate history (Alt+Left / Alt+Right)
 
+### SSH/SFTP Remote Filesystems
+- Connect to remote servers via SSH/SFTP directly from the file manager
+- Authenticate using passwords, key files, or SSH Agent integration
+- Strict host key verification against `~/.ssh/known_hosts` for secure connections
+- Full support for remote file operations (copy, move, delete, rename, etc.)
+- Transparent cross-filesystem support (copy from local to remote or vice versa)
+- Use the SSH Connect dialog (opened via command palette or menu) to initiate a session
+
+**Security Test Plan:**
+- **Host Key Verification Failure:** Attempt to connect to a host with an invalid or changed host key in `~/.ssh/known_hosts`. The UI will reject the connection with: `WARNING: Host key changed! Please investigate manually.`
+- **SSH Agent Authentication:** Run `ssh-agent`, add a key via `ssh-add`, and attempt an SSH connection without providing a password or key file. The connection will succeed automatically using the agent's identities.
+
 ### Editor
 - Embedded text editor with syntax highlighting (via syntect)
 - Undo / redo with delta-based history (O(log n), handles large files)

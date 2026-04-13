@@ -40,7 +40,7 @@ impl PaletteState {
 /// Returns all palette entries in display order.
 /// Sorted by category: Navigation, File Ops, Editor, Preview, View / Layout, Appearance, System.
 pub fn all_entries() -> Vec<PaletteEntry> {
-    use crate::action::Action;
+    use crate::action::{Action, MenuId};
     use crate::config::ThemePreset;
     use crate::state::PaneLayout;
 
@@ -160,6 +160,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::OpenNewDirectoryPrompt,
         },
         PaletteEntry {
+            category: "File Ops",
+            label: "Connect via SSH",
+            hint: "ssh",
+            action: Action::OpenSshConnect,
+        },
+        PaletteEntry {
             category: "System",
             label: "Open shell in current directory",
             hint: "F2",
@@ -221,33 +227,63 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Matrix (default)",
-            hint: "view > matrix",
+            label: "Themes: Open selection menu",
+            hint: "view > themes",
+            action: Action::OpenMenu(MenuId::Themes),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Zeta (default)",
+            hint: "zeta",
+            action: Action::SetTheme(ThemePreset::Zeta),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Neon",
+            hint: "neon",
+            action: Action::SetTheme(ThemePreset::Neon),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Monochrome (B/W)",
+            hint: "monochrome",
+            action: Action::SetTheme(ThemePreset::Monochrome),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Matrix",
+            hint: "matrix",
             action: Action::SetTheme(ThemePreset::Matrix),
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Norton Commander (classic)",
-            hint: "view > norton",
+            label: "Theme: Norton Commander (classic)",
+            hint: "norton",
             action: Action::SetTheme(ThemePreset::Norton),
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Fjord",
-            hint: "view > fjord",
+            label: "Theme: Fjord",
+            hint: "fjord",
             action: Action::SetTheme(ThemePreset::Fjord),
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Sandbar",
-            hint: "view > sandbar",
+            label: "Theme: Sandbar",
+            hint: "sandbar",
             action: Action::SetTheme(ThemePreset::Sandbar),
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Switch theme to: Oxide",
-            hint: "view > oxide",
+            label: "Theme: Oxide",
+            hint: "oxide",
             action: Action::SetTheme(ThemePreset::Oxide),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Dracula",
+            hint: "dracula",
+            action: Action::SetTheme(ThemePreset::Dracula),
         },
         PaletteEntry {
             category: "System",

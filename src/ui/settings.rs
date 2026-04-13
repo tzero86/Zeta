@@ -20,8 +20,7 @@ pub fn render_settings_panel(
     let width = ((area.width as f32 * 0.84) as u16)
         .clamp(64, 104)
         .min(area.width.saturating_sub(2).max(1));
-    let height = (entries.len() as u16 + 8)
-        .min(area.height.saturating_sub(2).max(8));
+    let height = (entries.len() as u16 + 8).min(area.height.saturating_sub(2).max(8));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {

@@ -2,21 +2,23 @@ mod bookmarks;
 mod code_view;
 mod editor;
 mod finder;
-mod menu_bar;
 pub mod markdown;
+mod menu_bar;
 mod overlay;
 mod palette;
 mod pane;
-mod preview;
+pub mod preview;
 mod settings;
+pub mod ssh;
 mod styles;
+pub mod terminal;
 
 pub mod layout_cache;
 pub use layout_cache::LayoutCache;
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
@@ -34,6 +36,7 @@ use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
 use crate::ui::preview::render_preview_panel;
 use crate::ui::settings::render_settings_panel;
+use crate::ui::ssh::render_ssh_connect_dialog;
 
 use ratatui::widgets::Borders;
 
@@ -46,6 +49,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         .constraints([
             Constraint::Length(1),
             Constraint::Min(1),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(frame.area());
@@ -61,15 +65,33 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let has_editor = state.editor().is_some();
     let editor_fullscreen = has_editor && state.is_editor_fullscreen();
     let show_md_preview = has_editor && state.is_markdown_preview_visible();
-    let pane_navigation_mode = matches!(state.focus_layer(), crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter);
+    let pane_navigation_mode = matches!(
+        state.focus_layer(),
+        crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter
+    );
     let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
     let show_tools = has_editor || is_preview_open;
 
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
     let panes_pct = 100 - tools_pct;
 
+    let (main_content_area, terminal_area) = if state.terminal.is_open() {
+        let splits = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
+            .split(areas[1]);
+        (splits[0], Some(splits[1]))
+    } else {
+        (areas[1], None)
+    };
+
+    if let Some(t_area) = terminal_area {
+        let focused = state.focus_layer() == crate::state::FocusLayer::Terminal;
+        crate::ui::terminal::render_terminal(frame, t_area, &state.terminal, palette, focused);
+    }
+
     let (pane_area, tools_area_opt) = if editor_fullscreen {
-        (Rect::default(), Some(areas[1]))
+        (Rect::default(), Some(main_content_area))
     } else if show_tools {
         let vertical = Layout::default()
             .direction(Direction::Vertical)
@@ -77,10 +99,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 Constraint::Percentage(panes_pct),
                 Constraint::Percentage(tools_pct),
             ])
-            .split(areas[1]);
+            .split(main_content_area);
         (vertical[0], Some(vertical[1]))
     } else {
-        (areas[1], None)
+        (main_content_area, None)
     };
 
     let mut left_pane_rect = Rect::default();
@@ -149,10 +171,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             let (editor_area, md_area_opt) = if show_md_preview {
                 let halves = Layout::default()
                     .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Percentage(50),
-                        Constraint::Percentage(50),
-                    ])
+                    .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                     .split(tools_area);
                 (halves[0], Some(halves[1]))
             } else {
@@ -201,12 +220,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         );
                     } else {
                         render_markdown_preview(
-                            frame,
-                            md_area,
-                            &source,
-                            palette,
-                            md_scroll,
-                            md_focused,
+                            frame, md_area, &source, palette, md_scroll, md_focused,
                         );
                     }
                 }
@@ -279,11 +293,21 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     }
 
     if let Some(bookmarks_state) = state.bookmarks() {
-        render_bookmarks_modal(frame, areas[1], bookmarks_state, &state.config().bookmarks, palette);
+        render_bookmarks_modal(
+            frame,
+            areas[1],
+            bookmarks_state,
+            &state.config().bookmarks,
+            palette,
+        );
     }
 
     if let Some(finder_state) = state.file_finder() {
         render_file_finder(frame, areas[1], finder_state, palette);
+    }
+
+    if let Some(ssh_state) = state.ssh_connect() {
+        render_ssh_connect_dialog(frame, areas[1], ssh_state, &palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(
@@ -293,6 +317,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(status, areas[2]);
+    render_key_hints(frame, areas[3], state, palette);
 
     LayoutCache {
         menu_bar: areas[0],
@@ -303,8 +328,103 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         file_preview_panel: file_preview_panel_rect,
         markdown_preview_panel: markdown_preview_panel_rect,
         status_bar: areas[2],
+        hint_bar: areas[3],
         menu_popup: menu_popup_rect,
+        terminal_panel: terminal_area,
     }
+}
+
+fn render_key_hints(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    palette: crate::config::ThemePalette,
+) {
+    use crate::state::ModalKind;
+
+    let hints: &[(&str, &str)] = match state.focus_layer() {
+        crate::state::FocusLayer::Modal(ModalKind::Dialog) => &[
+            ("\u{2191}\u{2193}", "Scroll"),
+            ("PgUp/Dn", "Page"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Collision) => &[
+            ("O", "Overwrite"),
+            ("R", "Rename"),
+            ("S", "Skip"),
+            ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Prompt) => {
+            &[("Enter", "Confirm"), ("Esc", "Cancel")]
+        }
+        crate::state::FocusLayer::Modal(ModalKind::Settings) => &[
+            ("\u{2191}\u{2193}", "Navigate"),
+            ("Space", "Toggle"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Bookmarks) => {
+            &[("Enter", "Go"), ("Del", "Remove"), ("Esc", "Close")]
+        }
+        crate::state::FocusLayer::Modal(ModalKind::Palette)
+        | crate::state::FocusLayer::Modal(ModalKind::FileFinder) => &[
+            ("\u{2191}\u{2193}", "Navigate"),
+            ("Enter", "Open"),
+            ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::Editor => &[
+            ("Ctrl+S", "Save"),
+            ("Ctrl+F", "Find"),
+            ("F3", "Next"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Preview | crate::state::FocusLayer::MarkdownPreview => {
+            &[("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
+        }
+        _ => &[
+            ("F1", "Help"),
+            ("F3", "View"),
+            ("F4", "Edit"),
+            ("F5", "Copy"),
+            ("F6", "Move"),
+            ("F7", "Mkdir"),
+            ("F8", "Delete"),
+            ("F10", "Quit"),
+        ],
+    };
+
+    let key_style = Style::default()
+        .fg(palette.surface_bg)
+        .bg(palette.key_hint_fg)
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default()
+        .fg(palette.text_primary)
+        .bg(palette.surface_bg);
+    let sep_style = Style::default().bg(palette.surface_bg);
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut used_width = 0u16;
+
+    for (key, label) in hints {
+        let key_text = format!(" {} ", key);
+        let label_text = format!(" {} ", label);
+        let segment_width = (key_text.chars().count() + label_text.chars().count()) as u16;
+        if used_width + segment_width > area.width {
+            break;
+        }
+        spans.push(Span::styled(key_text, key_style));
+        spans.push(Span::styled(label_text, label_style));
+        used_width += segment_width;
+    }
+
+    // Fill remainder with status background so the bar doesn't look torn.
+    if used_width < area.width {
+        spans.push(Span::styled(
+            " ".repeat((area.width - used_width) as usize),
+            sep_style,
+        ));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 #[cfg(test)]

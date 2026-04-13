@@ -75,9 +75,15 @@ impl PaneSetState {
                         active.clear_marks();
                         active.push_history();
                         if entry.kind == crate::fs::EntryKind::Archive {
-                            commands.push(Command::OpenArchive { path: entry.path.clone(), inner: std::path::PathBuf::new() });
+                            commands.push(Command::OpenArchive {
+                                path: entry.path.clone(),
+                                inner: std::path::PathBuf::new(),
+                            });
                         } else {
-                            commands.push(Command::ScanPane { pane: pane_id, path: entry.path.clone() });
+                            commands.push(Command::ScanPane {
+                                pane: pane_id,
+                                path: entry.path.clone(),
+                            });
                         }
                     }
                 }
@@ -85,14 +91,22 @@ impl PaneSetState {
             Action::NavigateToParent => {
                 // If we're inside an archive, navigate up within archive or exit archive.
                 if self.active_pane().in_archive() {
-                    if let crate::pane::PaneMode::Archive { source, inner_path } = &self.active_pane().mode {
+                    if let crate::pane::PaneMode::Archive { source, inner_path } =
+                        &self.active_pane().mode
+                    {
                         if inner_path.as_os_str().is_empty() {
                             // at archive root -> exit archive
                             commands.push(Command::DispatchAction(Action::ExitArchive));
                         } else {
                             // navigate to parent inside archive
-                            let parent = inner_path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
-                            commands.push(Command::OpenArchive { path: source.clone(), inner: parent });
+                            let parent = inner_path
+                                .parent()
+                                .map(std::path::Path::to_path_buf)
+                                .unwrap_or_default();
+                            commands.push(Command::OpenArchive {
+                                path: source.clone(),
+                                inner: parent,
+                            });
                         }
                     }
                 } else if let Some(path) = self.active_pane().parent_path() {
@@ -156,7 +170,11 @@ impl PaneSetState {
             Action::PaneClick { left_pane, row } => {
                 use crate::state::types::PaneFocus;
                 // Switch focus to clicked pane if needed.
-                let target_focus = if *left_pane { PaneFocus::Left } else { PaneFocus::Right };
+                let target_focus = if *left_pane {
+                    PaneFocus::Left
+                } else {
+                    PaneFocus::Right
+                };
                 self.focus = target_focus;
                 // Move selection to the clicked row (clamped to entry count).
                 let pane = self.active_pane_mut();
@@ -168,7 +186,11 @@ impl PaneSetState {
             }
             Action::PaneDoubleClick { left_pane, row } => {
                 use crate::state::types::PaneFocus;
-                let target_focus = if *left_pane { PaneFocus::Left } else { PaneFocus::Right };
+                let target_focus = if *left_pane {
+                    PaneFocus::Left
+                } else {
+                    PaneFocus::Right
+                };
                 self.focus = target_focus;
                 {
                     let pane = self.active_pane_mut();
@@ -183,9 +205,15 @@ impl PaneSetState {
                         let pane_id = self.focused_pane_id();
                         self.active_pane_mut().clear_marks();
                         self.active_pane_mut().push_history();
-                        commands.push(Command::ScanPane { pane: pane_id, path: entry.path });
+                        commands.push(Command::ScanPane {
+                            pane: pane_id,
+                            path: entry.path,
+                        });
                     } else if entry.kind == crate::fs::EntryKind::Archive {
-                        commands.push(Command::OpenArchive { path: entry.path, inner: std::path::PathBuf::new() });
+                        commands.push(Command::OpenArchive {
+                            path: entry.path,
+                            inner: std::path::PathBuf::new(),
+                        });
                     }
                 }
             }

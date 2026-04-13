@@ -36,7 +36,11 @@ pub fn wrap_preview_line(
 
             if current_width > 0 && current_width + ch_width > viewport_cols {
                 if !chunk.is_empty() {
-                    current_row.push((*color, *modifier, std::mem::take(&mut chunk)));
+                    current_row.push((
+                        *color,
+                        *modifier,
+                        std::mem::take(&mut chunk).into_boxed_str(),
+                    ));
                 }
                 rows.push(WrappedPreviewRow {
                     line_number,
@@ -49,7 +53,11 @@ pub fn wrap_preview_line(
             current_width += ch_width;
 
             if current_width >= viewport_cols {
-                current_row.push((*color, *modifier, std::mem::take(&mut chunk)));
+                current_row.push((
+                    *color,
+                    *modifier,
+                    std::mem::take(&mut chunk).into_boxed_str(),
+                ));
                 rows.push(WrappedPreviewRow {
                     line_number,
                     line_tokens: std::mem::take(&mut current_row),
@@ -59,7 +67,7 @@ pub fn wrap_preview_line(
         }
 
         if !chunk.is_empty() {
-            current_row.push((*color, *modifier, chunk));
+            current_row.push((*color, *modifier, chunk.into_boxed_str()));
         }
     }
 
@@ -165,7 +173,7 @@ pub fn render_wrapped_preview_view(
                 .iter()
                 .map(|(color, modifier, text)| {
                     Span::styled(
-                        text.clone(),
+                        text.as_ref(),
                         Style::default().fg(*color).add_modifier(*modifier),
                     )
                 })
@@ -214,7 +222,11 @@ pub fn render_preview_panel(
             if cheap_mode {
                 if v.is_markdown() {
                     if let Some(source) = v.markdown_source() {
-                        let text: String = source.lines().take(inner.height as usize).collect::<Vec<_>>().join("\n");
+                        let text: String = source
+                            .lines()
+                            .take(inner.height as usize)
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         frame.render_widget(
                             Paragraph::new(text).style(Style::default().bg(palette.tools_bg)),
                             inner,
@@ -225,7 +237,11 @@ pub fn render_preview_panel(
                     let (_, window) = v.visible_window(height);
                     let text = window
                         .iter()
-                        .map(|line| line.iter().map(|(_, _, text)| text.as_str()).collect::<String>())
+                        .map(|line| {
+                            line.iter()
+                                .map(|(_, _, text)| text.as_ref())
+                                .collect::<String>()
+                        })
                         .collect::<Vec<_>>()
                         .join("\n");
                     frame.render_widget(

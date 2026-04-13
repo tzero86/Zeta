@@ -28,11 +28,11 @@ impl FileStatus {
     pub fn symbol(self) -> char {
         match self {
             Self::Conflicted => 'U',
-            Self::Added      => 'A',
-            Self::Modified   => 'M',
-            Self::Deleted    => 'D',
-            Self::Renamed    => 'R',
-            Self::Untracked  => '?',
+            Self::Added => 'A',
+            Self::Modified => 'M',
+            Self::Deleted => 'D',
+            Self::Renamed => 'R',
+            Self::Untracked => '?',
         }
     }
 
@@ -41,11 +41,11 @@ impl FileStatus {
         use ratatui::style::Color;
         match self {
             Self::Conflicted => Color::Red,
-            Self::Added      => Color::Green,
-            Self::Modified   => Color::Yellow,
-            Self::Deleted    => Color::Red,
-            Self::Renamed    => Color::Cyan,
-            Self::Untracked  => Color::DarkGray,
+            Self::Added => Color::Green,
+            Self::Modified => Color::Yellow,
+            Self::Deleted => Color::Red,
+            Self::Renamed => Color::Cyan,
+            Self::Untracked => Color::DarkGray,
         }
     }
 }
@@ -138,7 +138,11 @@ fn run_git(cwd: &Path, args: &[&str]) -> Option<Output> {
     #[cfg(windows)]
     {
         for candidate in windows_git_candidates() {
-            if let Ok(output) = Command::new(&candidate).args(args).current_dir(cwd).output() {
+            if let Ok(output) = Command::new(&candidate)
+                .args(args)
+                .current_dir(cwd)
+                .output()
+            {
                 return Some(output);
             }
         }
@@ -245,9 +249,7 @@ fn relative_lookup_path(root: &Path, absolute_path: &Path) -> Option<PathBuf> {
 
     let root_norm = normalize_lookup_string(root);
     let abs_norm = normalize_lookup_string(absolute_path);
-    abs_norm
-        .strip_prefix(&(root_norm + "/"))
-        .map(PathBuf::from)
+    abs_norm.strip_prefix(&(root_norm + "/")).map(PathBuf::from)
 }
 
 fn normalize_lookup_string(path: &Path) -> String {
@@ -376,11 +378,7 @@ mod tests {
 
     #[test]
     fn repo_status_for_returns_none_for_clean_file() {
-        let status = RepoStatus::new(
-            PathBuf::from("/repo"),
-            String::from("main"),
-            HashMap::new(),
-        );
+        let status = RepoStatus::new(PathBuf::from("/repo"), String::from("main"), HashMap::new());
         assert_eq!(status.status_for(Path::new("/repo/clean.rs")), None);
     }
 

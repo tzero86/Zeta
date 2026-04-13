@@ -17,6 +17,10 @@ pub enum ThemePreset {
     Oxide,
     Matrix,
     Norton,
+    Neon,
+    Monochrome,
+    Dracula,
+    Zeta,
 }
 
 impl ThemePreset {
@@ -27,6 +31,10 @@ impl ThemePreset {
             Self::Oxide => "oxide",
             Self::Matrix => "matrix",
             Self::Norton => "norton",
+            Self::Neon => "neon",
+            Self::Monochrome => "monochrome",
+            Self::Dracula => "dracula",
+            Self::Zeta => "zeta",
         }
     }
 }
@@ -225,7 +233,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            preset: String::from("matrix"),
+            preset: String::from("zeta"),
             status_bar_label: String::from("Zeta"),
         }
     }
@@ -270,10 +278,10 @@ impl ThemePalette {
         match ThemePreset::from_name(&config.preset) {
             Some(preset) => Self::from_preset(preset),
             None => ResolvedTheme {
-                palette: Self::fjord(),
-                preset: String::from("fjord"),
+                palette: Self::zeta(),
+                preset: String::from("zeta"),
                 warning: Some(format!(
-                    "unknown theme preset '{}', using fjord",
+                    "unknown theme preset '{}', using zeta",
                     config.preset
                 )),
             },
@@ -305,6 +313,26 @@ impl ThemePalette {
             ThemePreset::Norton => ResolvedTheme {
                 palette: Self::norton(),
                 preset: String::from("norton"),
+                warning: None,
+            },
+            ThemePreset::Neon => ResolvedTheme {
+                palette: Self::neon(),
+                preset: String::from("neon"),
+                warning: None,
+            },
+            ThemePreset::Monochrome => ResolvedTheme {
+                palette: Self::monochrome(),
+                preset: String::from("monochrome"),
+                warning: None,
+            },
+            ThemePreset::Dracula => ResolvedTheme {
+                palette: Self::dracula(),
+                preset: String::from("dracula"),
+                warning: None,
+            },
+            ThemePreset::Zeta => ResolvedTheme {
+                palette: Self::zeta(),
+                preset: String::from("zeta"),
                 warning: None,
             },
         }
@@ -360,7 +388,7 @@ impl ThemePalette {
             status_fg: Color::Black,
             logo_accent: Color::Rgb(190, 80, 20),
             key_hint_fg: Color::Rgb(83, 148, 117),
-            syntect_theme: "base16-solarized.light",
+            syntect_theme: "Solarized (light)",
         }
     }
 
@@ -415,7 +443,90 @@ impl ThemePalette {
             status_fg: Color::Black,
             logo_accent: Color::Rgb(0, 255, 64),
             key_hint_fg: Color::Rgb(44, 213, 255),
-            syntect_theme: "dracula",
+            syntect_theme: "Dracula",
+        }
+    }
+
+    fn neon() -> Self {
+        // High-vibrancy Neon theme: Deep Black, Cyan, Magenta, Yellow
+        Self {
+            menu_bg: Color::Rgb(10, 10, 15),
+            menu_fg: Color::Rgb(0, 255, 255), // Cyan
+            menu_active_bg: Color::Rgb(30, 30, 45),
+            menu_mnemonic_fg: Color::Rgb(255, 0, 255), // Magenta
+            border_focus: Color::Rgb(0, 255, 255),     // Cyan
+            border_editor_focus: Color::Rgb(255, 255, 0), // Yellow
+            selection_bg: Color::Rgb(0, 100, 100),     // Darker cyan for selection background
+            selection_fg: Color::White,                // White for selection text
+            surface_bg: Color::Rgb(8, 8, 12),          // Very dark blue-gray
+            tools_bg: Color::Rgb(20, 20, 30),          // Slightly lighter for hierarchy
+            prompt_bg: Color::Rgb(15, 15, 25),         // Consistent with tools_bg
+            prompt_border: Color::Rgb(255, 0, 255),
+            text_primary: Color::Rgb(220, 220, 240),
+            text_muted: Color::Rgb(100, 100, 130),
+            directory_fg: Color::Rgb(0, 255, 255),
+            symlink_fg: Color::Rgb(255, 0, 255),
+            file_fg: Color::Rgb(200, 200, 220),
+            status_bg: Color::Rgb(0, 255, 255),
+            status_fg: Color::Black,
+            logo_accent: Color::Rgb(255, 0, 255),
+            key_hint_fg: Color::Rgb(0, 255, 255),
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
+
+    fn monochrome() -> Self {
+        // Minimalist B&W theme with functional status colors
+        Self {
+            menu_bg: Color::Rgb(20, 20, 20),
+            menu_fg: Color::White,
+            menu_active_bg: Color::Rgb(50, 50, 50),
+            menu_mnemonic_fg: Color::Rgb(180, 180, 180),
+            border_focus: Color::White,
+            border_editor_focus: Color::White,
+            selection_bg: Color::White,
+            selection_fg: Color::Black,
+            surface_bg: Color::Rgb(10, 10, 10), // Very dark gray
+            tools_bg: Color::Rgb(25, 25, 25),   // Slightly lighter for hierarchy
+            prompt_bg: Color::Rgb(20, 20, 20),  // Consistent with tools_bg
+            prompt_border: Color::White,
+            text_primary: Color::White,
+            text_muted: Color::Rgb(100, 100, 100),
+            directory_fg: Color::White,
+            symlink_fg: Color::Rgb(180, 180, 180),
+            file_fg: Color::Rgb(200, 200, 200),
+            status_bg: Color::Rgb(30, 30, 30), // Subtle dark gray
+            status_fg: Color::White,           // White text for status bar
+            logo_accent: Color::Green,         // Green for git-like status or accent
+            key_hint_fg: Color::Rgb(150, 150, 150), // Gray for key hints
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
+
+    fn dracula() -> Self {
+        Self {
+            menu_bg: Color::Rgb(40, 42, 54),               // #282A36
+            menu_fg: Color::Rgb(248, 248, 242),            // #F8F8F2
+            menu_active_bg: Color::Rgb(68, 71, 90),        // #44475A
+            menu_mnemonic_fg: Color::Rgb(255, 121, 198),   // #FF79C6
+            border_focus: Color::Rgb(189, 147, 249),       // #BD93F9
+            border_editor_focus: Color::Rgb(80, 250, 123), // #50FA7B
+            selection_bg: Color::Rgb(68, 71, 90),          // #44475A
+            selection_fg: Color::Rgb(248, 248, 242),       // #F8F8F2
+            surface_bg: Color::Rgb(40, 42, 54),            // #282A36
+            tools_bg: Color::Rgb(52, 55, 70),              // #343746
+            prompt_bg: Color::Rgb(33, 34, 44),             // #21222C
+            prompt_border: Color::Rgb(189, 147, 249),      // #BD93F9
+            text_primary: Color::Rgb(248, 248, 242),       // #F8F8F2
+            text_muted: Color::Rgb(98, 114, 164),          // #6272A4
+            directory_fg: Color::Rgb(139, 233, 253),       // #8BE9FD
+            symlink_fg: Color::Rgb(80, 250, 123),          // #50FA7B
+            file_fg: Color::Rgb(248, 248, 242),            // #F8F8F2
+            status_bg: Color::Rgb(255, 184, 108),          // #FFB86C
+            status_fg: Color::Rgb(40, 42, 54),             // #282A36
+            logo_accent: Color::Rgb(255, 121, 198),        // #FF79C6
+            key_hint_fg: Color::Rgb(241, 250, 140),        // #F1FA8C
+            syntect_theme: "Dracula",
         }
     }
 
@@ -446,6 +557,34 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
         }
     }
+    fn zeta() -> Self {
+        // Official Zeta theme: deep slate + periwinkle blue.
+        // Signature accent: #82aaff (periwinkle). Secondary: #ff9e64 (amber).
+        Self {
+            menu_bg: Color::Rgb(26, 27, 46),
+            menu_fg: Color::Rgb(200, 211, 245),
+            menu_active_bg: Color::Rgb(45, 48, 96),
+            menu_mnemonic_fg: Color::Rgb(255, 158, 100),
+            border_focus: Color::Rgb(130, 170, 255),
+            border_editor_focus: Color::Rgb(195, 232, 141),
+            selection_bg: Color::Rgb(45, 48, 96),
+            selection_fg: Color::Rgb(200, 211, 245),
+            surface_bg: Color::Rgb(26, 27, 46),
+            tools_bg: Color::Rgb(30, 32, 48),
+            prompt_bg: Color::Rgb(22, 22, 37),
+            prompt_border: Color::Rgb(130, 170, 255),
+            text_primary: Color::Rgb(200, 211, 245),
+            text_muted: Color::Rgb(84, 92, 126),
+            directory_fg: Color::Rgb(130, 170, 255),
+            symlink_fg: Color::Rgb(195, 232, 141),
+            file_fg: Color::Rgb(169, 184, 232),
+            status_bg: Color::Rgb(45, 48, 96),
+            status_fg: Color::Rgb(200, 211, 245),
+            logo_accent: Color::Rgb(255, 158, 100),
+            key_hint_fg: Color::Rgb(130, 170, 255),
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
 }
 
 impl ThemePreset {
@@ -456,11 +595,14 @@ impl ThemePreset {
             "oxide" => Some(Self::Oxide),
             "matrix" => Some(Self::Matrix),
             "norton" => Some(Self::Norton),
+            "neon" => Some(Self::Neon),
+            "monochrome" => Some(Self::Monochrome),
+            "dracula" => Some(Self::Dracula),
+            "zeta" => Some(Self::Zeta),
             _ => None,
         }
     }
 }
-
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct KeymapConfig {
@@ -620,7 +762,10 @@ mod tests {
 
         assert_eq!(
             config.bookmarks,
-            vec![PathBuf::from("/tmp/projects"), PathBuf::from("/tmp/downloads")]
+            vec![
+                PathBuf::from("/tmp/projects"),
+                PathBuf::from("/tmp/downloads")
+            ]
         );
     }
 

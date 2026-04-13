@@ -1,21 +1,25 @@
 use std::io::{self, Stdout};
+use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
-use std::path::PathBuf;
 
 use anyhow::{Context, Result};
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::Receiver;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
 use crossterm::execute;
-use crossterm::terminal::
-    {disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::{Frame, Terminal};
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
-use crate::jobs::{self, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest, JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels};
+use crate::jobs::{
+    self, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest, JobResult,
+    PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
+};
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
 use crate::ui::layout_cache::{rect_contains, LayoutCache};
@@ -68,6 +72,22 @@ impl App {
                 cache = ui::render(frame, &mut self.state);
             })?;
             self.layout_cache = cache;
+
+            // Terminal resize logic
+            if let Some(t_area) = cache.terminal_panel {
+                // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
+                let inner_rows = t_area.height.saturating_sub(1);
+                let inner_cols = t_area.width;
+
+                if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
+                    // We need to calculate the actual inner size used by vt100
+                    // Let's call resize. It only emits a command if the size actually changed.
+                    for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
+                        self.execute_command_try(cmd)?;
+                    }
+                }
+            }
+
             self.state.mark_drawn();
             self.process_next_event()?;
         }
@@ -75,40 +95,47 @@ impl App {
         Ok(())
     }
 
+    fn execute_command_try(&mut self, command: Command) -> Result<()> {
+        match command {
+            Command::ResizeTerminal { cols, rows } => {
+                let _ = self
+                    .workers
+                    .terminal_tx
+                    .try_send(crate::jobs::TerminalRequest::Resize { cols, rows });
+            }
+            other => self.execute_command(other)?,
+        }
+        Ok(())
+    }
+
     fn process_next_event(&mut self) -> Result<()> {
-        let Some(app_event) = self.next_event()? else {
+        // First, drain ALL pending job results to keep the UI in sync with workers.
+        while let Ok(result) = self.job_results.try_recv() {
+            self.handle_event(AppEvent::Job(result))?;
+        }
+
+        // Then process at most one input/resize event per frame.
+        if !event::poll(Duration::from_millis(16)).context("failed to poll terminal events")? {
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
             }
             return Ok(());
-        };
-
-        self.handle_event(app_event)?;
-
-        Ok(())
-    }
-
-    fn next_event(&mut self) -> Result<Option<AppEvent>> {
-        match self.job_results.try_recv() {
-            Ok(result) => return Ok(Some(AppEvent::Job(result))),
-            Err(TryRecvError::Disconnected) => {
-                anyhow::bail!("background worker disconnected")
-            }
-            Err(TryRecvError::Empty) => {}
-        }
-
-        if !event::poll(Duration::from_millis(250)).context("failed to poll terminal events")? {
-            return Ok(None);
         }
 
         match event::read().context("failed to read terminal event")? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                Ok(Some(AppEvent::Input(key_event)))
+                self.handle_event(AppEvent::Input(key_event))?;
             }
-            Event::Mouse(mouse_event) => Ok(Some(AppEvent::Mouse(mouse_event))),
-        Event::Resize(width, height) => Ok(Some(AppEvent::Resize { width, height })),
-            _ => Ok(None),
+            Event::Mouse(mouse_event) => {
+                self.handle_event(AppEvent::Mouse(mouse_event))?;
+            }
+            Event::Resize(width, height) => {
+                self.handle_event(AppEvent::Resize { width, height })?;
+            }
+            _ => {}
         }
+
+        Ok(())
     }
 
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
@@ -124,15 +151,17 @@ impl App {
             }
             AppEvent::Mouse(mouse_event) => {
                 let focus = self.state.focus_layer();
-                let editor_menu_mode = self.state.is_editor_fullscreen() && self.state.editor().is_some();
+                let editor_menu_mode =
+                    self.state.is_editor_fullscreen() && self.state.editor().is_some();
                 if let Some(action) =
                     route_mouse_event(mouse_event, &self.layout_cache, focus, editor_menu_mode)
                 {
                     // Intercept PaneClick to detect double-clicks.
                     let action = if let Action::PaneClick { left_pane, row } = action {
                         let now = std::time::Instant::now();
-                        let double = self.last_pane_click
-                            .is_some_and(|(lp, r, t)| lp == left_pane && r == row && now.duration_since(t).as_millis() < 400);
+                        let double = self.last_pane_click.is_some_and(|(lp, r, t)| {
+                            lp == left_pane && r == row && now.duration_since(t).as_millis() < 400
+                        });
                         if double {
                             self.last_pane_click = None;
                             Action::PaneDoubleClick { left_pane, row }
@@ -171,7 +200,7 @@ impl App {
                         self.sync_watched_paths()?;
                     }
                 }
-            }
+            },
         }
         Ok(())
     }
@@ -197,6 +226,60 @@ impl App {
         Ok(())
     }
 
+    /// Determine source and destination sessions for a file operation based on
+    /// which panes the paths belong to
+    fn determine_backends_for_operation(
+        &self,
+        operation: &crate::action::FileOperation,
+    ) -> (
+        Option<crate::jobs::SessionId>,
+        Option<crate::jobs::SessionId>,
+    ) {
+        use crate::action::FileOperation;
+
+        let (src_path, dst_path): (Option<&std::path::Path>, Option<&std::path::Path>) =
+            match operation {
+                FileOperation::Copy {
+                    source,
+                    destination,
+                } => (Some(source), Some(destination)),
+                FileOperation::Move {
+                    source,
+                    destination,
+                } => (Some(source), Some(destination)),
+                FileOperation::Rename {
+                    source,
+                    destination,
+                } => (Some(source), Some(destination)),
+                FileOperation::Delete { path } => (Some(path), None),
+                FileOperation::Trash { path } => (Some(path), None),
+                FileOperation::CreateDirectory { path } => (None, Some(path)),
+                FileOperation::CreateFile { path } => (None, Some(path)),
+                FileOperation::ExtractArchive {
+                    archive,
+                    destination,
+                    ..
+                } => (Some(archive), Some(destination)),
+            };
+
+        let get_session = |path: Option<&std::path::Path>| {
+            path.and_then(|_p| {
+                // Check if path is in a remote pane's working directory
+                // For now, we use a simple heuristic: paths that look like they
+                // belong to a remote pane based on cwd
+                let pane = self.state.panes.active_pane();
+                if pane.in_remote() {
+                    // Use the current active pane's remote session
+                    pane.remote_address().map(|addr| addr.to_string())
+                } else {
+                    None
+                }
+            })
+        };
+
+        (get_session(src_path), get_session(dst_path))
+    }
+
     fn execute_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::OpenEditor { path } => {
@@ -212,7 +295,9 @@ impl App {
                 let mut archive = None;
                 let mut inner = None;
                 if self.state.panes.active_pane().in_archive() {
-                    if let crate::pane::PaneMode::Archive { source, inner_path } = &self.state.panes.active_pane().mode {
+                    if let crate::pane::PaneMode::Archive { source, inner_path } =
+                        &self.state.panes.active_pane().mode
+                    {
                         archive = Some(source.clone());
                         if let Some(name) = path.file_name() {
                             if inner_path.as_os_str().is_empty() {
@@ -232,38 +317,101 @@ impl App {
                         inner_path: inner,
                     })
                     .context("failed to queue background preview job")?;
-            },
+            }
 
             Command::RunFileOperation {
                 operation,
                 refresh,
                 collision,
-            } => self
-                .workers
-                .file_op_tx
-                .send(FileOpRequest { operation, refresh, collision })
-                .context("failed to queue background file operation")?,
-            Command::ScanPane { pane, path } => {
-                self.workers
-                    .scan_tx
-                    .send(ScanRequest { pane, path: path.clone() })
-                    .context("failed to queue background scan job")?;
-                // Fire a git status refresh alongside every directory scan.
-                self.workers
-                    .git_tx
-                    .send(GitStatusRequest { pane, path })
-                    .context("failed to queue git status job")?;
+            } => {
+                // Determine source and destination backends from file paths
+                // and pane modes
+                let (src_session, dst_session) = self.determine_backends_for_operation(&operation);
+
+                // If either side is remote, we need SFTP
+                if src_session.is_some() || dst_session.is_some() {
+                    self.workers
+                        .sftp_tx
+                        .send(jobs::SftpRequest::FileOp(jobs::SftpFileOpRequest {
+                            operation: operation.clone(),
+                            src_session: src_session.clone(),
+                            dst_session: dst_session.clone(),
+                            refresh: refresh.clone(),
+                            collision,
+                        }))
+                        .context("failed to queue SFTP file operation")?;
+                } else {
+                    // Pure local operation
+                    self.workers
+                        .file_op_tx
+                        .send(FileOpRequest {
+                            operation,
+                            backend: crate::jobs::BackendRef::Local,
+                            refresh,
+                            collision,
+                            src_session: None,
+                            dst_session: None,
+                        })
+                        .context("failed to queue background file operation")?;
+                }
             }
-            Command::FindFiles { pane, root, max_depth } => {
+            Command::ScanPane { pane, path } => {
+                // Check if pane is in remote mode and route to SFTP
+                if let Some(address) = self.state.panes.pane(pane).remote_address() {
+                    // For remote panes, send to SFTP worker
+                    // Parse session ID from address
+                    let session_id = format!(
+                        "{}@{}",
+                        std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
+                        address
+                    );
+
+                    self.workers
+                        .sftp_tx
+                        .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                            pane,
+                            path: path.clone(),
+                            session_id,
+                        }))
+                        .context("failed to queue SFTP scan job")?;
+                } else {
+                    // Local pane - use normal scan
+                    self.workers
+                        .scan_tx
+                        .send(ScanRequest {
+                            pane,
+                            path: path.clone(),
+                        })
+                        .context("failed to queue background scan job")?;
+                    // Fire a git status refresh alongside every directory scan.
+                    self.workers
+                        .git_tx
+                        .send(GitStatusRequest { pane, path })
+                        .context("failed to queue git status job")?;
+                }
+            }
+            Command::FindFiles {
+                pane,
+                root,
+                max_depth,
+            } => {
                 self.workers
                     .find_tx
-                    .send(FindRequest { pane, root, max_depth })
+                    .send(FindRequest {
+                        pane,
+                        root,
+                        max_depth,
+                    })
                     .context("failed to queue background file finder job")?;
             }
             Command::OpenArchive { path, inner } => {
                 // Request archive listing for the active pane with provided inner path.
                 let pane = self.state.panes.focused_pane_id();
-                let req = jobs::ArchiveListRequest { pane, archive_path: path.clone(), inner_path: inner.clone() };
+                let req = jobs::ArchiveListRequest {
+                    pane,
+                    archive_path: path.clone(),
+                    inner_path: inner.clone(),
+                };
                 self.workers
                     .archive_tx
                     .send(req)
@@ -271,10 +419,12 @@ impl App {
             }
             Command::OpenShell { path } => {
                 // Drop out of TUI, spawn shell process, then re-enter.
-                use std::process::Command as StdCommand;
-                use crossterm::terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen};
                 use crossterm::execute;
+                use crossterm::terminal::{
+                    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+                };
                 use std::io::{self};
+                use std::process::Command as StdCommand;
 
                 // Leave alternate screen, restore terminal, spawn shell
                 disable_raw_mode().ok();
@@ -290,13 +440,52 @@ impl App {
                     }
                 });
 
-                let _ = StdCommand::new(shell)
-                    .current_dir(path)
-                    .status();
+                let _ = StdCommand::new(shell).current_dir(path).status();
 
                 // Wait for shell to exit, then re-enter alternate screen and raw mode
                 execute!(stdout, EnterAlternateScreen).ok();
                 enable_raw_mode().ok();
+            }
+            Command::ConnectSSH {
+                address,
+                auth_method: _,
+                credential: _,
+                pane: _,
+            } => {
+                // TODO: Implement SSH connection logic
+                self.state
+                    .set_error_status(format!("SSH connect to {} - not yet implemented", address));
+            }
+            Command::DisconnectSSH { pane } => {
+                // Switch back to local mode and scan home directory
+                self.state.panes.pane_mut(pane).mode = crate::pane::PaneMode::Real;
+                let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                self.execute_command(Command::ScanPane {
+                    pane,
+                    path: std::path::PathBuf::from(home),
+                })?;
+            }
+            Command::SpawnTerminal { cwd } => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Spawn {
+                        cwd,
+                        cols: self.state.terminal.cols,
+                        rows: self.state.terminal.rows,
+                    })
+                    .context("failed to queue terminal spawn job")?;
+            }
+            Command::WriteTerminal(bytes) => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Write(bytes))
+                    .context("failed to queue terminal write job")?;
+            }
+            Command::ResizeTerminal { cols, rows } => {
+                self.workers
+                    .terminal_tx
+                    .send(crate::jobs::TerminalRequest::Resize { cols, rows })
+                    .context("failed to queue terminal resize job")?;
             }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
@@ -327,8 +516,7 @@ fn route_key_event(
 ) -> Option<Action> {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    let alt_f3 = key_event.code == KeyCode::F(3)
-        && key_event.modifiers == KeyModifiers::ALT;
+    let alt_f3 = key_event.code == KeyCode::F(3) && key_event.modifiers == KeyModifiers::ALT;
 
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),
@@ -339,8 +527,10 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
+        FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
+        FocusLayer::Terminal => Action::from_terminal_key_event(key_event),
         FocusLayer::MarkdownPreview => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
@@ -383,6 +573,14 @@ fn route_mouse_event(
         // Scroll wheel
         // -------------------------------------------------------------------
         MouseEventKind::ScrollUp => {
+            // Dialog scroll takes priority — route anywhere on screen when dialog is open.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Dialog)) {
+                return Some(Action::ScrollDialogUp);
+            }
+            // All other open modals absorb scroll — don't leak through to panes.
+            if matches!(focus, FocusLayer::Modal(_)) {
+                return None;
+            }
             if focus == FocusLayer::Preview
                 || cache
                     .file_preview_panel
@@ -398,18 +596,27 @@ fn route_mouse_event(
                 return Some(Action::ScrollMarkdownPreviewUp);
             }
             if focus == FocusLayer::Editor
-                || cache.editor_panel.is_some_and(|r| rect_contains(r, col, row))
+                || cache
+                    .editor_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::EditorMoveUp);
             }
-            if rect_contains(cache.left_pane, col, row)
-                || rect_contains(cache.right_pane, col, row)
+            if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
                 return Some(Action::MoveSelectionUp);
             }
             None
         }
         MouseEventKind::ScrollDown => {
+            // Dialog scroll takes priority — route anywhere on screen when dialog is open.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Dialog)) {
+                return Some(Action::ScrollDialogDown);
+            }
+            // All other open modals absorb scroll — don't leak through to panes.
+            if matches!(focus, FocusLayer::Modal(_)) {
+                return None;
+            }
             if focus == FocusLayer::Preview
                 || cache
                     .file_preview_panel
@@ -425,12 +632,13 @@ fn route_mouse_event(
                 return Some(Action::ScrollMarkdownPreviewDown);
             }
             if focus == FocusLayer::Editor
-                || cache.editor_panel.is_some_and(|r| rect_contains(r, col, row))
+                || cache
+                    .editor_panel
+                    .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::EditorMoveDown);
             }
-            if rect_contains(cache.left_pane, col, row)
-                || rect_contains(cache.right_pane, col, row)
+            if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
                 return Some(Action::MoveSelectionDown);
             }
@@ -499,9 +707,19 @@ fn route_mouse_event(
                 }
             }
 
+            if let Some(terminal_rect) = cache.terminal_panel {
+                if rect_contains(terminal_rect, col, row) {
+                    if focus != FocusLayer::Terminal {
+                        return Some(Action::ToggleTerminal); // Toggle will focus if not open, but here it's open
+                                                             // Actually, ToggleTerminal on open terminal might close it?
+                                                             // Let's use a dedicated FocusTerminal action or just logic.
+                    }
+                    return None;
+                }
+            }
+
             // Click on left or right pane.
-            if rect_contains(cache.left_pane, col, row)
-                || rect_contains(cache.right_pane, col, row)
+            if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
                 let clicked_left = rect_contains(cache.left_pane, col, row);
 
@@ -509,15 +727,23 @@ fn route_mouse_event(
                 if focus == FocusLayer::Editor
                     || focus == FocusLayer::Preview
                     || focus == FocusLayer::MarkdownPreview
+                    || focus == FocusLayer::Terminal
                 {
                     return Some(Action::CycleFocus);
                 }
 
                 // Calculate which entry row was clicked (subtract 1 for top border).
-                let pane_rect = if clicked_left { cache.left_pane } else { cache.right_pane };
+                let pane_rect = if clicked_left {
+                    cache.left_pane
+                } else {
+                    cache.right_pane
+                };
                 let entry_row = (row as usize).saturating_sub((pane_rect.y + 1) as usize);
 
-                return Some(Action::PaneClick { left_pane: clicked_left, row: entry_row });
+                return Some(Action::PaneClick {
+                    left_pane: clicked_left,
+                    row: entry_row,
+                });
             }
 
             None
@@ -573,7 +799,7 @@ impl TerminalSession {
 
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
-                .context("failed to enter alternate screen and enable mouse")?;
+            .context("failed to enter alternate screen and enable mouse")?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
@@ -621,15 +847,37 @@ mod tests {
 
     fn test_cache() -> LayoutCache {
         LayoutCache {
-            menu_bar:   Rect { x: 0,  y: 0,  width: 80, height: 1  },
-            left_pane:  Rect { x: 0,  y: 1,  width: 40, height: 20 },
-            right_pane: Rect { x: 40, y: 1,  width: 40, height: 20 },
+            menu_bar: Rect {
+                x: 0,
+                y: 0,
+                width: 80,
+                height: 1,
+            },
+            left_pane: Rect {
+                x: 0,
+                y: 1,
+                width: 40,
+                height: 20,
+            },
+            right_pane: Rect {
+                x: 40,
+                y: 1,
+                width: 40,
+                height: 20,
+            },
             tools_panel: None,
             editor_panel: None,
             file_preview_panel: None,
             markdown_preview_panel: None,
-            status_bar: Rect { x: 0,  y: 21, width: 80, height: 1  },
+            status_bar: Rect {
+                x: 0,
+                y: 21,
+                width: 80,
+                height: 1,
+            },
             menu_popup: None,
+            hint_bar: Rect::default(),
+            terminal_panel: None,
         }
     }
 
@@ -637,7 +885,8 @@ mod tests {
     fn mouse_event_variant_exists_in_app_event() {
         let ev = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 5, row: 3,
+            column: 5,
+            row: 3,
             modifiers: KeyModifiers::NONE,
         };
         let app_event = crate::event::AppEvent::Mouse(ev);
@@ -647,8 +896,15 @@ mod tests {
     #[test]
     fn route_mouse_scroll_up_in_pane_produces_move_selection_up() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane, false,
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
         );
         assert_eq!(action, Some(Action::MoveSelectionUp));
     }
@@ -656,8 +912,15 @@ mod tests {
     #[test]
     fn route_mouse_scroll_down_in_pane_produces_move_selection_down() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane, false,
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
         );
         assert_eq!(action, Some(Action::MoveSelectionDown));
     }
@@ -666,27 +929,60 @@ mod tests {
     fn route_mouse_left_click_on_pane_produces_action() {
         // col=10, row=5 → left pane (x:0..40, y:1..21); entry_row = 5 - (1+1) = 3
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane, false,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
         );
-        assert_eq!(action, Some(Action::PaneClick { left_pane: true, row: 3 }));
+        assert_eq!(
+            action,
+            Some(Action::PaneClick {
+                left_pane: true,
+                row: 3
+            })
+        );
     }
 
     #[test]
     fn route_mouse_left_click_on_right_pane_produces_right_pane_click() {
         // col=50, row=3 → right pane (x:40..80, y:1..21); entry_row = 3 - (1+1) = 1
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 50, row: 3, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane, false,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 50,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
         );
-        assert_eq!(action, Some(Action::PaneClick { left_pane: false, row: 1 }));
+        assert_eq!(
+            action,
+            Some(Action::PaneClick {
+                left_pane: false,
+                row: 1
+            })
+        );
     }
 
     #[test]
     fn route_mouse_left_click_on_file_menu_opens_file_menu() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 0, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Pane, false,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 10,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
         );
         assert_eq!(action, Some(Action::OpenMenu(crate::action::MenuId::File)));
     }
@@ -694,8 +990,15 @@ mod tests {
     #[test]
     fn route_mouse_left_click_on_dialog_closes_it() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::Down(MouseButton::Left), column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Modal(ModalKind::Dialog), false,
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Dialog),
+            false,
         );
         assert_eq!(action, Some(Action::CloseDialog));
     }
@@ -703,8 +1006,15 @@ mod tests {
     #[test]
     fn route_mouse_scroll_in_preview_layer_scrolls_preview() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::ScrollDown, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Preview, false,
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Preview,
+            false,
         );
         assert_eq!(action, Some(Action::ScrollPreviewDown));
     }
@@ -712,17 +1022,74 @@ mod tests {
     #[test]
     fn route_mouse_scroll_in_editor_layer_moves_cursor() {
         let action = route_mouse_event(
-            MouseEvent { kind: MouseEventKind::ScrollUp, column: 10, row: 5, modifiers: KeyModifiers::NONE },
-            &test_cache(), FocusLayer::Editor, false,
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Editor,
+            false,
         );
         assert_eq!(action, Some(Action::EditorMoveUp));
+    }
+    #[test]
+    fn route_mouse_scroll_on_dialog_scrolls_dialog() {
+        // Scroll anywhere (including over a pane rect) must route to the dialog,
+        // not fall through to MoveSelectionUp/Down.
+        let up = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Dialog),
+            false,
+        );
+        assert_eq!(up, Some(Action::ScrollDialogUp));
+
+        let down = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Dialog),
+            false,
+        );
+        assert_eq!(down, Some(Action::ScrollDialogDown));
+    }
+
+    #[test]
+    fn route_mouse_scroll_on_other_modal_is_absorbed() {
+        // Scroll while a non-dialog modal is open must not reach the pane.
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Prompt),
+            false,
+        );
+        assert_eq!(action, None);
     }
 
     #[test]
     fn command_palette_remains_available_while_editor_is_open() {
         let keymap = RuntimeKeymap::default();
         let action = route_key_event(
-            KeyEvent::new(KeyCode::Char('P'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+            KeyEvent::new(
+                KeyCode::Char('P'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
             &keymap,
             FocusLayer::Editor,
             false,

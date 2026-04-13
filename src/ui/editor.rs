@@ -73,21 +73,26 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let (content_area, search_bar_area, replace_bar_area) = if editor.search_active && replace_active {
-        let splits = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)])
-            .split(inner);
-        (splits[0], Some(splits[1]), Some(splits[2]))
-    } else if editor.search_active {
-        let splits = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(inner);
-        (splits[0], Some(splits[1]), None)
-    } else {
-        (inner, None, None)
-    };
+    let (content_area, search_bar_area, replace_bar_area) =
+        if editor.search_active && replace_active {
+            let splits = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+            (splits[0], Some(splits[1]), Some(splits[2]))
+        } else if editor.search_active {
+            let splits = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(1)])
+                .split(inner);
+            (splits[0], Some(splits[1]), None)
+        } else {
+            (inner, None, None)
+        };
 
     let gutter_width = 6u16;
     if loading {
@@ -103,10 +108,11 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         );
         frame.render_widget(loading, content_area);
     } else if cheap_mode {
-        let (first_line_num, visible_lines) = editor.visible_line_window(content_area.height as usize);
+        let (first_line_num, visible_lines) =
+            editor.visible_line_window(content_area.height as usize);
         let plain_lines: Vec<crate::highlight::HighlightedLine> = visible_lines
             .into_iter()
-            .map(|line| vec![(palette.text_primary, Modifier::empty(), line)])
+            .map(|line| vec![(palette.text_primary, Modifier::empty(), line.into())])
             .collect();
         render_code_view(
             frame,

@@ -23,10 +23,18 @@ impl DiffStatus {
             Self::Same => Color::Reset,
             Self::Different => Color::Yellow,
             Self::LeftOnly => {
-                if is_left_pane { Color::Green } else { Color::Red }
+                if is_left_pane {
+                    Color::Green
+                } else {
+                    Color::Red
+                }
             }
             Self::RightOnly => {
-                if is_left_pane { Color::Red } else { Color::Green }
+                if is_left_pane {
+                    Color::Red
+                } else {
+                    Color::Green
+                }
             }
         }
     }
@@ -40,10 +48,8 @@ impl DiffStatus {
 /// Files are considered the same when both size and modified timestamp match.
 /// Directories are compared by name only.
 pub fn compute_diff(left: &[EntryInfo], right: &[EntryInfo]) -> HashMap<String, DiffStatus> {
-    let left_map: HashMap<&str, &EntryInfo> =
-        left.iter().map(|e| (e.name.as_str(), e)).collect();
-    let right_map: HashMap<&str, &EntryInfo> =
-        right.iter().map(|e| (e.name.as_str(), e)).collect();
+    let left_map: HashMap<&str, &EntryInfo> = left.iter().map(|e| (e.name.as_str(), e)).collect();
+    let right_map: HashMap<&str, &EntryInfo> = right.iter().map(|e| (e.name.as_str(), e)).collect();
 
     let mut result = HashMap::new();
 
@@ -73,9 +79,15 @@ pub fn compute_diff(left: &[EntryInfo], right: &[EntryInfo]) -> HashMap<String, 
 /// Returns a brief human-readable summary for the pane title.
 pub fn diff_summary(map: &HashMap<String, DiffStatus>) -> String {
     let same = map.values().filter(|&&s| s == DiffStatus::Same).count();
-    let diff = map.values().filter(|&&s| s == DiffStatus::Different).count();
+    let diff = map
+        .values()
+        .filter(|&&s| s == DiffStatus::Different)
+        .count();
     let left = map.values().filter(|&&s| s == DiffStatus::LeftOnly).count();
-    let right = map.values().filter(|&&s| s == DiffStatus::RightOnly).count();
+    let right = map
+        .values()
+        .filter(|&&s| s == DiffStatus::RightOnly)
+        .count();
     format!("diff: {same} same · {diff} diff · {left}← · {right}→")
 }
 
@@ -148,7 +160,7 @@ mod tests {
 
     #[test]
     fn compute_diff_symmetric_count() {
-        let left  = vec![file("a.txt", 0), file("b.txt", 0)];
+        let left = vec![file("a.txt", 0), file("b.txt", 0)];
         let right = vec![file("b.txt", 0), file("c.txt", 0)];
         let diff = compute_diff(&left, &right);
         assert_eq!(diff.len(), 3);
@@ -162,18 +174,30 @@ mod tests {
 
     #[test]
     fn diff_colour_left_only_in_left_pane_is_green() {
-        assert_eq!(DiffStatus::LeftOnly.colour(true), ratatui::style::Color::Green);
+        assert_eq!(
+            DiffStatus::LeftOnly.colour(true),
+            ratatui::style::Color::Green
+        );
     }
 
     #[test]
     fn diff_colour_left_only_in_right_pane_is_red() {
-        assert_eq!(DiffStatus::LeftOnly.colour(false), ratatui::style::Color::Red);
+        assert_eq!(
+            DiffStatus::LeftOnly.colour(false),
+            ratatui::style::Color::Red
+        );
     }
 
     #[test]
     fn diff_colour_different_is_yellow() {
-        assert_eq!(DiffStatus::Different.colour(true), ratatui::style::Color::Yellow);
-        assert_eq!(DiffStatus::Different.colour(false), ratatui::style::Color::Yellow);
+        assert_eq!(
+            DiffStatus::Different.colour(true),
+            ratatui::style::Color::Yellow
+        );
+        assert_eq!(
+            DiffStatus::Different.colour(false),
+            ratatui::style::Color::Yellow
+        );
     }
 
     #[test]

@@ -8,6 +8,7 @@ use crate::state::dialog::{CollisionState, DialogState};
 use crate::state::menu::menu_items_for;
 use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
+use crate::state::ssh::SshConnectionState;
 use crate::state::types::MenuItem;
 
 /// All modal UI states, mutually exclusive by construction.
@@ -22,6 +23,7 @@ pub enum ModalState {
     Settings(SettingsState),
     Bookmarks(BookmarksState),
     FileFinder(FileFinderState),
+    SshConnect(crate::state::ssh::SshConnectionState),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -128,6 +130,31 @@ impl OverlayState {
         }
     }
 
+    pub fn open_ssh_connect(&mut self, state: SshConnectionState) {
+        self.close_all();
+        self.modal = Some(ModalState::SshConnect(state));
+    }
+
+    pub fn close_ssh_connect(&mut self) {
+        if matches!(self.modal, Some(ModalState::SshConnect(_))) {
+            self.modal = None;
+        }
+    }
+
+    pub fn ssh_connect(&self) -> Option<&SshConnectionState> {
+        match &self.modal {
+            Some(ModalState::SshConnect(s)) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn ssh_connect_mut(&mut self) -> Option<&mut SshConnectionState> {
+        match &mut self.modal {
+            Some(ModalState::SshConnect(s)) => Some(s),
+            _ => None,
+        }
+    }
+
     pub fn open_file_finder(&mut self, state: FileFinderState) {
         self.close_all();
         self.modal = Some(ModalState::FileFinder(state));
@@ -219,6 +246,26 @@ impl OverlayState {
                 self.close_all();
                 self.modal = Some(ModalState::Dialog(DialogState::help()));
             }
+            Action::ScrollDialogDown => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_down(1);
+                }
+            }
+            Action::ScrollDialogUp => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_up(1);
+                }
+            }
+            Action::ScrollDialogPageDown => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_down(10);
+                }
+            }
+            Action::ScrollDialogPageUp => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_up(10);
+                }
+            }
 
             // ── Menu ─────────────────────────────────────────────────────────
             Action::CloseMenu => {
@@ -235,7 +282,8 @@ impl OverlayState {
                 if let Some(ModalState::Menu { id, selection }) = &self.modal {
                     let id = *id;
                     let sel = *selection;
-                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned() {
+                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned()
+                    {
                         self.close_all();
                         commands.push(Command::DispatchAction(item.action.clone()));
                     }

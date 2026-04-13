@@ -24,7 +24,12 @@ pub fn render_bookmarks_modal(
         .min(area.height.saturating_sub(2).max(1));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    let popup = Rect { x, y, width, height };
+    let popup = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
 
     let block = Block::default()
         .title(Span::styled(" Bookmarks ", overlay_title_style(palette)))
@@ -49,8 +54,8 @@ pub fn render_bookmarks_modal(
         ])
         .split(inner);
 
-    let intro = Paragraph::new("Saved locations for fast navigation")
-        .style(overlay_footer_style(palette));
+    let intro =
+        Paragraph::new("Saved locations for fast navigation").style(overlay_footer_style(palette));
     frame.render_widget(intro, chunks[0]);
 
     let rows: Vec<ListItem<'_>> = if paths.is_empty() {
@@ -59,7 +64,8 @@ pub fn render_bookmarks_modal(
             Style::default().fg(palette.text_muted),
         ))]
     } else {
-        paths.iter()
+        paths
+            .iter()
             .enumerate()
             .map(|(index, path)| {
                 let selected = index == bookmarks.selection;

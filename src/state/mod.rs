@@ -1,12 +1,14 @@
 mod bookmarks;
 mod dialog;
-mod menu;
 pub mod editor_state;
+mod menu;
 pub mod overlay;
 pub mod pane_set;
 pub mod preview_state;
 mod prompt;
 mod settings;
+pub mod ssh;
+pub mod terminal;
 mod types;
 
 pub use editor_state::EditorState;
@@ -27,6 +29,7 @@ use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult};
 use crate::pane::{PaneId, PaneState};
+pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
@@ -35,12 +38,13 @@ pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct AppState {
     pub panes: PaneSetState,
     pub overlay: OverlayState,
     pub preview: PreviewState,
     pub editor: EditorState,
+    pub terminal: crate::state::terminal::TerminalState,
     // Shared config/theme/status — not owned by any single sub-state
     config_path: String,
     config: AppConfig,
@@ -71,7 +75,10 @@ impl AppState {
 
     pub fn bootstrap(loaded_config: LoadedConfig, started_at: Instant) -> Result<Self> {
         let cwd = fs::current_dir()?;
-        let secondary = cwd.parent().map(Path::to_path_buf).unwrap_or_else(|| cwd.clone());
+        let secondary = cwd
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| cwd.clone());
         let resolved_theme = loaded_config.config.resolve_theme();
 
         Ok(Self {
@@ -85,6 +92,7 @@ impl AppState {
                 loaded_config.config.preview_on_selection,
             ),
             editor: EditorState::default(),
+            terminal: crate::state::terminal::TerminalState::default(),
             config_path: loaded_config.path.display().to_string(),
             config: loaded_config.config.clone(),
             icon_mode: loaded_config.config.icon_mode,
@@ -129,6 +137,26 @@ impl AppState {
         commands.extend(self.panes.apply(&action)?);
         commands.extend(self.editor.apply(&action)?);
         commands.extend(self.preview.apply(&action, &self.panes.focus)?);
+        match action {
+            Action::ToggleTerminal => {
+                let was_open = self.terminal.is_open();
+                commands.extend(
+                    self.terminal
+                        .apply(&action, self.panes.active_pane().cwd.clone())?,
+                );
+                if !was_open && self.terminal.is_open() {
+                    self.status_message = String::from("terminal opened");
+                } else if was_open && !self.terminal.is_open() {
+                    self.status_message = String::from("terminal closed");
+                }
+            }
+            _ => {
+                commands.extend(
+                    self.terminal
+                        .apply(&action, self.panes.active_pane().cwd.clone())?,
+                );
+            }
+        }
         commands.extend(self.apply_view(&action)?);
         Ok(commands)
     }
@@ -225,7 +253,8 @@ impl AppState {
             Action::OpenFileFinder => {
                 let pane = self.panes.focused_pane_id();
                 let root = self.panes.active_pane().cwd.clone();
-                self.overlay.open_file_finder(FileFinderState::new(pane, root.clone()));
+                self.overlay
+                    .open_file_finder(FileFinderState::new(pane, root.clone()));
                 commands.push(Command::FindFiles {
                     pane,
                     root: root.clone(),
@@ -276,23 +305,40 @@ impl AppState {
             Action::CycleFocus => {
                 self.editor.markdown_preview_focused = false;
                 let preview_available = self.preview.panel_open && self.preview.view.is_some();
-                self.panes.focus = match self.panes.focus {
-                    PaneFocus::Left => {
-                        if preview_available {
-                            self.status_message = String::from(
-                                "preview panel focused  (Ctrl+W to cycle, Esc to return)",
-                            );
-                            PaneFocus::Preview
-                        } else {
-                            PaneFocus::Right
+                let terminal_open = self.terminal.is_open();
+
+                // If terminal is open and focused, focus Left pane
+                if terminal_open && self.terminal.focused {
+                    self.terminal.focused = false;
+                    self.panes.focus = PaneFocus::Left;
+                    self.status_message = String::from("focus returned to left pane");
+                } else if terminal_open
+                    && !self.terminal.focused
+                    && self.panes.focus == PaneFocus::Right
+                {
+                    // If we're on Right pane and terminal is open, focus terminal next
+                    self.terminal.focused = true;
+                    self.status_message =
+                        String::from("terminal focused (Ctrl+W to cycle, Esc to return)");
+                } else {
+                    self.panes.focus = match self.panes.focus {
+                        PaneFocus::Left => {
+                            if preview_available {
+                                self.status_message = String::from(
+                                    "preview panel focused (Ctrl+W to cycle, Esc to return)",
+                                );
+                                PaneFocus::Preview
+                            } else {
+                                PaneFocus::Right
+                            }
                         }
-                    }
-                    PaneFocus::Right => PaneFocus::Left,
-                    PaneFocus::Preview => {
-                        self.status_message = String::from("focus returned to left pane");
-                        PaneFocus::Left
-                    }
-                };
+                        PaneFocus::Right => PaneFocus::Left,
+                        PaneFocus::Preview => {
+                            self.status_message = String::from("focus returned to left pane");
+                            PaneFocus::Left
+                        }
+                    };
+                }
             }
             Action::FocusNextPane => {
                 self.editor.markdown_preview_focused = false;
@@ -339,14 +385,18 @@ impl AppState {
             Action::OpenSelectedInEditor => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
-                        commands.push(Command::OpenEditor { path: entry.path.clone() });
+                        commands.push(Command::OpenEditor {
+                            path: entry.path.clone(),
+                        });
                         self.status_message = format!("opening {}", entry.path.display());
                     } else if entry.kind == EntryKind::Archive {
-                        commands.push(Command::OpenArchive { path: entry.path.clone(), inner: std::path::PathBuf::new() });
+                        commands.push(Command::OpenArchive {
+                            path: entry.path.clone(),
+                            inner: std::path::PathBuf::new(),
+                        });
                         self.status_message = format!("opening archive {}", entry.path.display());
                     } else {
-                        self.status_message =
-                            String::from("only files and archives can be opened");
+                        self.status_message = String::from("only files and archives can be opened");
                     }
                 } else {
                     self.status_message = String::from("no file selected for editor or archive");
@@ -368,31 +418,53 @@ impl AppState {
             }
             Action::DiffSyncToOther => {
                 if self.diff_mode {
-                    let is_left_active = matches!(self.panes.focus, crate::state::types::PaneFocus::Left | crate::state::types::PaneFocus::Preview);
+                    let is_left_active = matches!(
+                        self.panes.focus,
+                        crate::state::types::PaneFocus::Left
+                            | crate::state::types::PaneFocus::Preview
+                    );
                     let src_cwd = self.panes.active_pane().cwd.clone();
                     let dst_cwd = self.panes.inactive_pane().cwd.clone();
-                    let entries_to_sync: Vec<_> = self.panes.active_pane().entries.iter()
-                        .filter(|e| {
-                            match self.diff_map.get(&e.name) {
-                                Some(crate::diff::DiffStatus::LeftOnly) => is_left_active,
-                                Some(crate::diff::DiffStatus::RightOnly) => !is_left_active,
-                                Some(crate::diff::DiffStatus::Different) => true,
-                                _ => false,
-                            }
+                    let entries_to_sync: Vec<_> = self
+                        .panes
+                        .active_pane()
+                        .entries
+                        .iter()
+                        .filter(|e| match self.diff_map.get(&e.name) {
+                            Some(crate::diff::DiffStatus::LeftOnly) => is_left_active,
+                            Some(crate::diff::DiffStatus::RightOnly) => !is_left_active,
+                            Some(crate::diff::DiffStatus::Different) => true,
+                            _ => false,
                         })
                         .map(|e| e.path.clone())
                         .collect();
                     let count = entries_to_sync.len();
                     let pane = self.panes.focused_pane_id();
-                    let inactive_pane = if is_left_active { crate::pane::PaneId::Right } else { crate::pane::PaneId::Left };
+                    let inactive_pane = if is_left_active {
+                        crate::pane::PaneId::Right
+                    } else {
+                        crate::pane::PaneId::Left
+                    };
                     for src_path in entries_to_sync {
-                        let name = src_path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+                        let name = src_path
+                            .file_name()
+                            .map(|n| n.to_os_string())
+                            .unwrap_or_default();
                         let dst_path = dst_cwd.join(name);
                         commands.push(Command::RunFileOperation {
-                            operation: crate::action::FileOperation::Copy { source: src_path, destination: dst_path },
+                            operation: crate::action::FileOperation::Copy {
+                                source: src_path,
+                                destination: dst_path,
+                            },
                             refresh: vec![
-                                crate::action::RefreshTarget { pane, path: src_cwd.clone() },
-                                crate::action::RefreshTarget { pane: inactive_pane, path: dst_cwd.clone() },
+                                crate::action::RefreshTarget {
+                                    pane,
+                                    path: src_cwd.clone(),
+                                },
+                                crate::action::RefreshTarget {
+                                    pane: inactive_pane,
+                                    path: dst_cwd.clone(),
+                                },
                             ],
                             collision: CollisionPolicy::Fail,
                         });
@@ -408,7 +480,10 @@ impl AppState {
                 self.status_message = format!("opening shell in {}", path.display());
             }
             Action::OpenArchive { path } => {
-                commands.push(Command::OpenArchive { path: path.clone(), inner: std::path::PathBuf::new() });
+                commands.push(Command::OpenArchive {
+                    path: path.clone(),
+                    inner: std::path::PathBuf::new(),
+                });
                 self.status_message = format!("opening archive {}", path.display());
             }
             Action::ExitArchive => {
@@ -430,7 +505,8 @@ impl AppState {
                 }
             }
             Action::OpenBookmarks => {
-                self.overlay.open_bookmarks(crate::state::BookmarksState::new());
+                self.overlay
+                    .open_bookmarks(crate::state::BookmarksState::new());
                 self.status_message = if self.config.bookmarks.is_empty() {
                     String::from("no bookmarks saved yet")
                 } else {
@@ -441,7 +517,10 @@ impl AppState {
                 if let Some(path) = self.config.bookmarks.get(*index).cloned() {
                     let pane = self.panes.focused_pane_id();
                     self.overlay.close_all();
-                    commands.push(Command::ScanPane { pane, path: path.clone() });
+                    commands.push(Command::ScanPane {
+                        pane,
+                        path: path.clone(),
+                    });
                     self.status_message = format!("jumping to bookmark: {}", path.display());
                 }
             }
@@ -534,11 +613,8 @@ impl AppState {
             }
             Action::OpenNewFilePrompt => {
                 let cwd = self.panes.active_pane().cwd.clone();
-                self.overlay.open_prompt(PromptState::new(
-                    PromptKind::NewFile,
-                    "New File",
-                    cwd,
-                ));
+                self.overlay
+                    .open_prompt(PromptState::new(PromptKind::NewFile, "New File", cwd));
                 self.status_message = String::from("enter file name");
             }
             Action::OpenRenamePrompt => {
@@ -574,10 +650,15 @@ impl AppState {
                                 prompt.source_path.as_ref().map(|s| {
                                     // Try to find an ancestor path that is an archive file
                                     let mut candidate = s.clone();
-                                    let mut found: Option<(std::path::PathBuf, std::path::PathBuf)> = None;
+                                    let mut found: Option<(
+                                        std::path::PathBuf,
+                                        std::path::PathBuf,
+                                    )> = None;
                                     loop {
                                         if candidate.exists() && candidate.is_file() {
-                                            if let Some(name) = candidate.file_name().and_then(|n| n.to_str()) {
+                                            if let Some(name) =
+                                                candidate.file_name().and_then(|n| n.to_str())
+                                            {
                                                 let lower = name.to_lowercase();
                                                 if lower.ends_with(".zip")
                                                     || lower.ends_with(".tar")
@@ -590,15 +671,23 @@ impl AppState {
                                                 {
                                                     // compute inner path relative to archive file
                                                     if let Ok(inner) = s.strip_prefix(&candidate) {
-                                                        found = Some((candidate.clone(), inner.to_path_buf()));
+                                                        found = Some((
+                                                            candidate.clone(),
+                                                            inner.to_path_buf(),
+                                                        ));
                                                     } else {
-                                                        found = Some((candidate.clone(), std::path::PathBuf::new()));
+                                                        found = Some((
+                                                            candidate.clone(),
+                                                            std::path::PathBuf::new(),
+                                                        ));
                                                     }
                                                     break;
                                                 }
                                             }
                                         }
-                                        if !candidate.pop() { break; }
+                                        if !candidate.pop() {
+                                            break;
+                                        }
                                     }
                                     if let Some((archive_path, inner_path)) = found {
                                         FileOperation::ExtractArchive {
@@ -607,35 +696,40 @@ impl AppState {
                                             destination: target_path.clone(),
                                         }
                                     } else {
-                                        FileOperation::Copy { source: s.clone(), destination: target_path.clone() }
+                                        FileOperation::Copy {
+                                            source: s.clone(),
+                                            destination: target_path.clone(),
+                                        }
                                     }
                                 })
-                            },
+                            }
 
-                            PromptKind::Trash => prompt.source_path.as_ref().map(|p| {
-                                FileOperation::Trash { path: p.clone() }
-                            }),
-                            PromptKind::Delete => prompt.source_path.as_ref().map(|p| {
-                                FileOperation::Delete { path: p.clone() }
-                            }),
-                            PromptKind::Move => prompt.source_path.as_ref().map(|s| {
-                                FileOperation::Move {
+                            PromptKind::Trash => prompt
+                                .source_path
+                                .as_ref()
+                                .map(|p| FileOperation::Trash { path: p.clone() }),
+                            PromptKind::Delete => prompt
+                                .source_path
+                                .as_ref()
+                                .map(|p| FileOperation::Delete { path: p.clone() }),
+                            PromptKind::Move => {
+                                prompt.source_path.as_ref().map(|s| FileOperation::Move {
                                     source: s.clone(),
                                     destination: target_path.clone(),
-                                }
-                            }),
+                                })
+                            }
                             PromptKind::NewDirectory => Some(FileOperation::CreateDirectory {
                                 path: target_path.clone(),
                             }),
                             PromptKind::NewFile => Some(FileOperation::CreateFile {
                                 path: target_path.clone(),
                             }),
-                            PromptKind::Rename => prompt.source_path.as_ref().map(|s| {
-                                FileOperation::Rename {
+                            PromptKind::Rename => {
+                                prompt.source_path.as_ref().map(|s| FileOperation::Rename {
                                     source: s.clone(),
                                     destination: target_path.clone(),
-                                }
-                            }),
+                                })
+                            }
                         };
                         if let Some(operation) = operation {
                             commands.push(Command::RunFileOperation {
@@ -683,9 +777,7 @@ impl AppState {
                 }
             }
             // Auto-preview after navigation
-            Action::MoveSelectionDown
-            | Action::MoveSelectionUp
-            | Action::EnterSelection => {
+            Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
                 if self.preview.should_auto_preview() {
                     if let Some(entry) = self.panes.active_pane().selected_entry() {
                         if entry.kind == EntryKind::File {
@@ -697,6 +789,79 @@ impl AppState {
                         self.preview.view = None;
                     }
                 }
+            }
+            Action::OpenSshConnect => {
+                self.overlay.open_ssh_connect(Default::default());
+                self.status_message = String::from("enter SSH connection details");
+            }
+            Action::SshConnectConfirm => {
+                if let Some(ModalState::SshConnect(state)) = &self.overlay.modal {
+                    let address = state.address.clone();
+                    let auth_method = state.auth_method;
+                    let credential = state.credential.clone();
+                    let pane = self.panes.focused_pane_id();
+                    commands.push(Command::ConnectSSH {
+                        address: address.clone(),
+                        auth_method,
+                        credential,
+                        pane,
+                    });
+                    self.overlay.close_all();
+                    self.status_message = format!("connecting to {}", address);
+                }
+            }
+            Action::SshDialogInput(ch) => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => state.address.push(*ch),
+                        crate::state::ssh::SshDialogField::Credential => state.credential.push(*ch),
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogBackspace => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => {
+                            state.address.pop();
+                        }
+                        crate::state::ssh::SshDialogField::Credential => {
+                            state.credential.pop();
+                        }
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogToggleField => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.focused_field = match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => {
+                            crate::state::ssh::SshDialogField::Credential
+                        }
+                        crate::state::ssh::SshDialogField::Credential => {
+                            crate::state::ssh::SshDialogField::Address
+                        }
+                    };
+                }
+            }
+            Action::SshDialogToggleAuthMethod => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.auth_method = match state.auth_method {
+                        crate::state::ssh::SshAuthMethod::Password => {
+                            crate::state::ssh::SshAuthMethod::KeyFile
+                        }
+                        crate::state::ssh::SshAuthMethod::KeyFile => {
+                            crate::state::ssh::SshAuthMethod::Agent
+                        }
+                        crate::state::ssh::SshAuthMethod::Agent => {
+                            crate::state::ssh::SshAuthMethod::Password
+                        }
+                    };
+                }
+            }
+            Action::CloseSshConnect => {
+                self.overlay.close_all();
+                self.status_message = String::from("SSH connection cancelled");
             }
             _ => {}
         }
@@ -728,18 +893,27 @@ impl AppState {
 
     pub fn apply_job_result(&mut self, result: JobResult) {
         match result {
-            JobResult::DirectoryScanned { pane, path, entries, elapsed_ms } => {
+            JobResult::DirectoryScanned {
+                pane,
+                path,
+                entries,
+                elapsed_ms,
+            } => {
                 self.panes.pane_mut(pane).cwd = path.clone();
                 // Prepend a ".." entry so users can click to navigate to the parent.
                 let mut all_entries = entries;
                 if let Some(parent) = path.parent() {
-                    all_entries.insert(0, crate::fs::EntryInfo {
-                        name: String::from(".."),
-                        path: parent.to_path_buf(),
-                        kind: EntryKind::Directory,
-                        size_bytes: None,
-                        modified: None,
-                    });
+                    let parent_path: PathBuf = parent.to_path_buf();
+                    all_entries.insert(
+                        0,
+                        crate::fs::EntryInfo {
+                            name: String::from(".."),
+                            path: parent_path,
+                            kind: EntryKind::Directory,
+                            size_bytes: None,
+                            modified: None,
+                        },
+                    );
                 }
                 self.panes.pane_mut(pane).set_entries(all_entries);
                 self.panes.pane_mut(pane).refresh_filter();
@@ -759,7 +933,11 @@ impl AppState {
                     );
                 }
             }
-            JobResult::FileOperationCompleted { message, refreshed, elapsed_ms } => {
+            JobResult::FileOperationCompleted {
+                message,
+                refreshed,
+                elapsed_ms,
+            } => {
                 self.overlay.close_all();
                 self.file_operation_status = None;
                 for pane in refreshed {
@@ -769,7 +947,12 @@ impl AppState {
                 self.status_message = format!("{message} in {elapsed_ms} ms");
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::FileOperationCollision { operation, refresh, path, elapsed_ms } => {
+            JobResult::FileOperationCollision {
+                operation,
+                refresh,
+                path,
+                elapsed_ms,
+            } => {
                 self.file_operation_status = None;
                 self.overlay.set_collision(CollisionState {
                     operation,
@@ -785,7 +968,12 @@ impl AppState {
             JobResult::FileOperationProgress { status } => {
                 self.file_operation_status = Some(status);
             }
-            JobResult::JobFailed { path, message, elapsed_ms, .. } => {
+            JobResult::JobFailed {
+                path,
+                message,
+                elapsed_ms,
+                ..
+            } => {
                 self.file_operation_status = None;
                 self.status_message = format!(
                     "job failed for {} after {elapsed_ms} ms: {message}",
@@ -825,7 +1013,11 @@ impl AppState {
             JobResult::GitStatusAbsent { pane } => {
                 self.git[pane as usize] = None;
             }
-            JobResult::FindResults { pane, root, entries } => {
+            JobResult::FindResults {
+                pane,
+                root,
+                entries,
+            } => {
                 if let Some(finder) = self.overlay.file_finder_mut() {
                     if finder.pane == pane && finder.root == root {
                         finder.set_results(entries);
@@ -840,13 +1032,35 @@ impl AppState {
             JobResult::DirectoryChanged { path } => {
                 self.status_message = format!("filesystem changed: {}", path.display());
             }
-            JobResult::ArchiveListed { pane, archive_path, inner_path, entries, elapsed_ms } => {
+            JobResult::TerminalOutput(bytes) => {
+                self.terminal.process_output(&bytes);
+            }
+            JobResult::TerminalDiagnostic(msg) => {
+                self.status_message = format!("[Terminal] {}", msg);
+            }
+            JobResult::TerminalExited => {
+                self.terminal.close();
+                self.status_message = String::from("terminal session ended");
+            }
+            JobResult::ArchiveListed {
+                pane,
+                archive_path,
+                inner_path,
+                entries,
+                elapsed_ms,
+            } => {
                 // Enter archive mode for the pane and populate entries
                 let pane_mut = self.panes.pane_mut(pane);
-                pane_mut.mode = crate::pane::PaneMode::Archive { source: archive_path.clone(), inner_path: inner_path.clone() };
+                pane_mut.mode = crate::pane::PaneMode::Archive {
+                    source: archive_path.clone(),
+                    inner_path: inner_path.clone(),
+                };
                 pane_mut.set_entries(entries);
                 pane_mut.refresh_filter();
-                self.status_message = format!("opened archive {} in {elapsed_ms} ms", archive_path.display());
+                self.status_message = format!(
+                    "opened archive {} in {elapsed_ms} ms",
+                    archive_path.display()
+                );
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
         }
@@ -856,11 +1070,15 @@ impl AppState {
         match entry.field {
             SettingsField::Theme(current) => {
                 let next = match current {
+                    ThemePreset::Zeta => ThemePreset::Neon,
+                    ThemePreset::Neon => ThemePreset::Monochrome,
+                    ThemePreset::Monochrome => ThemePreset::Fjord,
                     ThemePreset::Fjord => ThemePreset::Sandbar,
                     ThemePreset::Sandbar => ThemePreset::Oxide,
                     ThemePreset::Oxide => ThemePreset::Matrix,
                     ThemePreset::Matrix => ThemePreset::Norton,
-                    ThemePreset::Norton => ThemePreset::Fjord,
+                    ThemePreset::Norton => ThemePreset::Dracula,
+                    ThemePreset::Dracula => ThemePreset::Zeta,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
@@ -926,13 +1144,25 @@ impl AppState {
     // =========================================================================
 
     // Pane accessors — delegate to PaneSetState
-    pub fn left_pane(&self) -> &PaneState { &self.panes.left }
-    pub fn right_pane(&self) -> &PaneState { &self.panes.right }
-    pub fn focus(&self) -> PaneId { self.panes.focused_pane_id() }
-    pub fn active_pane_title(&self) -> &str {
-        self.panes.active_pane().selected_entry().map(|e| e.name.as_str()).unwrap_or("")
+    pub fn left_pane(&self) -> &PaneState {
+        &self.panes.left
     }
-    pub fn pane_layout(&self) -> PaneLayout { self.panes.pane_layout }
+    pub fn right_pane(&self) -> &PaneState {
+        &self.panes.right
+    }
+    pub fn focus(&self) -> PaneId {
+        self.panes.focused_pane_id()
+    }
+    pub fn active_pane_title(&self) -> &str {
+        self.panes
+            .active_pane()
+            .selected_entry()
+            .map(|e| e.name.as_str())
+            .unwrap_or("")
+    }
+    pub fn pane_layout(&self) -> PaneLayout {
+        self.panes.pane_layout
+    }
     pub fn is_editor_focused(&self) -> bool {
         self.editor.is_open()
             && self.panes.focus != PaneFocus::Preview
@@ -945,8 +1175,12 @@ impl AppState {
             && self.editor.markdown_preview_focused
     }
 
-    pub fn is_editor_fullscreen(&self) -> bool { self.editor_fullscreen }
-    pub fn is_editor_loading(&self) -> bool { self.editor.loading }
+    pub fn is_editor_fullscreen(&self) -> bool {
+        self.editor_fullscreen
+    }
+    pub fn is_editor_loading(&self) -> bool {
+        self.editor.loading
+    }
 
     /// Returns the cached git status for the given pane, if available.
     pub fn git_status(&self, pane: crate::pane::PaneId) -> Option<&crate::git::RepoStatus> {
@@ -977,8 +1211,14 @@ impl AppState {
         if self.is_settings_open() {
             return FocusLayer::Modal(ModalKind::Settings);
         }
+        if self.ssh_connect().is_some() {
+            return FocusLayer::Modal(ModalKind::SshConnect);
+        }
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);
+        }
+        if self.terminal.is_open() && self.terminal.focused {
+            return FocusLayer::Terminal;
         }
         if self.panes.active_pane().filter_active {
             return FocusLayer::PaneFilter;
@@ -996,38 +1236,85 @@ impl AppState {
     }
 
     // Overlay accessors — delegate to OverlayState
-    pub fn active_menu(&self) -> Option<MenuId> { self.overlay.active_menu() }
-    pub fn menu_items(&self) -> Vec<MenuItem> { self.overlay.menu_items() }
-    pub fn menu_selection(&self) -> usize { self.overlay.menu_selection() }
-    pub fn prompt(&self) -> Option<&PromptState> { self.overlay.prompt() }
-    pub fn dialog(&self) -> Option<&DialogState> { self.overlay.dialog() }
-    pub fn collision(&self) -> Option<&CollisionState> { self.overlay.collision() }
-    pub fn palette(&self) -> Option<&crate::palette::PaletteState> { self.overlay.palette() }
-    pub fn settings(&self) -> Option<&SettingsState> { self.overlay.settings() }
-    pub fn bookmarks(&self) -> Option<&BookmarksState> { self.overlay.bookmarks() }
-    pub fn file_finder(&self) -> Option<&FileFinderState> { self.overlay.file_finder() }
-    pub fn is_menu_open(&self) -> bool { self.overlay.is_menu_open() }
-    pub fn is_prompt_open(&self) -> bool { self.overlay.prompt().is_some() }
-    pub fn is_dialog_open(&self) -> bool { self.overlay.dialog().is_some() }
-    pub fn is_collision_open(&self) -> bool { self.overlay.collision().is_some() }
-    pub fn is_palette_open(&self) -> bool { self.overlay.palette().is_some() }
-    pub fn is_settings_open(&self) -> bool { self.overlay.settings().is_some() }
+    pub fn active_menu(&self) -> Option<MenuId> {
+        self.overlay.active_menu()
+    }
+    pub fn menu_items(&self) -> Vec<MenuItem> {
+        self.overlay.menu_items()
+    }
+    pub fn menu_selection(&self) -> usize {
+        self.overlay.menu_selection()
+    }
+    pub fn prompt(&self) -> Option<&PromptState> {
+        self.overlay.prompt()
+    }
+    pub fn dialog(&self) -> Option<&DialogState> {
+        self.overlay.dialog()
+    }
+    pub fn collision(&self) -> Option<&CollisionState> {
+        self.overlay.collision()
+    }
+    pub fn palette(&self) -> Option<&crate::palette::PaletteState> {
+        self.overlay.palette()
+    }
+    pub fn settings(&self) -> Option<&SettingsState> {
+        self.overlay.settings()
+    }
+    pub fn bookmarks(&self) -> Option<&BookmarksState> {
+        self.overlay.bookmarks()
+    }
+    pub fn file_finder(&self) -> Option<&FileFinderState> {
+        self.overlay.file_finder()
+    }
+    pub fn ssh_connect(&self) -> Option<&crate::state::ssh::SshConnectionState> {
+        self.overlay.ssh_connect()
+    }
+    pub fn is_menu_open(&self) -> bool {
+        self.overlay.is_menu_open()
+    }
+    pub fn is_prompt_open(&self) -> bool {
+        self.overlay.prompt().is_some()
+    }
+    pub fn is_dialog_open(&self) -> bool {
+        self.overlay.dialog().is_some()
+    }
+    pub fn is_collision_open(&self) -> bool {
+        self.overlay.collision().is_some()
+    }
+    pub fn is_palette_open(&self) -> bool {
+        self.overlay.palette().is_some()
+    }
+    pub fn is_settings_open(&self) -> bool {
+        self.overlay.settings().is_some()
+    }
 
     // Preview accessors — delegate to PreviewState
     pub fn preview_view(&self) -> Option<&(PathBuf, crate::preview::ViewBuffer)> {
         self.preview.view.as_ref()
     }
-    pub fn preview_command_due(&mut self) -> Option<Command> { self.preview.preview_command_due() }
-    pub fn is_preview_panel_open(&self) -> bool { self.preview.panel_open }
-    pub fn is_preview_focused(&self) -> bool { self.panes.focus == PaneFocus::Preview }
+    pub fn preview_command_due(&mut self) -> Option<Command> {
+        self.preview.preview_command_due()
+    }
+    pub fn is_preview_panel_open(&self) -> bool {
+        self.preview.panel_open
+    }
+    pub fn is_preview_focused(&self) -> bool {
+        self.panes.focus == PaneFocus::Preview
+    }
 
     // Editor accessor — delegate to EditorState
-    pub fn editor(&self) -> Option<&EditorBuffer> { self.editor.buffer.as_ref() }
-    pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> { self.editor.buffer.as_mut() }
+    pub fn editor(&self) -> Option<&EditorBuffer> {
+        self.editor.buffer.as_ref()
+    }
+    pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
+        self.editor.buffer.as_mut()
+    }
     pub fn is_markdown_preview_visible(&self) -> bool {
         self.editor.is_markdown_file() && self.editor.markdown_preview_visible
     }
-    pub fn markdown_preview_scroll(&self) -> usize { self.editor.markdown_preview_scroll }
+    pub fn markdown_preview_scroll(&self) -> usize {
+        self.editor.markdown_preview_scroll
+    }
 
     pub fn begin_open_editor(&mut self, path: PathBuf) {
         if self.panes.focus == PaneFocus::Preview {
@@ -1075,10 +1362,18 @@ impl AppState {
     }
 
     // Theme/config
-    pub fn theme(&self) -> &ResolvedTheme { &self.theme }
-    pub fn config(&self) -> &AppConfig { &self.config }
-    pub fn icon_mode(&self) -> IconMode { self.icon_mode }
-    pub fn should_quit(&self) -> bool { self.should_quit }
+    pub fn theme(&self) -> &ResolvedTheme {
+        &self.theme
+    }
+    pub fn config(&self) -> &AppConfig {
+        &self.config
+    }
+    pub fn icon_mode(&self) -> IconMode {
+        self.icon_mode
+    }
+    pub fn should_quit(&self) -> bool {
+        self.should_quit
+    }
 
     pub fn mark_drawn(&mut self) {
         self.redraw_count += 1;
@@ -1102,7 +1397,7 @@ impl AppState {
                 let current = status
                     .current_path
                     .file_name()
-                    .and_then(|value| value.to_str())
+                    .and_then(|value: &std::ffi::OsStr| value.to_str())
                     .unwrap_or(".");
                 format!(
                     " | {}:{}/{} {}",
@@ -1140,11 +1435,15 @@ impl AppState {
                 value: self.theme.preset.clone(),
                 hint: "Enter",
                 field: SettingsField::Theme(match self.theme.preset.as_str() {
+                    "fjord" => ThemePreset::Fjord,
                     "sandbar" => ThemePreset::Sandbar,
                     "oxide" => ThemePreset::Oxide,
                     "matrix" => ThemePreset::Matrix,
                     "norton" => ThemePreset::Norton,
-                    _ => ThemePreset::Fjord,
+                    "neon" => ThemePreset::Neon,
+                    "monochrome" => ThemePreset::Monochrome,
+                    "dracula" => ThemePreset::Dracula,
+                    _ => ThemePreset::Neon, // Fallback to Neon if an unknown theme string is somehow loaded
                 }),
             },
             SettingsEntry {
@@ -1311,7 +1610,10 @@ mod tests {
             ),
         });
         assert!(state.git_status(crate::pane::PaneId::Left).is_some());
-        assert_eq!(state.git_status(crate::pane::PaneId::Left).unwrap().branch, "main");
+        assert_eq!(
+            state.git_status(crate::pane::PaneId::Left).unwrap().branch,
+            "main"
+        );
         assert!(state.git_status(crate::pane::PaneId::Right).is_none());
     }
 
@@ -1328,7 +1630,9 @@ mod tests {
                 HashMap::new(),
             ),
         });
-        state.apply_job_result(JobResult::GitStatusAbsent { pane: crate::pane::PaneId::Left });
+        state.apply_job_result(JobResult::GitStatusAbsent {
+            pane: crate::pane::PaneId::Left,
+        });
         assert!(state.git_status(crate::pane::PaneId::Left).is_none());
     }
 
@@ -1362,7 +1666,10 @@ mod tests {
     fn focus_layer_returns_palette_when_palette_open() {
         let mut state = test_state();
         state.apply(Action::OpenCommandPalette).unwrap();
-        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::Palette)));
+        assert!(matches!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::Palette)
+        ));
     }
 
     #[test]
@@ -1387,14 +1694,20 @@ mod tests {
         let mut state = test_state();
         let commands = state.apply(Action::OpenFileFinder).unwrap();
         assert!(matches!(commands.first(), Some(Command::FindFiles { .. })));
-        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::FileFinder)));
+        assert!(matches!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::FileFinder)
+        ));
     }
 
     #[test]
     fn open_bookmarks_switches_focus_layer() {
         let mut state = test_state();
         state.apply(Action::OpenBookmarks).unwrap();
-        assert!(matches!(state.focus_layer(), FocusLayer::Modal(ModalKind::Bookmarks)));
+        assert!(matches!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::Bookmarks)
+        ));
     }
 
     fn test_state() -> AppState {
@@ -1444,6 +1757,7 @@ mod tests {
             pending_reveal: None,
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
+            terminal: crate::state::terminal::TerminalState::default(),
         }
     }
 
@@ -1474,7 +1788,9 @@ mod tests {
         state.config_path = root.join("config.toml").display().to_string();
         state.panes.left.cwd = root.join("work");
 
-        state.apply(Action::AddBookmark).expect("bookmark add should succeed");
+        state
+            .apply(Action::AddBookmark)
+            .expect("bookmark add should succeed");
 
         assert_eq!(state.config.bookmarks, vec![root.join("work")]);
         assert!(root.join("config.toml").exists());
@@ -1488,7 +1804,9 @@ mod tests {
         std::fs::create_dir_all(&root).expect("temp dir should exist");
         state.config_path = root.join("config.toml").display().to_string();
         state.config.bookmarks = vec![root.join("one"), root.join("two")];
-        state.overlay.open_bookmarks(crate::state::BookmarksState::new());
+        state
+            .overlay
+            .open_bookmarks(crate::state::BookmarksState::new());
 
         state
             .apply(Action::DeleteBookmark(0))
@@ -1501,9 +1819,13 @@ mod tests {
     #[test]
     fn prompt_submit_dispatches_trash_operation() {
         let mut state = test_state();
-        state.apply(Action::OpenDeletePrompt).expect("trash prompt should open");
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("trash prompt should open");
 
-        let commands = state.apply(Action::PromptSubmit).expect("submit should succeed");
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should succeed");
 
         assert!(matches!(
             commands.first(),
@@ -1521,7 +1843,9 @@ mod tests {
             .apply(Action::OpenPermanentDeletePrompt)
             .expect("delete prompt should open");
 
-        let commands = state.apply(Action::PromptSubmit).expect("submit should succeed");
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should succeed");
 
         assert!(matches!(
             commands.first(),
@@ -1634,7 +1958,10 @@ mod tests {
     #[test]
     fn menu_activation_dispatches_selected_action() {
         let mut state = test_state();
-        state.overlay.modal = Some(ModalState::Menu { id: MenuId::Navigate, selection: 1 });
+        state.overlay.modal = Some(ModalState::Menu {
+            id: MenuId::Navigate,
+            selection: 1,
+        });
 
         let commands = state
             .apply(Action::MenuActivate)
@@ -1677,7 +2004,10 @@ mod tests {
             .apply(Action::OpenCopyPrompt)
             .expect("copy prompt should open");
 
-        let expected = PathBuf::from("/tmp/target").join("note.txt").display().to_string();
+        let expected = PathBuf::from("/tmp/target")
+            .join("note.txt")
+            .display()
+            .to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Copy");
         assert_eq!(prompt.value, expected);
@@ -1755,7 +2085,10 @@ mod tests {
             .apply(Action::OpenMovePrompt)
             .expect("move prompt should open");
 
-        let expected = PathBuf::from("/tmp/target").join("note.txt").display().to_string();
+        let expected = PathBuf::from("/tmp/target")
+            .join("note.txt")
+            .display()
+            .to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Move");
         assert_eq!(prompt.value, expected);
@@ -1927,7 +2260,10 @@ mod tests {
             .expect("trash prompt should open");
 
         assert!(state.overlay.prompt().is_some());
-        assert_eq!(state.overlay.prompt().map(|prompt| prompt.kind), Some(PromptKind::Trash));
+        assert_eq!(
+            state.overlay.prompt().map(|prompt| prompt.kind),
+            Some(PromptKind::Trash)
+        );
         assert_eq!(
             state.overlay.prompt().map(|prompt| prompt.title),
             Some("Move to Trash")
@@ -1943,7 +2279,10 @@ mod tests {
             .expect("delete prompt should open");
 
         assert!(state.overlay.prompt().is_some());
-        assert_eq!(state.overlay.prompt().map(|prompt| prompt.kind), Some(PromptKind::Delete));
+        assert_eq!(
+            state.overlay.prompt().map(|prompt| prompt.kind),
+            Some(PromptKind::Delete)
+        );
         assert_eq!(
             state.overlay.prompt().map(|prompt| prompt.title),
             Some("Delete Permanently")

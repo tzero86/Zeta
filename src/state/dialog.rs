@@ -13,6 +13,7 @@ use super::PromptState;
 pub struct DialogState {
     pub title: &'static str,
     pub lines: Vec<String>,
+    pub scroll: usize,
 }
 
 impl DialogState {
@@ -31,20 +32,25 @@ impl DialogState {
                 String::from(" \\$$$$ \\$$$$$$$$ \\$$$$  \\$$$$$$$   \\$$$$   \\$$$$$$$"),
                 String::new(),
                 String::from("## Overview"),
-                String::from("Zeta is a keyboard-first dual-pane file manager and lightweight editor."),
+                String::from(
+                    "Zeta is a keyboard-first dual-pane file manager and lightweight editor.",
+                ),
                 format!("  Version\t{} — Beta Release", env!("CARGO_PKG_VERSION")),
                 String::from("  Author\ttzero86"),
                 String::new(),
                 String::from("## Appearance"),
                 format!("  Theme\t{theme_name}"),
-                String::from("  Defaults\tmatrix (neon green/blue), norton (classic blue/gold)"),
-                String::from("  Other\tfjord, sandbar, oxide"),
+                String::from("  Defaults\tzeta (official dark), neon (vibrant), monochrome (b&w)"),
+                String::from("  Other\tfjord, sandbar, oxide, matrix, norton, dracula"),
                 format!("  Config\t{config_path}"),
                 String::from("  Icons\tUnicode by default; ASCII fallback available"),
                 String::from("  Tip\tSet icon_mode = \"ascii\" or \"custom\" in config.toml"),
                 String::new(),
                 String::from("## Features"),
                 String::from("  Dual panes\tBrowse side-by-side or stacked"),
+                String::from(
+                    "  SSH/SFTP\tConnect to remote servers (Ctrl+R or 'ssh' in command palette)",
+                ),
                 String::from("  Archive browsing\tOpen .zip/.tar/.gz/.bz2/.xz like folders"),
                 String::from("  Diff mode\tF10 highlights unique/changed entries"),
                 String::from("  Mouse\tClick selects, double-click opens, wheel scrolls"),
@@ -53,11 +59,11 @@ impl DialogState {
                 String::new(),
                 String::from("## Usage tips"),
                 String::from("  Ctrl+O\tOpen settings, including theme chooser"),
+                String::from("  Ctrl+R / ssh\tConnect to SSH server (command palette)"),
                 String::from("  F1\tOpen help for shortcuts and workflows"),
                 String::from("  Esc / Enter\tClose this window"),
-                String::new(),
-                String::from("SSH/SFTP coming soon!"),
             ],
+            scroll: 0,
         }
     }
 
@@ -90,9 +96,19 @@ impl DialogState {
                 String::from("## Menus / System"),
                 String::from("  Alt+F/N/V/H\tFile / Navigate / View / Help menus"),
                 String::from("  Ctrl+O / F1 / Ctrl+Q\tSettings, help, quit"),
+                String::from("  Ctrl+R / ssh\tConnect to SSH server (command palette)"),
                 String::from("  Esc / Enter\tClose windows and cancel dialogs"),
             ],
+            scroll: 0,
         }
+    }
+
+    pub fn scroll_down(&mut self, step: usize) {
+        self.scroll = self.scroll.saturating_add(step);
+    }
+
+    pub fn scroll_up(&mut self, step: usize) {
+        self.scroll = self.scroll.saturating_sub(step);
     }
 }
 
@@ -189,7 +205,9 @@ impl CollisionState {
             FileOperation::Trash { path } => format!("trash {}", path.display()),
             FileOperation::Move { source, .. } => format!("move {}", source.display()),
             FileOperation::Rename { source, .. } => format!("rename {}", source.display()),
-            FileOperation::ExtractArchive { archive, .. } => format!("extract {}", archive.display()),
+            FileOperation::ExtractArchive { archive, .. } => {
+                format!("extract {}", archive.display())
+            }
         }
     }
 

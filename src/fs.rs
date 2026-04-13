@@ -76,7 +76,29 @@ pub enum FileSystemError {
     },
     #[error("failed to delete {path}: {source}")]
     DeletePath { path: String, source: io::Error },
+    #[error("failed to create directory {path}: {source}")]
+    CreateDirectory { path: String, source: io::Error },
+    #[error("failed to delete entry {path}: {source}")]
+    DeleteEntry { path: String, source: io::Error },
+    #[error("{message}")]
+    Other { message: String },
+    #[error("failed to move {src} to {dst}: {source}")]
+    MoveEntry {
+        src: String,
+        dst: String,
+        source: io::Error,
+    },
+    #[error("failed to copy {src} to {dst}: {source}")]
+    CopyEntry {
+        src: String,
+        dst: String,
+        source: io::Error,
+    },
 }
+
+pub mod backend;
+pub mod local;
+pub mod sftp;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OperationProgress {
@@ -141,19 +163,21 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
         });
     }
 
-// Helper function for archive extension detection
-fn is_archive_extension(name: &str) -> bool {
-    let lower = name.to_lowercase();
-    lower.ends_with(".zip")
-        || lower.ends_with(".tar")
-        || lower.ends_with(".tar.gz")
-        || lower.ends_with(".tgz")
-        || lower.ends_with(".tar.bz2")
-        || lower.ends_with(".tbz2")
-        || lower.ends_with(".tar.xz")
-        || lower.ends_with(".txz")
-}
-
+    // Helper function for archive extension detection
+    fn is_archive_extension(name: &str) -> bool {
+        let b = name.as_bytes();
+        // All archive extensions are ASCII — byte comparison avoids allocating a
+        // lowercased copy. Case-sensitive is correct: archives named FOO.ZIP are
+        // unusual enough that we don't need to detect them.
+        b.ends_with(b".zip")
+            || b.ends_with(b".tar")
+            || b.ends_with(b".tar.gz")
+            || b.ends_with(b".tgz")
+            || b.ends_with(b".tar.bz2")
+            || b.ends_with(b".tbz2")
+            || b.ends_with(b".tar.xz")
+            || b.ends_with(b".txz")
+    }
 
     results.sort_by(|left, right| {
         left.kind
