@@ -790,7 +790,7 @@ impl AppState {
                                 let (operation, refresh_path) =
                                     match kind {
                                         PromptKind::Copy => {
-                                            let file_target = source
+                                            let target_path = source
                                                 .file_name()
                                                 .map(|n| dest_dir.join(n))
                                                 .unwrap_or_else(|| dest_dir.clone());
@@ -798,28 +798,29 @@ impl AppState {
                                                 if Self::archive_member_source(source).is_some() {
                                                     dest_dir.clone()
                                                 } else {
-                                                    file_target.clone()
+                                                    target_path.clone()
                                                 };
-                                            (
-                                                Some(self.copy_operation_for_source(
+                                            let operation =
+                                                self.copy_operation_for_source(source, &copy_target);
+                                            let refresh_path =
+                                                self.refresh_target_path_for_transfer(
                                                     source,
                                                     &copy_target,
-                                                )),
-                                                file_target,
-                                            )
+                                                );
+                                            (Some(operation), refresh_path)
                                         }
                                         PromptKind::Move => {
                                             let target_path = source
                                                 .file_name()
                                                 .map(|n| dest_dir.join(n))
                                                 .unwrap_or_else(|| dest_dir.clone());
-                                            (
-                                                Some(FileOperation::Move {
-                                                    source: source.clone(),
-                                                    destination: target_path.clone(),
-                                                }),
-                                                target_path,
-                                            )
+                                            let operation = FileOperation::Move {
+                                                source: source.clone(),
+                                                destination: target_path.clone(),
+                                            };
+                                            let refresh_path = self
+                                                .refresh_target_path_for_transfer(source, &target_path);
+                                            (Some(operation), refresh_path)
                                         }
                                         PromptKind::Trash => (
                                             Some(FileOperation::Trash {
@@ -856,7 +857,6 @@ impl AppState {
                             let kind = prompt.kind;
                             let value = prompt.value.trim().to_string();
                             let target_path = resolve_prompt_target(&prompt, &value);
-                            let refresh = self.refresh_targets_for_prompt(kind, &target_path);
                             let operation = match kind {
                                 PromptKind::Copy => prompt
                                     .source_path
@@ -891,6 +891,17 @@ impl AppState {
                                 }
                             };
                             if let Some(operation) = operation {
+                                let refresh_path = match &operation {
+                                    FileOperation::Copy { source, destination }
+                                    | FileOperation::Move { source, destination } => {
+                                        self.refresh_target_path_for_transfer(source, destination)
+                                    }
+                                    FileOperation::ExtractArchive { destination, .. } => {
+                                        destination.clone()
+                                    }
+                                    _ => target_path.clone(),
+                                };
+                                let refresh = self.refresh_targets_for_prompt(kind, &refresh_path);
                                 commands.push(Command::RunFileOperation {
                                     operation,
                                     refresh,
@@ -1801,6 +1812,20 @@ impl AppState {
         }
         None
     }
+    fn refresh_target_path_for_transfer(&self, source: &Path, destination: &Path) -> PathBuf {
+        if Self::archive_member_source(source).is_some()
+            || source.is_dir()
+            || destination == self.panes.inactive_pane().cwd
+            || destination.is_dir()
+        {
+            destination.to_path_buf()
+        } else {
+            destination
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| self.panes.inactive_pane().cwd.clone())
+        }
+    }
 
     fn refresh_targets_for_prompt(
         &self,
@@ -1813,28 +1838,21 @@ impl AppState {
         }];
 
         let target_dir = match kind {
-            PromptKind::Copy | PromptKind::Move => {
-                if target_path == self.panes.inactive_pane().cwd || target_path.is_dir() {
-                    target_path.to_path_buf()
-                } else {
-                    target_path
-                        .parent()
-                        .map(Path::to_path_buf)
-                        .unwrap_or_else(|| self.panes.inactive_pane().cwd.clone())
-                }
-            }
+            PromptKind::Copy | PromptKind::Move => target_path.to_path_buf(),
             _ => self.panes.active_pane().cwd.clone(),
         };
 
         if target_dir != self.panes.active_pane().cwd
-            && target_dir == self.panes.inactive_pane().cwd
+            && target_dir.starts_with(&self.panes.inactive_pane().cwd)
         {
             refresh.push(RefreshTarget {
                 pane: match self.panes.focus {
                     PaneFocus::Left | PaneFocus::Preview => PaneId::Right,
                     PaneFocus::Right => PaneId::Left,
                 },
-                path: target_dir,
+                // Refresh the directory currently shown to the user; do not navigate
+                // the inactive pane into a destination subpath as a side effect.
+                path: self.panes.inactive_pane().cwd.clone(),
             });
         }
 
@@ -2461,6 +2479,111 @@ mod tests {
     }
 
     #[test]
+    fn refresh_targets_for_prompt_batch_copy_uses_actual_directory_target() {
+        let root = temp_root();
+        let source_root = root.join("source");
+        let source_dir = source_root.join("photos");
+        let destination_dir = root.join("target");
+
+        fs::create_dir_all(&source_dir).expect("source directory should be created");
+        fs::create_dir_all(&destination_dir).expect("destination directory should be created");
+
+        let mut state = test_state();
+        state.panes.left.cwd = source_root.clone();
+        state.panes.right.cwd = destination_dir.clone();
+
+        let mut prompt = PromptState::with_value(
+            PromptKind::Copy,
+            "Copy Marked Items",
+            destination_dir.clone(),
+            None,
+            destination_dir.display().to_string(),
+        );
+        prompt.source_paths = vec![source_dir.clone()];
+        state.overlay.open_prompt(prompt);
+
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
+
+        assert_eq!(
+            commands,
+            vec![Command::RunFileOperation {
+                operation: FileOperation::Copy {
+                    source: source_dir.clone(),
+                    destination: destination_dir.join("photos"),
+                },
+                refresh: vec![
+                    RefreshTarget {
+                        pane: PaneId::Left,
+                        path: source_root.clone(),
+                    },
+                    RefreshTarget {
+                        pane: PaneId::Right,
+                        path: destination_dir.clone(),
+                    },
+                ],
+                collision: CollisionPolicy::Fail,
+            }]
+        );
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+    #[test]
+    fn refresh_targets_for_prompt_batch_move_uses_actual_directory_target() {
+        let root = temp_root();
+        let source_root = root.join("source");
+        let source_dir = source_root.join("photos");
+        let destination_dir = root.join("target");
+
+        fs::create_dir_all(&source_dir).expect("source directory should be created");
+        fs::create_dir_all(&destination_dir).expect("destination directory should be created");
+
+        let mut state = test_state();
+        state.panes.left.cwd = source_root.clone();
+        state.panes.right.cwd = destination_dir.clone();
+
+        let mut prompt = PromptState::with_value(
+            PromptKind::Move,
+            "Move Marked Items",
+            destination_dir.clone(),
+            None,
+            destination_dir.display().to_string(),
+        );
+        prompt.source_paths = vec![source_dir.clone()];
+        state.overlay.open_prompt(prompt);
+
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
+
+        assert_eq!(
+            commands,
+            vec![Command::RunFileOperation {
+                operation: FileOperation::Move {
+                    source: source_dir.clone(),
+                    destination: destination_dir.join("photos"),
+                },
+                refresh: vec![
+                    RefreshTarget {
+                        pane: PaneId::Left,
+                        path: source_root.clone(),
+                    },
+                    RefreshTarget {
+                        pane: PaneId::Right,
+                        path: destination_dir.clone(),
+                    },
+                ],
+                collision: CollisionPolicy::Fail,
+            }]
+        );
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
+
+    #[test]
     fn collision_job_result_opens_resolution_dialog() {
         let mut state = test_state();
 
@@ -2566,6 +2689,40 @@ mod tests {
             PathBuf::from("/tmp/elsewhere/new.txt")
         );
     }
+
+    #[test]
+    fn copy_operation_for_source_selects_extract_archive_for_archive_members() {
+        let root = temp_root();
+        let archive_path = root.join("bundle.zip");
+        let archive_member = PathBuf::from("nested").join("note.txt");
+        let regular_source = root.join("note.txt");
+        let destination_dir = root.join("target");
+
+        fs::create_dir_all(&destination_dir).expect("destination directory should be created");
+        fs::write(&archive_path, b"placeholder").expect("archive placeholder should be created");
+        fs::write(&regular_source, b"note").expect("regular source should be created");
+
+        let state = test_state();
+
+        assert_eq!(
+            state.copy_operation_for_source(&archive_path.join(&archive_member), &destination_dir),
+            FileOperation::ExtractArchive {
+                archive: archive_path.clone(),
+                inner_path: archive_member.clone(),
+                destination: destination_dir.clone(),
+            }
+        );
+        assert_eq!(
+            state.copy_operation_for_source(&regular_source, &destination_dir.join("note.txt")),
+            FileOperation::Copy {
+                source: regular_source.clone(),
+                destination: destination_dir.join("note.txt"),
+            }
+        );
+
+        fs::remove_dir_all(root).expect("temp dir should be removed");
+    }
+
 
     #[test]
     fn open_delete_prompt_sets_trash_confirmation_message() {
