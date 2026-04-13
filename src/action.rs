@@ -297,15 +297,21 @@ impl Action {
     /// Palette, settings, preview, collision, prompt, dialog, and menu
     /// are handled by their dedicated `from_*_key_event` helpers.
     pub fn from_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
-        if key_event.modifiers != KeyModifiers::ALT {
-            return None;
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('1'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(0)),
+            (KeyCode::Char('2'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(1)),
+            (KeyCode::Char('3'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(2)),
+            (KeyCode::Char('4'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(3)),
+            _ => None,
         }
+    }
 
-        match key_event.code {
-            KeyCode::Char('1') => Some(Self::SwitchToWorkspace(0)),
-            KeyCode::Char('2') => Some(Self::SwitchToWorkspace(1)),
-            KeyCode::Char('3') => Some(Self::SwitchToWorkspace(2)),
-            KeyCode::Char('4') => Some(Self::SwitchToWorkspace(3)),
+    fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('1' | '!'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(0)),
+            (KeyCode::Char('2' | '@'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(1)),
+            (KeyCode::Char('3' | '#'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(2)),
+            (KeyCode::Char('4' | '$'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(3)),
             _ => None,
         }
     }
@@ -314,6 +320,10 @@ impl Action {
         key_event: KeyEvent,
         keymap: &RuntimeKeymap,
     ) -> Option<Self> {
+        if let Some(action) = Self::from_shift_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if let Some(action) = Self::from_workspace_key_event(key_event) {
             return Some(action);
         }
@@ -758,6 +768,10 @@ impl Action {
     }
 
     pub fn from_menu_key_event(key_event: KeyEvent) -> Option<Self> {
+        if let Some(action) = Self::from_shift_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if let Some(action) = Self::from_workspace_key_event(key_event) {
             return Some(action);
         }
@@ -1043,8 +1057,27 @@ mod tests {
     }
 
     #[test]
-    fn alt_number_shortcuts_switch_workspaces() {
+    fn workspace_shortcuts_switch_workspaces() {
         let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('$'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(3))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
 
         assert_eq!(
             Action::from_pane_key_event(
@@ -1054,19 +1087,20 @@ mod tests {
             Some(Action::SwitchToWorkspace(0))
         );
         assert_eq!(
-            Action::from_pane_key_event(
-                KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT),
-                &keymap
-            ),
-            Some(Action::SwitchToWorkspace(3))
-        );
-        assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT)),
             Some(Action::SwitchToWorkspace(1))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT)),
-            Some(Action::SwitchToWorkspace(2))
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT)),
+            Some(Action::SwitchToWorkspace(3))
+        );
+    }
+
+    #[test]
+    fn editor_shift_number_keys_remain_text_input() {
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('@'), KeyModifiers::SHIFT)),
+            Some(Action::EditorInsert('@'))
         );
     }
 

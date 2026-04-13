@@ -18,7 +18,7 @@
 - `src/state/editor_state.rs` — remain behaviorally same but move under workspace ownership
 - `src/state/preview_state.rs` — remain behaviorally same but move under workspace ownership
 - `src/state/terminal.rs` — remain behaviorally same but move under workspace ownership
-- `src/action.rs` — add workspace switch actions and key routing for `Alt+1..Alt+4`
+- `src/action.rs` — add workspace switch actions and key routing for direct workspace shortcuts (`Shift+1..Shift+4`, with `Alt+1..Alt+4` fallback)
 - `src/app.rs` — route workspace-scoped commands/results, persist multi-workspace session
 - `src/jobs.rs` — add `workspace_id` to request/result types that mutate workspace-local state
 - `src/session.rs` — persist multiple workspaces plus active workspace index
@@ -220,7 +220,7 @@ Add to `src/action.rs`:
 SwitchToWorkspace(usize),
 ```
 
-Handle `Alt+1..Alt+4` in pane/global key routing before other Alt-menu fallbacks intercept them.
+Handle direct workspace shortcuts in pane/global key routing before lower-priority menu fallbacks can intercept them. Prefer `Shift+1..Shift+4`, while still accepting `Alt+1..Alt+4` when the terminal passes them through.
 
 In `src/state/mod.rs`, add a reducer branch that:
 - validates the index is within `0..4`

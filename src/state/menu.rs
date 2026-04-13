@@ -323,25 +323,25 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                 },
                 MenuItem {
                     label: "Workspace 1",
-                    shortcut: "Alt+1",
+                    shortcut: "Shift+1",
                     mnemonic: '1',
                     action: Action::SwitchToWorkspace(0),
                 },
                 MenuItem {
                     label: "Workspace 2",
-                    shortcut: "Alt+2",
+                    shortcut: "Shift+2",
                     mnemonic: '2',
                     action: Action::SwitchToWorkspace(1),
                 },
                 MenuItem {
                     label: "Workspace 3",
-                    shortcut: "Alt+3",
+                    shortcut: "Shift+3",
                     mnemonic: '3',
                     action: Action::SwitchToWorkspace(2),
                 },
                 MenuItem {
                     label: "Workspace 4",
-                    shortcut: "Alt+4",
+                    shortcut: "Shift+4",
                     mnemonic: '4',
                     action: Action::SwitchToWorkspace(3),
                 },
@@ -500,12 +500,12 @@ mod tests {
 
         assert!(items.iter().any(|item| {
             item.label == "Workspace 1"
-                && item.shortcut == "Alt+1"
+                && item.shortcut == "Shift+1"
                 && item.action == Action::SwitchToWorkspace(0)
         }));
         assert!(items.iter().any(|item| {
             item.label == "Workspace 4"
-                && item.shortcut == "Alt+4"
+                && item.shortcut == "Shift+4"
                 && item.action == Action::SwitchToWorkspace(3)
         }));
     }

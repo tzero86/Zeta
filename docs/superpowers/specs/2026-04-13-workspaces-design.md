@@ -101,10 +101,12 @@ This means the user can, for example:
 
 ### 3. Keybindings
 For v1, use direct workspace switching via fixed bindings such as:
-- `Alt+1`
-- `Alt+2`
-- `Alt+3`
-- `Alt+4`
+- `Shift+1`
+- `Shift+2`
+- `Shift+3`
+- `Shift+4`
+
+Keep `Alt+1..Alt+4` as an allowed fallback where the terminal passes Alt-number chords through unchanged.
 
 Cycling actions can come later if desired, but direct jumps are the clearest first version.
 

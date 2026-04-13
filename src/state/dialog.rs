@@ -60,7 +60,9 @@ impl DialogState {
                 String::from("  Parent entry\t'..' stays pinned at the top of directories"),
                 String::new(),
                 String::from("## Usage tips"),
-                String::from("  Alt+1..Alt+4\tJump directly between the 4 workspaces"),
+                String::from(
+                    "  Shift+1..Shift+4	Jump between workspaces from panes/menus (Alt+1..Alt+4 fallback)",
+                ),
                 String::from("  ws:N/4\tStatus bar shows the active workspace"),
                 String::from("  Ctrl+O\tOpen settings, including theme chooser"),
                 String::from("  ssh\tConnect to SSH server from the command palette"),
@@ -80,7 +82,9 @@ impl DialogState {
                 String::from("  Backspace/Tab\tParent '..' / switch pane"),
                 String::from("  Up/Down/j/k\tMove selection"),
                 String::from("  PgUp/PgDn/scroll\tScroll lists and previews"),
-                String::from("  Alt+1..Alt+4\tSwitch directly between workspaces"),
+                String::from(
+                    "  Shift+1..Shift+4	Switch workspaces from panes/menus (Alt+1..Alt+4 fallback)",
+                ),
                 String::from("  Click\tSelect row with mouse"),
                 String::new(),
                 String::from("## Files"),

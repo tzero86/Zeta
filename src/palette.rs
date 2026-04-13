@@ -120,25 +120,25 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         PaletteEntry {
             category: "Navigation",
             label: "Switch to workspace 1",
-            hint: "Alt+1",
+            hint: "Shift+1",
             action: Action::SwitchToWorkspace(0),
         },
         PaletteEntry {
             category: "Navigation",
             label: "Switch to workspace 2",
-            hint: "Alt+2",
+            hint: "Shift+2",
             action: Action::SwitchToWorkspace(1),
         },
         PaletteEntry {
             category: "Navigation",
             label: "Switch to workspace 3",
-            hint: "Alt+3",
+            hint: "Shift+3",
             action: Action::SwitchToWorkspace(2),
         },
         PaletteEntry {
             category: "Navigation",
             label: "Switch to workspace 4",
-            hint: "Alt+4",
+            hint: "Shift+4",
             action: Action::SwitchToWorkspace(3),
         },
         PaletteEntry {
@@ -455,12 +455,12 @@ mod tests {
 
         assert!(entries.iter().any(|entry| {
             entry.label == "Switch to workspace 1"
-                && entry.hint == "Alt+1"
+                && entry.hint == "Shift+1"
                 && entry.action == Action::SwitchToWorkspace(0)
         }));
         assert!(entries.iter().any(|entry| {
             entry.label == "Switch to workspace 4"
-                && entry.hint == "Alt+4"
+                && entry.hint == "Shift+4"
                 && entry.action == Action::SwitchToWorkspace(3)
         }));
     }
