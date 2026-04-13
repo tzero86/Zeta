@@ -646,6 +646,7 @@ impl AppState {
                 let cwd = self.panes.active_pane().cwd.clone();
                 if !marks.is_empty() {
                     let count = marks.len();
+                    let preview = Self::summarize_paths(&marks);
                     let mut prompt = PromptState::with_value(
                         PromptKind::Trash,
                         "Trash Marked Items",
@@ -655,7 +656,8 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message = format!("confirm trash for {count} marked items");
+                    self.status_message =
+                        format!("confirm trash for {count} marked items: {preview}");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let entry_name = entry.name.clone();
                     let entry_path = entry.path.clone();
@@ -685,6 +687,7 @@ impl AppState {
                 let cwd = self.panes.active_pane().cwd.clone();
                 if !marks.is_empty() {
                     let count = marks.len();
+                    let preview = Self::summarize_paths(&marks);
                     let mut prompt = PromptState::with_value(
                         PromptKind::Delete,
                         "Delete Marked Items Permanently",
@@ -694,8 +697,9 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        format!("confirm permanent delete for {count} marked items");
+                    self.status_message = format!(
+                        "confirm permanent delete for {count} marked items: {preview}"
+                    );
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let entry_name = entry.name.clone();
                     let entry_path = entry.path.clone();
@@ -905,14 +909,24 @@ impl AppState {
                                 PromptKind::NewFile => Some(FileOperation::CreateFile {
                                     path: target_path.clone(),
                                 }),
-                                PromptKind::Rename => {
-                                    prompt.source_path.as_ref().map(|s| FileOperation::Rename {
-                                        source: s.clone(),
-                                        destination: target_path.clone(),
-                                    })
-                                }
+                                PromptKind::Rename => prompt.source_path.as_ref().and_then(|s| {
+                                    match Self::validate_rename_target(s, &value) {
+                                        Err(msg) => {
+                                            self.status_message = msg;
+                                            None
+                                        }
+                                        Ok(None) => {
+                                            self.status_message = String::from("rename unchanged");
+                                            None
+                                        }
+                                        Ok(Some(destination)) => Some(FileOperation::Rename {
+                                            source: s.clone(),
+                                            destination,
+                                        }),
+                                    }
+                                })
                             };
-                            if let Some(operation) = operation {
+                            let should_close_overlay = if let Some(operation) = operation {
                                 let refresh_path = match &operation {
                                     FileOperation::Copy { source, destination }
                                     | FileOperation::Move { source, destination } => {
@@ -938,10 +952,18 @@ impl AppState {
                                     PromptKind::NewFile => String::from("creating file"),
                                     PromptKind::Rename => String::from("renaming item"),
                                 };
-                            } else {
+                                true
+                            } else if !(matches!(kind, PromptKind::Rename)
+                                && prompt.source_path.is_some())
+                            {
                                 self.status_message = String::from("missing source for operation");
+                                true
+                            } else {
+                                false
+                            };
+                            if should_close_overlay {
+                                self.overlay.close_all();
                             }
-                            self.overlay.close_all();
                         } // end single-file path
                     }
                 }
@@ -1019,18 +1041,17 @@ impl AppState {
                     pane: self.panes.focused_pane_id(),
                     path: self.panes.active_pane().cwd.clone(),
                 }];
-                if let Some(state) = self.panes.active_pane_mut().rename_state.take() {
-                    let new_name = state.buffer.trim().to_string();
-                    if !new_name.is_empty()
-                        && new_name
-                            != state
-                                .original_path
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or_default()
-                    {
-                        if let Some(parent) = state.original_path.parent() {
-                            let destination = parent.join(&new_name);
+                if let Some(state) = self.panes.active_pane().rename_state.clone() {
+                    match Self::validate_rename_target(&state.original_path, &state.buffer) {
+                        Err(msg) => {
+                            self.status_message = msg;
+                        }
+                        Ok(None) => {
+                            self.panes.active_pane_mut().rename_state = None;
+                            self.status_message = String::from("rename unchanged");
+                        }
+                        Ok(Some(destination)) => {
+                            self.panes.active_pane_mut().rename_state = None;
                             commands.push(Command::RunFileOperation {
                                 operation: crate::action::FileOperation::Rename {
                                     source: state.original_path,
@@ -1810,6 +1831,46 @@ impl AppState {
     // Private Helpers
     // =========================================================================
 
+    fn summarize_paths(paths: &[PathBuf]) -> String {
+        let names: Vec<String> = paths
+            .iter()
+            .take(3)
+            .map(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("?")
+                    .to_string()
+            })
+            .collect();
+        let mut summary = names.join(", ");
+        if paths.len() > 3 {
+            summary.push_str(&format!(", +{} more", paths.len() - 3));
+        }
+        summary
+    }
+
+    fn validate_rename_target(source: &Path, raw_name: &str) -> Result<Option<PathBuf>, String> {
+        let name = raw_name.trim();
+        if name.is_empty() {
+            return Err(String::from("name cannot be empty"));
+        }
+        if name.contains('/') || name.contains('\\') {
+            return Err(String::from("rename target must be a name, not a path"));
+        }
+        let current = source
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default();
+        if name == current {
+            return Ok(None);
+        }
+        let parent = source
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        Ok(Some(parent.join(name)))
+    }
+
     fn file_operation_source_path(operation: &FileOperation) -> PathBuf {
         match operation {
             FileOperation::Copy { source, .. } => source.clone(),
@@ -1967,7 +2028,7 @@ mod tests {
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationStatus, JobResult};
-    use crate::pane::{PaneId, PaneState, SortMode};
+    use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
 
     use super::{
         resolve_prompt_target, AppState, CollisionState, EditorState, FocusLayer, ModalKind,
@@ -2902,6 +2963,77 @@ fn batch_full_failure_keeps_marks_and_reports_failed_status() {
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
 
+#[test]
+fn prompt_submit_rename_rejects_path_like_targets() {
+    let mut state = test_state();
+    state.overlay.open_prompt(PromptState::with_value(
+        PromptKind::Rename,
+        "Rename",
+        PathBuf::from("/tmp/base"),
+        Some(PathBuf::from("/tmp/base/old.txt")),
+        String::from("nested/new.txt"),
+    ));
+
+    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+
+    assert!(commands.is_empty());
+    assert_eq!(state.status_message, "rename target must be a name, not a path");
+    assert!(state.overlay.prompt().is_some());
+}
+
+#[test]
+fn prompt_submit_rename_same_name_is_no_op() {
+    let mut state = test_state();
+    state.overlay.open_prompt(PromptState::with_value(
+        PromptKind::Rename,
+        "Rename",
+        PathBuf::from("/tmp/base"),
+        Some(PathBuf::from("/tmp/base/old.txt")),
+        String::from("old.txt"),
+    ));
+
+    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+
+    assert!(commands.is_empty());
+    assert_eq!(state.status_message, "rename unchanged");
+    assert!(state.overlay.prompt().is_some());
+}
+
+#[test]
+fn inline_rename_empty_name_keeps_editor_open_and_sets_status() {
+    let mut state = test_state();
+    state.panes.left.rename_state = Some(InlineRenameState {
+        buffer: String::from("   "),
+        original_path: PathBuf::from("./note.txt"),
+    });
+
+    let commands = state
+        .apply(Action::ConfirmInlineRename)
+        .expect("inline rename should validate");
+
+    assert!(commands.is_empty());
+    assert_eq!(state.status_message, "name cannot be empty");
+    assert!(state.panes.left.rename_state.is_some());
+}
+
+#[test]
+fn inline_rename_same_name_is_no_op() {
+    let mut state = test_state();
+    state.panes.left.rename_state = Some(InlineRenameState {
+        buffer: String::from("note.txt"),
+        original_path: PathBuf::from("./note.txt"),
+    });
+
+    let commands = state
+        .apply(Action::ConfirmInlineRename)
+        .expect("inline rename should validate");
+
+    assert!(commands.is_empty());
+    assert_eq!(state.status_message, "rename unchanged");
+    assert!(state.panes.left.rename_state.is_none());
+}
+
+
     #[test]
     fn resolve_prompt_target_joins_relative_values_to_base_path() {
         let prompt = PromptState::with_value(
@@ -2954,6 +3086,37 @@ fn batch_full_failure_keeps_marks_and_reports_failed_status() {
 
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
+
+
+#[test]
+fn open_delete_prompt_summarizes_marked_items() {
+    let mut state = test_state();
+    state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
+    state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
+
+    state
+        .apply(Action::OpenDeletePrompt)
+        .expect("trash prompt should open");
+
+    assert!(state.overlay.prompt().is_some());
+    assert!(state.status_message.contains("2 marked items"));
+    assert!(state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt"));
+}
+
+#[test]
+fn open_permanent_delete_prompt_summarizes_marked_items() {
+    let mut state = test_state();
+    state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
+    state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
+
+    state
+        .apply(Action::OpenPermanentDeletePrompt)
+        .expect("delete prompt should open");
+
+    assert!(state.overlay.prompt().is_some());
+    assert!(state.status_message.contains("2 marked items"));
+    assert!(state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt"));
+}
 
 
     #[test]
