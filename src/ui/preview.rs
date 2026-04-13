@@ -195,7 +195,6 @@ pub struct RenderPreviewArgs<'a> {
     pub is_focused: bool,
     pub palette: ThemePalette,
     pub cheap_mode: bool,
-    pub borders: Borders,
 }
 
 pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPreviewArgs<'_>) {
@@ -205,7 +204,6 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
         is_focused,
         palette,
         cheap_mode,
-        borders,
     } = args;
     let border_style = if is_focused {
         Style::default()
@@ -217,7 +215,7 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
     let title = format!(" Preview  {} ", filename);
     let block = Block::default()
         .title(title)
-        .borders(borders)
+        .borders(Borders::ALL)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
     let inner = block.inner(area);

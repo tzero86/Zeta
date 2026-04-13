@@ -19,7 +19,6 @@ pub struct RenderEditorArgs<'a> {
     pub cheap_mode: bool,
     /// Tab width used in cheap_mode and highlighted rendering.
     pub cheap_tab_width: u8,
-    pub borders: Borders,
 }
 
 pub fn editor_render_state(
@@ -63,7 +62,6 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         loading,
         cheap_mode,
         cheap_tab_width,
-        borders,
     } = args;
     let border_style = if is_focused {
         Style::default()
@@ -82,7 +80,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
     let title = format!("Editor{}  {}", dirty_marker, path);
     let block = Block::default()
         .title(title)
-        .borders(borders)
+        .borders(Borders::ALL)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);

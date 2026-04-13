@@ -10,7 +10,7 @@ use crate::fs::{EntryInfo, EntryKind};
 use crate::git::{FileStatus, RepoStatus};
 use crate::icon::icon_for_kind;
 use crate::pane::PaneState;
-use crate::state::{AppState, PaneLayout};
+use crate::state::AppState;
 
 pub struct PaneChrome {
     pub border: Style,
@@ -59,25 +59,6 @@ pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome 
             border: Style::default().fg(palette.text_muted),
             title: Style::default().fg(palette.text_muted),
             surface: Style::default().bg(palette.tools_bg),
-        }
-    }
-}
-
-pub fn pane_outer_borders(layout: PaneLayout, is_primary: bool) -> Borders {
-    match layout {
-        PaneLayout::SideBySide => {
-            if is_primary {
-                Borders::TOP | Borders::BOTTOM
-            } else {
-                Borders::TOP | Borders::LEFT | Borders::BOTTOM
-            }
-        }
-        PaneLayout::Stacked => {
-            if is_primary {
-                Borders::TOP | Borders::BOTTOM
-            } else {
-                Borders::BOTTOM
-            }
         }
     }
 }
@@ -179,7 +160,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                 .fg(palette.selection_fg)
                 .add_modifier(Modifier::BOLD),
         )
-        .highlight_symbol("> ");
+        .highlight_symbol("›");
 
     let mut list_state = ListState::default();
     if !pane.entries.is_empty() {
@@ -315,7 +296,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         None => (' ', palette.text_muted),
     };
     let meta_width = display_width(&meta);
-    let content_width = available_width.saturating_sub(2);
+    let content_width = available_width;
     let name_width = content_width
         .saturating_sub(prefix_width)
         .saturating_sub(meta_width)
@@ -486,5 +467,65 @@ pub fn human_size(size: u64) -> String {
         format!("{}{}", size, UNITS[unit])
     } else {
         format!("{value:.1}{}", UNITS[unit])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use ratatui::style::Color;
+
+    fn test_palette() -> ThemePalette {
+        ThemePalette {
+            menu_bg: Color::Rgb(10, 11, 12),
+            menu_fg: Color::Rgb(20, 21, 22),
+            menu_active_bg: Color::Rgb(30, 31, 32),
+            menu_mnemonic_fg: Color::Rgb(40, 41, 42),
+            border_focus: Color::Rgb(50, 51, 52),
+            border_editor_focus: Color::Rgb(60, 61, 62),
+            selection_bg: Color::Rgb(70, 71, 72),
+            selection_fg: Color::Rgb(80, 81, 82),
+            surface_bg: Color::Rgb(90, 91, 92),
+            tools_bg: Color::Rgb(100, 101, 102),
+            prompt_bg: Color::Rgb(110, 111, 112),
+            prompt_border: Color::Rgb(120, 121, 122),
+            text_primary: Color::Rgb(130, 131, 132),
+            text_muted: Color::Rgb(140, 141, 142),
+            directory_fg: Color::Rgb(150, 151, 152),
+            symlink_fg: Color::Rgb(160, 161, 162),
+            file_fg: Color::Rgb(170, 171, 172),
+            status_bg: Color::Rgb(180, 181, 182),
+            status_fg: Color::Rgb(190, 191, 192),
+            logo_accent: Color::Rgb(200, 201, 202),
+            key_hint_fg: Color::Rgb(210, 211, 212),
+            syntect_theme: "test",
+        }
+    }
+
+    #[test]
+    fn normal_pane_row_uses_full_available_width() {
+        let item = render_item(RenderItemArgs {
+            entry: &EntryInfo {
+                name: String::from("note.txt"),
+                path: PathBuf::from("./note.txt"),
+                kind: EntryKind::File,
+                size_bytes: Some(1024),
+                modified: None,
+            },
+            is_focused: true,
+            is_marked: false,
+            is_last: false,
+            available_width: 40,
+            palette: test_palette(),
+            icon_mode: IconMode::Unicode,
+            git_status: None,
+            diff_colour: None,
+            details_view: false,
+            display_name: None,
+        });
+
+        assert_eq!(item.width(), 40);
     }
 }

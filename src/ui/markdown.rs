@@ -26,7 +26,6 @@ pub fn render_markdown_preview(
     palette: ThemePalette,
     scroll: usize,
     is_focused: bool,
-    borders: Borders,
 ) {
     let border_style = if is_focused {
         Style::default()
@@ -37,7 +36,7 @@ pub fn render_markdown_preview(
     };
     let block = Block::default()
         .title(" Markdown Preview ")
-        .borders(borders)
+        .borders(Borders::ALL)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
     let inner = block.inner(area);
