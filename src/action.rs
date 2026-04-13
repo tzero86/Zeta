@@ -644,6 +644,9 @@ impl Action {
         if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::CycleFocus);
         }
+        if key_event.code == KeyCode::Char('r') && key_event.modifiers == KeyModifiers::NONE {
+            return Some(Self::BeginInlineRename);
+        }
         if keymap.switch_pane.matches(&key_event) {
             return Some(Self::FocusNextPane);
         }

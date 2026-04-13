@@ -630,6 +630,12 @@ fn route_mouse_event(
     let col = event.column;
     let row = event.row;
 
+    // Inline rename is keyboard-only; absorb mouse input so the displayed row
+    // cannot diverge from the file that will actually be renamed.
+    if matches!(focus, FocusLayer::PaneInlineRename) {
+        return None;
+    }
+
     match event.kind {
         // -------------------------------------------------------------------
         // Scroll wheel

@@ -292,13 +292,24 @@ impl EditorBuffer {
     // Rendering
     // -----------------------------------------------------------------------
 
-    /// Expand `\t` to `tab_width` spaces for display. Leaves other chars unchanged.
+    /// Expand `\t` to the next tab stop for display.
     fn expand_tabs(s: &str, tab_width: usize) -> String {
-        if tab_width == 0 || !s.contains('\t') {
+        if tab_width <= 1 || !s.contains('\t') {
             return s.to_string();
         }
-        let pad = " ".repeat(tab_width);
-        s.replace('\t', &pad)
+        let mut out = String::with_capacity(s.len());
+        let mut col = 0usize;
+        for ch in s.chars() {
+            if ch == '\t' {
+                let spaces = tab_width - (col % tab_width);
+                out.push_str(&" ".repeat(spaces));
+                col += spaces;
+            } else {
+                out.push(ch);
+                col += 1;
+            }
+        }
+        out
     }
 
     /// Visual column of the cursor accounting for tab expansion.
@@ -307,7 +318,6 @@ impl EditorBuffer {
         if tab_width <= 1 {
             return char_col;
         }
-        // Count visual columns up to char_col in the cursor's logical line.
         let (line_idx, _) = self.cursor_line_col();
         let line = self.text.line(line_idx).to_string();
         let mut vis = 0usize;
@@ -315,7 +325,11 @@ impl EditorBuffer {
             if i >= char_col {
                 break;
             }
-            vis += if ch == '\t' { tab_width } else { 1 };
+            if ch == '\t' {
+                vis += tab_width - (vis % tab_width);
+            } else {
+                vis += 1;
+            }
         }
         vis
     }
@@ -490,8 +504,8 @@ impl EditorBuffer {
         self.text.len_lines()
     }
 
-    pub fn clamp_horizontal_scroll(&mut self, viewport_cols: usize) {
-        let (_, col) = self.cursor_line_col();
+    pub fn clamp_horizontal_scroll(&mut self, viewport_cols: usize, tab_width: u8) {
+        let col = self.cursor_visual_col(tab_width as usize);
         if col < self.scroll_col {
             self.scroll_col = col;
         } else if viewport_cols > 0 && col >= self.scroll_col + viewport_cols {
@@ -507,9 +521,8 @@ impl EditorBuffer {
         tab_width: u8,
         word_wrap: bool,
     ) -> EditorRenderState {
-        // In word-wrap mode horizontal scroll is irrelevant; keep it for non-wrap.
         if !word_wrap {
-            self.clamp_horizontal_scroll(viewport_cols);
+            self.clamp_horizontal_scroll(viewport_cols, tab_width);
         }
         let (visible_start, visible_lines, cursor_wrap_row) =
             self.visible_line_window_h(viewport_rows, viewport_cols, tab_width, word_wrap);
@@ -768,7 +781,7 @@ mod tests {
         for _ in 0..20 {
             buf.insert_char('x');
         }
-        buf.clamp_horizontal_scroll(10);
+        buf.clamp_horizontal_scroll(10, 4);
         let (_, col) = buf.cursor_line_col();
         assert!(
             col >= buf.scroll_col && col < buf.scroll_col + 10,
@@ -785,12 +798,12 @@ mod tests {
         for _ in 0..20 {
             buf.insert_char('x');
         }
-        buf.clamp_horizontal_scroll(10);
+        buf.clamp_horizontal_scroll(10, 4);
         assert!(buf.scroll_col > 0, "precondition: scroll_col > 0");
         for _ in 0..20 {
             buf.move_left();
         }
-        buf.clamp_horizontal_scroll(10);
+        buf.clamp_horizontal_scroll(10, 4);
         assert_eq!(buf.scroll_col, 0);
     }
 

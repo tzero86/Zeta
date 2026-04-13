@@ -583,7 +583,7 @@ impl AppState {
             Action::OpenCopyPrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;
-                    if m.len() > 1 {
+                    if !m.is_empty() {
                         let mut v: Vec<PathBuf> = m.iter().cloned().collect();
                         v.sort();
                         v
@@ -621,7 +621,7 @@ impl AppState {
             Action::OpenDeletePrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;
-                    if m.len() > 1 {
+                    if !m.is_empty() {
                         let mut v: Vec<PathBuf> = m.iter().cloned().collect();
                         v.sort();
                         v
@@ -660,7 +660,7 @@ impl AppState {
             Action::OpenPermanentDeletePrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;
-                    if m.len() > 1 {
+                    if !m.is_empty() {
                         let mut v: Vec<PathBuf> = m.iter().cloned().collect();
                         v.sort();
                         v
@@ -700,7 +700,7 @@ impl AppState {
             Action::OpenMovePrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;
-                    if m.len() > 1 {
+                    if !m.is_empty() {
                         let mut v: Vec<PathBuf> = m.iter().cloned().collect();
                         v.sort();
                         v
@@ -825,7 +825,6 @@ impl AppState {
                                     });
                                 }
                             }
-                            self.panes.active_pane_mut().clear_marks();
                             self.overlay.close_all();
                             self.status_message = match kind {
                                 PromptKind::Copy => format!("copying {count} items"),

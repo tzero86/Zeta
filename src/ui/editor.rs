@@ -107,6 +107,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         };
 
     let gutter_width = 6u16;
+    let use_plain_wrapped = cheap_mode || render_state.word_wrap;
     if loading {
         let loading_text = editor
             .path
@@ -119,15 +120,11 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 .bg(palette.surface_bg),
         );
         frame.render_widget(loading, content_area);
-    } else if cheap_mode {
-        let (first_line_num, visible_lines, _) = editor.visible_line_window_h(
-            content_area.height as usize,
-            content_area.width.saturating_sub(gutter_width) as usize,
-            cheap_tab_width,
-            render_state.word_wrap,
-        );
-        let plain_lines: Vec<crate::highlight::HighlightedLine> = visible_lines
-            .into_iter()
+    } else if use_plain_wrapped {
+        let plain_lines: Vec<crate::highlight::HighlightedLine> = render_state
+            .visible_lines
+            .iter()
+            .cloned()
             .map(|line| vec![(palette.text_primary, Modifier::empty(), line.into())])
             .collect();
         render_code_view(
@@ -135,10 +132,14 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
             content_area,
             CodeViewRenderArgs {
                 lines: &plain_lines,
-                first_line_number: first_line_num + 1,
+                first_line_number: render_state.visible_start + 1,
                 gutter_width,
                 scroll_col: render_state.scroll_col,
-                cursor_row: None,
+                cursor_row: if cheap_mode {
+                    None
+                } else {
+                    render_state.cursor_visible_row
+                },
                 palette,
             },
         );
