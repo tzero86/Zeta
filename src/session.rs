@@ -92,6 +92,9 @@ mod tests {
             round_trip.workspaces[0].right_cwd,
             Some(std::path::PathBuf::from("/repo-b"))
         );
-        assert_eq!(round_trip.workspaces[0].layout, Some(PaneLayout::SideBySide));
+        assert_eq!(
+            round_trip.workspaces[0].layout,
+            Some(PaneLayout::SideBySide)
+        );
     }
 }

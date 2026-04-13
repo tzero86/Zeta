@@ -88,7 +88,6 @@ impl WorkspaceState {
             pending_batch: None,
         }
     }
-
 }
 
 #[derive(Debug)]
@@ -1109,8 +1108,6 @@ impl AppState {
                         .map(|entry| (entry.kind, entry.path.clone()));
                     if let Some((EntryKind::File, path)) = selected_kind_and_path {
                         self.preview.request_debounced_preview(path);
-                    } else if selected_kind_and_path.is_some() {
-                        self.preview.view = None;
                     } else {
                         self.preview.view = None;
                     }
@@ -1925,7 +1922,11 @@ impl AppState {
                 .map(|g| format!(" ⎇ {}", g.branch))
                 .unwrap_or_default()
         };
-        let workspace = format!("ws:{}/{}", self.active_workspace_index() + 1, self.workspace_count());
+        let workspace = format!(
+            "ws:{}/{}",
+            self.active_workspace_index() + 1,
+            self.workspace_count()
+        );
         format!(
             "{} | {} | {}{} | {} | up:{}ms {}{}{} | d:{}",
             self.config.theme.status_bar_label,
@@ -2428,7 +2429,12 @@ mod tests {
         assert_eq!(state.editor.replace_query, "alpha");
 
         assert_eq!(
-            state.workspace(1).editor.buffer.as_ref().and_then(|editor| editor.path.as_ref()),
+            state
+                .workspace(1)
+                .editor
+                .buffer
+                .as_ref()
+                .and_then(|editor| editor.path.as_ref()),
             Some(&PathBuf::from("beta.txt"))
         );
         assert!(state.workspace(1).editor.replace_active);

@@ -310,7 +310,6 @@ impl Action {
         }
     }
 
-
     pub fn from_key_event_with_settings(
         key_event: KeyEvent,
         keymap: &RuntimeKeymap,
@@ -1048,11 +1047,17 @@ mod tests {
         let keymap = RuntimeKeymap::default();
 
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(0))
         );
         assert_eq!(
-            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT), &keymap),
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(3))
         );
         assert_eq!(
@@ -1064,7 +1069,6 @@ mod tests {
             Some(Action::SwitchToWorkspace(2))
         );
     }
-
 
     #[test]
     fn alt_menu_shortcuts_are_available() {

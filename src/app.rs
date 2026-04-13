@@ -122,11 +122,14 @@ impl App {
     fn execute_command_try(&mut self, command: Command) -> Result<()> {
         match command {
             Command::ResizeTerminal { cols, rows } => {
-                let _ = self.workers.terminal_tx.try_send(crate::jobs::TerminalRequest::Resize {
-                    workspace_id: self.state.active_workspace_index(),
-                    cols,
-                    rows,
-                });
+                let _ = self
+                    .workers
+                    .terminal_tx
+                    .try_send(crate::jobs::TerminalRequest::Resize {
+                        workspace_id: self.state.active_workspace_index(),
+                        cols,
+                        rows,
+                    });
             }
             other => self.execute_command(other)?,
         }
@@ -213,7 +216,8 @@ impl App {
                                 if let Some(address) = pane_state.remote_address() {
                                     let session_id = format!(
                                         "{}@{}",
-                                        std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
+                                        std::env::var("USER")
+                                            .unwrap_or_else(|_| "user".to_string()),
                                         address
                                     );
                                     self.workers
@@ -258,16 +262,15 @@ impl App {
                     }
                 }
                 other => {
-                    let scanned_target = if let JobResult::DirectoryScanned {
-                        workspace_id,
-                        pane,
-                        ..
-                    } = &other
-                    {
-                        Some((*workspace_id, *pane))
-                    } else {
-                        None
-                    };
+                    let scanned_target =
+                        if let JobResult::DirectoryScanned {
+                            workspace_id, pane, ..
+                        } = &other
+                        {
+                            Some((*workspace_id, *pane))
+                        } else {
+                            None
+                        };
                     let refresh_watch = matches!(&other, JobResult::DirectoryScanned { .. });
                     self.state.apply_job_result(other);
                     if refresh_watch {
@@ -282,7 +285,9 @@ impl App {
                             )
                         {
                             for entry in &pane_state.entries {
-                                if entry.kind == crate::fs::EntryKind::Directory && entry.name != ".." {
+                                if entry.kind == crate::fs::EntryKind::Directory
+                                    && entry.name != ".."
+                                {
                                     let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
                                         workspace_id,
                                         pane,
@@ -629,7 +634,6 @@ fn route_key_event(
     if let Some(action) = Action::from_workspace_key_event(key_event) {
         return Some(action);
     }
-
 
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),

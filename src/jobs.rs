@@ -877,8 +877,10 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             let pane = req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left);
 
                             // Get source and destination backends
-                            let src_backend = req.src_session.as_ref().and_then(|id| sessions.get(id));
-                            let dst_backend = req.dst_session.as_ref().and_then(|id| sessions.get(id));
+                            let src_backend =
+                                req.src_session.as_ref().and_then(|id| sessions.get(id));
+                            let dst_backend =
+                                req.dst_session.as_ref().and_then(|id| sessions.get(id));
                             // Use src_backend as fallback for remote→remote in same session
                             let dst_backend = dst_backend.or(src_backend);
 
@@ -1479,7 +1481,14 @@ fn run_move_with_progress(
         }
         Err(error) if is_cross_device_error(&error) => {
             let total = count_path_entries(source)?.saturating_add(1);
-            let _ = send_progress_update(result_tx, workspace_id, "move", 0, total, source.to_path_buf());
+            let _ = send_progress_update(
+                result_tx,
+                workspace_id,
+                "move",
+                0,
+                total,
+                source.to_path_buf(),
+            );
 
             copy_path_with_progress(source, destination, collision, &mut |progress| {
                 let _ = send_progress_update(
@@ -1766,10 +1775,11 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                         if n == 0 {
                                             break;
                                         }
-                                        let _ = result_tx_inner.try_send(JobResult::TerminalOutput {
-                                            workspace_id,
-                                            bytes: buffer[..n].to_vec(),
-                                        });
+                                        let _ =
+                                            result_tx_inner.try_send(JobResult::TerminalOutput {
+                                                workspace_id,
+                                                bytes: buffer[..n].to_vec(),
+                                            });
                                     }
                                 })
                                 .expect("failed to spawn terminal reader thread");
@@ -1780,9 +1790,8 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                     .name(format!("zeta-terminal-watcher-{workspace_id}"))
                                     .spawn(move || {
                                         waiter();
-                                        let _ = result_tx_exit.send(JobResult::TerminalExited {
-                                            workspace_id,
-                                        });
+                                        let _ = result_tx_exit
+                                            .send(JobResult::TerminalExited { workspace_id });
                                     })
                                     .expect("failed to spawn terminal watcher thread");
                             }
@@ -1823,7 +1832,10 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                     }
                 }
             }
-            TerminalRequest::Write { workspace_id, bytes } => {
+            TerminalRequest::Write {
+                workspace_id,
+                bytes,
+            } => {
                 if let Some(writer) = writers.get_mut(&workspace_id) {
                     let _ = writer.write_all(&bytes);
                     let _ = writer.flush();
