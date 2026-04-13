@@ -451,8 +451,11 @@ impl Action {
     }
 
     pub fn from_terminal_key_event(key_event: KeyEvent) -> Option<Self> {
-        // Toggle key: F2 or Ctrl+T or Ctrl+\ 
-        if key_event.code == KeyCode::F(2) || (key_event.code == KeyCode::Char('\\') && key_event.modifiers == KeyModifiers::CONTROL) {
+        // Toggle key: F2 or Ctrl+T or Ctrl+\
+        if key_event.code == KeyCode::F(2)
+            || (key_event.code == KeyCode::Char('\\')
+                && key_event.modifiers == KeyModifiers::CONTROL)
+        {
             return Some(Self::ToggleTerminal);
         }
 

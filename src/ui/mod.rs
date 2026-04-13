@@ -10,8 +10,8 @@ mod pane;
 pub mod preview;
 mod settings;
 pub mod ssh;
-pub mod terminal;
 mod styles;
+pub mod terminal;
 
 pub mod layout_cache;
 pub use layout_cache::LayoutCache;

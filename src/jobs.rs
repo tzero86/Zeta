@@ -115,16 +115,9 @@ pub struct WatchRequest {
 
 #[derive(Clone, Debug)]
 pub enum TerminalRequest {
-    Spawn {
-        cwd: PathBuf,
-        cols: u16,
-        rows: u16,
-    },
+    Spawn { cwd: PathBuf, cols: u16, rows: u16 },
     Write(Vec<u8>),
-    Resize {
-        cols: u16,
-        rows: u16,
-    },
+    Resize { cols: u16, rows: u16 },
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,9 +1508,9 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                                 break;
                                             }
                                             // Non-blocking send to prevent reader from hanging if UI is slow
-                                            let _ = result_tx_inner.try_send(JobResult::TerminalOutput(
-                                                buffer[..n].to_vec(),
-                                            ));
+                                            let _ = result_tx_inner.try_send(
+                                                JobResult::TerminalOutput(buffer[..n].to_vec()),
+                                            );
                                         }
                                     })
                                     .expect("failed to spawn terminal reader thread");

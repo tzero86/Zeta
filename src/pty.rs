@@ -4,11 +4,10 @@
 //! `portable-pty`'s `try_clone_reader()` does not reliably deliver output
 //! on Windows ConPTY.  On Unix we keep `portable-pty` which works fine.
 
-use std::{
-    io::{self, Read, Write},
-    sync::{Arc, Mutex},
-};
+use std::io::{self, Read, Write};
 use std::path::Path;
+#[cfg(not(windows))]
+use std::sync::{Arc, Mutex};
 
 /// A running pseudo-terminal session.
 pub struct PtySession {

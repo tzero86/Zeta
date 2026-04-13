@@ -78,7 +78,7 @@ impl App {
                 // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
                 let inner_rows = t_area.height.saturating_sub(1);
                 let inner_cols = t_area.width;
-                
+
                 if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
                     // We need to calculate the actual inner size used by vt100
                     // Let's call resize. It only emits a command if the size actually changed.
@@ -98,7 +98,10 @@ impl App {
     fn execute_command_try(&mut self, command: Command) -> Result<()> {
         match command {
             Command::ResizeTerminal { cols, rows } => {
-                let _ = self.workers.terminal_tx.try_send(crate::jobs::TerminalRequest::Resize { cols, rows });
+                let _ = self
+                    .workers
+                    .terminal_tx
+                    .try_send(crate::jobs::TerminalRequest::Resize { cols, rows });
             }
             other => self.execute_command(other)?,
         }
@@ -692,8 +695,8 @@ fn route_mouse_event(
                 if rect_contains(terminal_rect, col, row) {
                     if focus != FocusLayer::Terminal {
                         return Some(Action::ToggleTerminal); // Toggle will focus if not open, but here it's open
-                        // Actually, ToggleTerminal on open terminal might close it?
-                        // Let's use a dedicated FocusTerminal action or just logic.
+                                                             // Actually, ToggleTerminal on open terminal might close it?
+                                                             // Let's use a dedicated FocusTerminal action or just logic.
                     }
                     return None;
                 }

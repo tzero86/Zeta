@@ -1,8 +1,8 @@
 use crate::action::{Action, Command};
 use anyhow::Result;
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::fmt;
 
 pub struct TerminalState {
     pub open: bool,
@@ -88,10 +88,7 @@ impl TerminalState {
         if let Ok(mut parser) = self.parser.lock() {
             parser.set_size(rows, cols);
         }
-        vec![Command::ResizeTerminal {
-            cols,
-            rows,
-        }]
+        vec![Command::ResizeTerminal { cols, rows }]
     }
 
     pub fn process_output(&mut self, bytes: &[u8]) {

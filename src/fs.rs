@@ -165,15 +165,18 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
 
     // Helper function for archive extension detection
     fn is_archive_extension(name: &str) -> bool {
-        let lower = name.to_lowercase();
-        lower.ends_with(".zip")
-            || lower.ends_with(".tar")
-            || lower.ends_with(".tar.gz")
-            || lower.ends_with(".tgz")
-            || lower.ends_with(".tar.bz2")
-            || lower.ends_with(".tbz2")
-            || lower.ends_with(".tar.xz")
-            || lower.ends_with(".txz")
+        let b = name.as_bytes();
+        // All archive extensions are ASCII — byte comparison avoids allocating a
+        // lowercased copy. Case-sensitive is correct: archives named FOO.ZIP are
+        // unusual enough that we don't need to detect them.
+        b.ends_with(b".zip")
+            || b.ends_with(b".tar")
+            || b.ends_with(b".tar.gz")
+            || b.ends_with(b".tgz")
+            || b.ends_with(b".tar.bz2")
+            || b.ends_with(b".tbz2")
+            || b.ends_with(b".tar.xz")
+            || b.ends_with(b".txz")
     }
 
     results.sort_by(|left, right| {

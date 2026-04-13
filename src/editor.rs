@@ -316,7 +316,7 @@ impl EditorBuffer {
                     .map(|l| {
                         let s = normalize_preview_text(&l.to_string());
                         let s = s.strip_suffix('\n').unwrap_or(&s).to_string();
-                        vec![(fallback_color, Modifier::empty(), s)]
+                        vec![(fallback_color, Modifier::empty(), s.into())]
                     })
                     .collect(),
             };

@@ -62,7 +62,7 @@ impl ViewBuffer {
         let text = normalize_preview_text(text);
         let lines: Vec<HighlightedLine> = text
             .lines()
-            .map(|l| vec![(Color::Reset, Modifier::empty(), l.to_string())])
+            .map(|l| vec![(Color::Reset, Modifier::empty(), Box::from(l))])
             .collect();
         let total_lines = lines.len();
         Self {
@@ -105,7 +105,13 @@ mod tests {
 
     fn make_highlighted(n: usize) -> Vec<HighlightedLine> {
         (0..n)
-            .map(|i| vec![(Color::White, Modifier::empty(), format!("line {i}"))])
+            .map(|i| {
+                vec![(
+                    Color::White,
+                    Modifier::empty(),
+                    format!("line {i}").into_boxed_str(),
+                )]
+            })
             .collect()
     }
 
@@ -135,7 +141,7 @@ mod tests {
         let token: &HighlightToken = &buf.lines[1][0];
         assert_eq!(token.0, Color::Reset);
         assert_eq!(token.1, Modifier::empty());
-        assert_eq!(token.2, "beta");
+        assert_eq!(token.2.as_ref(), "beta");
     }
 
     #[test]
@@ -151,7 +157,7 @@ mod tests {
             .lines
             .iter()
             .all(|line| line.iter().all(|token| !token.2.contains('\u{0007}'))));
-        assert_eq!(buf.lines[2][0].2, "char    lie");
+        assert_eq!(buf.lines[2][0].2.as_ref(), "char    lie");
         assert!(buf
             .lines
             .iter()

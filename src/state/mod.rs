@@ -312,12 +312,14 @@ impl AppState {
                     self.terminal.focused = false;
                     self.panes.focus = PaneFocus::Left;
                     self.status_message = String::from("focus returned to left pane");
-                } else if terminal_open && !self.terminal.focused && self.panes.focus == PaneFocus::Right {
+                } else if terminal_open
+                    && !self.terminal.focused
+                    && self.panes.focus == PaneFocus::Right
+                {
                     // If we're on Right pane and terminal is open, focus terminal next
                     self.terminal.focused = true;
-                    self.status_message = String::from(
-                        "terminal focused (Ctrl+W to cycle, Esc to return)",
-                    );
+                    self.status_message =
+                        String::from("terminal focused (Ctrl+W to cycle, Esc to return)");
                 } else {
                     self.panes.focus = match self.panes.focus {
                         PaneFocus::Left => {

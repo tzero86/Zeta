@@ -1,9 +1,9 @@
+use crate::config::ThemePalette;
+use crate::state::terminal::TerminalState;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
-use crate::config::ThemePalette;
-use crate::state::terminal::TerminalState;
 
 pub fn render_terminal(
     frame: &mut Frame<'_>,
@@ -44,7 +44,7 @@ pub fn render_terminal(
             if visible_row >= inner.height as i32 {
                 break;
             }
-            
+
             let y = inner.y + visible_row as u16;
 
             for col in 0..cols {
@@ -55,7 +55,7 @@ pub fn render_terminal(
                 let x = inner.x + col;
 
                 let mut style = Style::default();
-                
+
                 // Foreground color
                 if let Some(c) = map_vt100_color(cell.fgcolor()) {
                     style = style.fg(c);
@@ -82,11 +82,14 @@ pub fn render_terminal(
                 }
             }
         }
-        
+
         // Render cursor
         if focused {
             let visible_cursor_row = (cursor_row as i32) - (scroll_top as i32);
-            if visible_cursor_row >= 0 && (visible_cursor_row as u16) < inner.height && cursor_col < inner.width {
+            if visible_cursor_row >= 0
+                && (visible_cursor_row as u16) < inner.height
+                && cursor_col < inner.width
+            {
                 let x = inner.x + cursor_col;
                 let y = inner.y + visible_cursor_row as u16;
                 if let Some(c) = frame.buffer_mut().cell_mut((x, y)) {
@@ -101,7 +104,9 @@ pub fn render_terminal(
             let x = inner.x + (inner.width.saturating_sub(msg.len() as u16)) / 2;
             let y = inner.y + inner.height / 2;
             if x < inner.x + inner.width && y < inner.y + inner.height {
-                frame.buffer_mut().set_string(x, y, msg, Style::default().fg(palette.text_muted));
+                frame
+                    .buffer_mut()
+                    .set_string(x, y, msg, Style::default().fg(palette.text_muted));
             }
         }
     }

@@ -112,7 +112,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
             editor.visible_line_window(content_area.height as usize);
         let plain_lines: Vec<crate::highlight::HighlightedLine> = visible_lines
             .into_iter()
-            .map(|line| vec![(palette.text_primary, Modifier::empty(), line)])
+            .map(|line| vec![(palette.text_primary, Modifier::empty(), line.into())])
             .collect();
         render_code_view(
             frame,
