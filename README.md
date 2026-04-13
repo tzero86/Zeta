@@ -22,6 +22,7 @@ Norton Commander workflow, modern TUI, written in Rust.
 ### File management
 - Dual-pane browser with side-by-side and stacked layouts
 - Four isolated in-app workspaces with independent pane, preview, editor, terminal, and transient runtime state
+- Top-bar workspace pills (`[1] [2] [3] [4]`) highlight the active workspace at a glance
 - Session restore for all four workspaces plus the active workspace index
 - Create, copy, move, rename, and delete files and directories
 - Collision resolution dialog (skip, overwrite, rename)
@@ -66,8 +67,9 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 ### Navigation & UX
 - Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
-- Command palette (`Ctrl+P`)
-- Direct workspace switching from panes and menus with `Shift+1..Shift+4` (`Alt+1..Alt+4` fallback); active workspace shown as `ws:N/4` in the status bar
+- Command palette (`Ctrl+P`) with a dedicated Workspaces section
+- Navigate menu starts with explicit `Switch to Workspace 1..4` commands
+- Direct workspace switching from panes and menus with `Shift+1..Shift+4` (`Alt+1..Alt+4` fallback); active workspace also remains visible as `ws:N/4` in the status bar
 - In-app settings panel for theme, icon mode, layout, and preview preferences (`Ctrl+O`)
 - Full mouse support: click to focus panes, scroll to navigate, click menu items, hover highlights
 - Zeta is the default theme; Fjord, Sandbar, Oxide, Matrix, Norton, Dracula, Neon, and Monochrome remain available
@@ -80,6 +82,7 @@ Norton Commander workflow, modern TUI, written in Rust.
 | Key | Action |
 |---|---|
 | `Shift+1..Shift+4` | Switch directly to workspace 1..4 from panes or menus |
+| `Ctrl+P`, type `workspace` | Open explicit workspace switch commands in the palette |
 | `F4` | Open selected file in editor |
 | `F3` | Toggle file preview panel |
 | `F5` | Copy |

@@ -2801,7 +2801,7 @@ mod tests {
         let mut state = test_state();
         state.overlay.modal = Some(ModalState::Menu {
             id: MenuId::Navigate,
-            selection: 1,
+            selection: 5,
         });
 
         let commands = state

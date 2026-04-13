@@ -118,25 +118,25 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::ClearMarks,
         },
         PaletteEntry {
-            category: "Navigation",
+            category: "Workspaces",
             label: "Switch to workspace 1",
             hint: "Shift+1",
             action: Action::SwitchToWorkspace(0),
         },
         PaletteEntry {
-            category: "Navigation",
+            category: "Workspaces",
             label: "Switch to workspace 2",
             hint: "Shift+2",
             action: Action::SwitchToWorkspace(1),
         },
         PaletteEntry {
-            category: "Navigation",
+            category: "Workspaces",
             label: "Switch to workspace 3",
             hint: "Shift+3",
             action: Action::SwitchToWorkspace(2),
         },
         PaletteEntry {
-            category: "Navigation",
+            category: "Workspaces",
             label: "Switch to workspace 4",
             hint: "Shift+4",
             action: Action::SwitchToWorkspace(3),
@@ -373,13 +373,14 @@ fn is_subsequence(label: &str, query: &str) -> bool {
 
 fn category_order(category: &str) -> usize {
     match category {
-        "Navigation" => 0,
-        "File Ops" => 1,
-        "Editor" => 2,
-        "Preview" => 3,
-        "View / Layout" => 4,
-        "Appearance" => 5,
-        "System" => 6,
+        "Workspaces" => 0,
+        "Navigation" => 1,
+        "File Ops" => 2,
+        "Editor" => 3,
+        "Preview" => 4,
+        "View / Layout" => 5,
+        "Appearance" => 6,
+        "System" => 7,
         _ => usize::MAX,
     }
 }
@@ -450,16 +451,33 @@ mod tests {
     }
 
     #[test]
+    fn workspace_entries_have_dedicated_category_and_sort_first() {
+        let entries = all_entries();
+        let filtered = filter_entries(&entries, "");
+
+        assert_eq!(
+            filtered.first().map(|entry| entry.category),
+            Some("Workspaces")
+        );
+        assert!(filtered
+            .iter()
+            .take(4)
+            .all(|entry| entry.category == "Workspaces"));
+    }
+
+    #[test]
     fn palette_includes_workspace_switch_entries() {
         let entries = all_entries();
 
         assert!(entries.iter().any(|entry| {
-            entry.label == "Switch to workspace 1"
+            entry.category == "Workspaces"
+                && entry.label == "Switch to workspace 1"
                 && entry.hint == "Shift+1"
                 && entry.action == Action::SwitchToWorkspace(0)
         }));
         assert!(entries.iter().any(|entry| {
-            entry.label == "Switch to workspace 4"
+            entry.category == "Workspaces"
+                && entry.label == "Switch to workspace 4"
                 && entry.hint == "Shift+4"
                 && entry.action == Action::SwitchToWorkspace(3)
         }));

@@ -310,6 +310,30 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             MenuId::Navigate => vec![
                 MenuItem {
+                    label: "Switch to Workspace 1",
+                    shortcut: "Shift+1",
+                    mnemonic: '1',
+                    action: Action::SwitchToWorkspace(0),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 2",
+                    shortcut: "Shift+2",
+                    mnemonic: '2',
+                    action: Action::SwitchToWorkspace(1),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 3",
+                    shortcut: "Shift+3",
+                    mnemonic: '3',
+                    action: Action::SwitchToWorkspace(2),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 4",
+                    shortcut: "Shift+4",
+                    mnemonic: '4',
+                    action: Action::SwitchToWorkspace(3),
+                },
+                MenuItem {
                     label: "Open Directory",
                     shortcut: "Enter",
                     mnemonic: 'o',
@@ -320,30 +344,6 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                     shortcut: "Backspace",
                     mnemonic: 'p',
                     action: Action::NavigateToParent,
-                },
-                MenuItem {
-                    label: "Workspace 1",
-                    shortcut: "Shift+1",
-                    mnemonic: '1',
-                    action: Action::SwitchToWorkspace(0),
-                },
-                MenuItem {
-                    label: "Workspace 2",
-                    shortcut: "Shift+2",
-                    mnemonic: '2',
-                    action: Action::SwitchToWorkspace(1),
-                },
-                MenuItem {
-                    label: "Workspace 3",
-                    shortcut: "Shift+3",
-                    mnemonic: '3',
-                    action: Action::SwitchToWorkspace(2),
-                },
-                MenuItem {
-                    label: "Workspace 4",
-                    shortcut: "Shift+4",
-                    mnemonic: '4',
-                    action: Action::SwitchToWorkspace(3),
                 },
                 MenuItem {
                     label: "Connect SSH...",
@@ -495,18 +495,14 @@ mod tests {
     use crate::action::{Action, MenuId};
 
     #[test]
-    fn navigate_menu_includes_workspace_switch_items() {
+    fn navigate_menu_starts_with_workspace_switch_items() {
         let items = menu_items_for(MenuId::Navigate, false);
 
-        assert!(items.iter().any(|item| {
-            item.label == "Workspace 1"
-                && item.shortcut == "Shift+1"
-                && item.action == Action::SwitchToWorkspace(0)
-        }));
-        assert!(items.iter().any(|item| {
-            item.label == "Workspace 4"
-                && item.shortcut == "Shift+4"
-                && item.action == Action::SwitchToWorkspace(3)
-        }));
+        assert_eq!(items[0].label, "Switch to Workspace 1");
+        assert_eq!(items[0].shortcut, "Shift+1");
+        assert_eq!(items[0].action, Action::SwitchToWorkspace(0));
+        assert_eq!(items[3].label, "Switch to Workspace 4");
+        assert_eq!(items[3].shortcut, "Shift+4");
+        assert_eq!(items[3].action, Action::SwitchToWorkspace(3));
     }
 }
