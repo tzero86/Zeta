@@ -72,7 +72,6 @@ impl App {
                 cache = ui::render(frame, &mut self.state);
             })?;
             self.layout_cache = cache;
-
             // Terminal resize logic
             if let Some(t_area) = cache.terminal_panel {
                 // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
@@ -87,10 +86,24 @@ impl App {
                     }
                 }
             }
-
             self.state.mark_drawn();
             self.process_next_event()?;
         }
+
+        // Persist session so next launch restores pane directories and settings.
+        let session = crate::session::SessionState {
+            left_cwd: Some(self.state.panes.left.cwd.clone()),
+            right_cwd: Some(self.state.panes.right.cwd.clone()),
+            left_sort: Some(self.state.panes.left.sort_mode),
+            right_sort: Some(self.state.panes.right.sort_mode),
+            left_hidden: self.state.panes.left.show_hidden,
+            right_hidden: self.state.panes.right.show_hidden,
+            layout: Some(self.state.panes.pane_layout),
+        };
+        let session_path = crate::session::SessionState::session_path(std::path::Path::new(
+            self.state.config_path(),
+        ));
+        let _ = session.save(&session_path); // non-fatal
 
         Ok(())
     }

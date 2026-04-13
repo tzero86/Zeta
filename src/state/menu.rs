@@ -254,6 +254,12 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                     action: Action::OpenSelectedInEditor,
                 },
                 MenuItem {
+                    label: "Open Externally",
+                    shortcut: "o",
+                    mnemonic: 'e',
+                    action: Action::OpenInDefaultApp,
+                },
+                MenuItem {
                     label: "Copy",
                     shortcut: "F5",
                     mnemonic: 'c',

@@ -171,6 +171,16 @@ pub enum Action {
         left_pane: bool,
         row: usize,
     },
+    /// Open the selected file with the OS default application.
+    OpenInDefaultApp,
+    /// Extend the pane selection downward, marking each stepped-over entry.
+    ExtendSelectionDown,
+    /// Extend the pane selection upward, marking each stepped-over entry.
+    ExtendSelectionUp,
+    /// Copy the selected entry's path to the system clipboard.
+    CopyPathToClipboard,
+    /// Paste text from the system clipboard at the editor cursor.
+    EditorPaste,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -366,8 +376,23 @@ impl Action {
                 Some(Self::OpenBookmarks)
             }
             KeyCode::Char('/') => Some(Self::OpenPaneFilter),
+            // Shift+arrow range-select must come before plain Down/Up (guards don't apply to OR patterns).
+            KeyCode::Down if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ExtendSelectionDown)
+            }
+            KeyCode::Up if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ExtendSelectionUp)
+            }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
+            KeyCode::Char('o') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::OpenInDefaultApp)
+            }
+            KeyCode::Char('c') | KeyCode::Char('C')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::CopyPathToClipboard)
+            }
             KeyCode::Char('s') | KeyCode::Char('S')
                 if key_event.modifiers == KeyModifiers::NONE
                     || key_event.modifiers == KeyModifiers::SHIFT =>
@@ -651,6 +676,9 @@ impl Action {
             KeyCode::F(3) => Some(Self::EditorSearchNext),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
+            }
+            KeyCode::Char('v') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorPaste)
             }
             KeyCode::Char(ch)
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>

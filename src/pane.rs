@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use crate::fs::{scan_directory, EntryInfo, EntryKind, FileSystemError};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaneId {
@@ -10,7 +11,7 @@ pub enum PaneId {
     Right,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum SortMode {
     Name,         // dirs first, then files, alphabetical
     NameDesc,     // reverse
@@ -74,6 +75,8 @@ pub struct PaneState {
     pub marked: BTreeSet<PathBuf>,
     pub filter_query: String,
     pub filter_active: bool,
+    /// Anchor index for Shift+arrow range selection. `None` when no range is active.
+    pub mark_anchor: Option<usize>,
     // Navigation history
     pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
     pub history_forward: Vec<PathBuf>, // dirs we can go forward to
@@ -118,6 +121,7 @@ impl PaneState {
             marked: BTreeSet::new(),
             filter_query: String::new(),
             filter_active: false,
+            mark_anchor: None,
             history_back: Vec::new(),
             history_forward: Vec::new(),
             filtered_indices: RefCell::new(Vec::new()),
@@ -232,6 +236,51 @@ impl PaneState {
 
     pub fn clear_marks(&mut self) {
         self.marked.clear();
+    }
+
+    /// Clear the range-selection anchor without touching the mark set.
+    pub fn reset_mark_anchor(&mut self) {
+        self.mark_anchor = None;
+    }
+
+    /// Extend selection downward, marking every entry stepped over.
+    /// Sets the anchor on first call; marks anchor + new position.
+    pub fn extend_selection_down(&mut self) {
+        if self.mark_anchor.is_none() {
+            self.mark_anchor = Some(self.selection);
+            // Mark the anchor entry.
+            if let Some(path) = self.selected_path() {
+                if self.selected_entry().is_some_and(|e| e.name != "..") {
+                    self.marked.insert(path);
+                }
+            }
+        }
+        self.move_selection_down();
+        if let Some(path) = self.selected_path() {
+            if self.selected_entry().is_some_and(|e| e.name != "..") {
+                self.marked.insert(path);
+            }
+        }
+    }
+
+    /// Extend selection upward, marking every entry stepped over.
+    /// Sets the anchor on first call; marks anchor + new position.
+    pub fn extend_selection_up(&mut self) {
+        if self.mark_anchor.is_none() {
+            self.mark_anchor = Some(self.selection);
+            // Mark the anchor entry.
+            if let Some(path) = self.selected_path() {
+                if self.selected_entry().is_some_and(|e| e.name != "..") {
+                    self.marked.insert(path);
+                }
+            }
+        }
+        self.move_selection_up();
+        if let Some(path) = self.selected_path() {
+            if self.selected_entry().is_some_and(|e| e.name != "..") {
+                self.marked.insert(path);
+            }
+        }
     }
 
     pub fn is_marked(&self, path: &PathBuf) -> bool {

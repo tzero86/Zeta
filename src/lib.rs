@@ -14,6 +14,7 @@ pub mod palette;
 pub mod pane;
 pub mod preview;
 pub mod pty;
+pub mod session;
 pub mod state;
 pub mod ui;
 

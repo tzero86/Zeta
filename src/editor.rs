@@ -160,6 +160,16 @@ impl EditorBuffer {
         self.insert_char('\n');
     }
 
+    /// Insert a string at the current cursor position.
+    /// Normalises CRLF to LF before insertion.
+    pub fn insert_str_at_cursor(&mut self, text: &str) {
+        let normalized: String = text.chars().filter(|&c| c != '\r').collect();
+        if normalized.is_empty() {
+            return;
+        }
+        self.insert(self.cursor_char_idx, &normalized);
+    }
+
     pub fn backspace(&mut self) {
         if self.cursor_char_idx == 0 {
             return;

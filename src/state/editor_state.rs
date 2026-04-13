@@ -170,6 +170,14 @@ impl EditorState {
                     editor.insert_char(*ch);
                 }
             }
+            Action::EditorPaste => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    // Silently ignore clipboard errors (unavailable backend, empty clipboard, etc.)
+                    if let Ok(text) = arboard::Clipboard::new().and_then(|mut cb| cb.get_text()) {
+                        editor.insert_str_at_cursor(&text);
+                    }
+                }
+            }
             Action::EditorMoveDown => {
                 if let Some(e) = self.buffer.as_mut() {
                     e.move_down();

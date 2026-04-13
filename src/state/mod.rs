@@ -81,11 +81,30 @@ impl AppState {
             .unwrap_or_else(|| cwd.clone());
         let resolved_theme = loaded_config.config.resolve_theme();
 
+        // Restore previous session if one exists alongside the config file.
+        let session = crate::session::SessionState::load(
+            &crate::session::SessionState::session_path(&loaded_config.path),
+        );
+        let left_cwd = session.left_cwd.filter(|p| p.is_dir()).unwrap_or(cwd);
+        let right_cwd = session
+            .right_cwd
+            .filter(|p| p.is_dir())
+            .unwrap_or(secondary);
+        let layout = session.layout.unwrap_or_default();
+
+        let mut left_pane = PaneState::empty("Left", left_cwd.clone());
+        if let Some(sort) = session.left_sort {
+            left_pane.sort_mode = sort;
+        }
+        left_pane.show_hidden = session.left_hidden;
+        let mut right_pane = PaneState::empty("Right", right_cwd.clone());
+        if let Some(sort) = session.right_sort {
+            right_pane.sort_mode = sort;
+        }
+        right_pane.show_hidden = session.right_hidden;
+
         Ok(Self {
-            panes: PaneSetState::new(
-                PaneState::empty("Left", cwd.clone()),
-                PaneState::empty("Right", secondary.clone()),
-            ),
+            panes: PaneSetState::new(left_pane, right_pane).with_layout(layout),
             overlay: OverlayState::default(),
             preview: PreviewState::new(
                 loaded_config.config.preview_panel_open,
@@ -116,6 +135,10 @@ impl AppState {
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
         })
+    }
+
+    pub fn config_path(&self) -> &str {
+        &self.config_path
     }
 
     pub fn initial_commands(&self) -> Vec<Command> {
@@ -400,6 +423,19 @@ impl AppState {
                     }
                 } else {
                     self.status_message = String::from("no file selected for editor or archive");
+                }
+            }
+            Action::OpenInDefaultApp => {
+                if let Some(path) = self.panes.active_pane().selected_path() {
+                    match open::that(&path) {
+                        Ok(()) => {
+                            self.status_message =
+                                format!("opened {} with system default", path.display());
+                        }
+                        Err(e) => {
+                            self.status_message = format!("could not open file: {e}");
+                        }
+                    }
                 }
             }
             Action::ToggleDiffMode => {
@@ -778,6 +814,8 @@ impl AppState {
             }
             // Auto-preview after navigation
             Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
+                // Non-extend movement clears the range anchor.
+                self.panes.active_pane_mut().reset_mark_anchor();
                 if self.preview.should_auto_preview() {
                     if let Some(entry) = self.panes.active_pane().selected_entry() {
                         if entry.kind == EntryKind::File {
@@ -787,6 +825,27 @@ impl AppState {
                         }
                     } else {
                         self.preview.view = None;
+                    }
+                }
+            }
+            Action::ExtendSelectionDown => {
+                self.panes.active_pane_mut().extend_selection_down();
+            }
+            Action::ExtendSelectionUp => {
+                self.panes.active_pane_mut().extend_selection_up();
+            }
+            Action::CopyPathToClipboard => {
+                if let Some(path) = self.panes.active_pane().selected_path() {
+                    match arboard::Clipboard::new()
+                        .and_then(|mut cb| cb.set_text(path.display().to_string()))
+                    {
+                        Ok(()) => {
+                            self.status_message =
+                                format!("copied to clipboard: {}", path.display());
+                        }
+                        Err(e) => {
+                            self.status_message = format!("clipboard error: {e}");
+                        }
                     }
                 }
             }
@@ -873,6 +932,7 @@ impl AppState {
                 | Action::EditorMoveLeft
                 | Action::EditorMoveRight
                 | Action::EditorInsert(_)
+                | Action::EditorPaste
                 | Action::EditorBackspace
                 | Action::EditorNewline
                 | Action::EditorSearchNext
@@ -1578,6 +1638,7 @@ mod tests {
             cache_filter_active: std::cell::Cell::new(false),
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
+            mark_anchor: None,
         }
     }
 
@@ -1731,6 +1792,7 @@ mod tests {
             cache_filter_active: std::cell::Cell::new(false),
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
+            mark_anchor: None,
         };
         AppState {
             panes: PaneSetState::new(pane_with_file("./note.txt"), right),
