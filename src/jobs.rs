@@ -111,6 +111,14 @@ pub struct FindRequest {
 #[derive(Clone, Debug)]
 pub struct WatchRequest {
     pub paths: Vec<PathBuf>,
+    /// When set, this file is also watched; changes emit `JobResult::ConfigChanged`.
+    pub config_path: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DirSizeRequest {
+    pub pane: PaneId,
+    pub path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
@@ -191,6 +199,14 @@ pub enum JobResult {
     TerminalOutput(Vec<u8>),
     TerminalDiagnostic(String),
     TerminalExited,
+    /// Directory size calculated by recursively summing file sizes.
+    DirSizeCalculated {
+        pane: PaneId,
+        path: PathBuf,
+        bytes: u64,
+    },
+    /// The user's config file changed on disk; the app should re-read it.
+    ConfigChanged,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -224,6 +240,7 @@ pub struct WorkerChannels {
     pub archive_tx: Sender<ArchiveListRequest>,
     pub sftp_tx: Sender<SftpRequest>,
     pub terminal_tx: Sender<TerminalRequest>,
+    pub dir_size_tx: Sender<DirSizeRequest>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -760,6 +777,29 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .expect("failed to spawn terminal worker");
     }
 
+    // --- Directory size worker ---
+    let (dir_size_tx, dir_size_rx) = bounded::<DirSizeRequest>(64);
+    {
+        let result_tx = result_tx.clone();
+        thread::Builder::new()
+            .name("zeta-dir-size".into())
+            .spawn(move || {
+                for req in dir_size_rx {
+                    let bytes = sum_dir_size(&req.path);
+                    if result_tx
+                        .send(JobResult::DirSizeCalculated {
+                            pane: req.pane,
+                            path: req.path,
+                            bytes,
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .expect("failed to spawn dir-size worker");
+    }
     (
         WorkerChannels {
             scan_tx,
@@ -772,6 +812,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             archive_tx,
             sftp_tx,
             terminal_tx,
+            dir_size_tx,
         },
         result_rx,
     )
@@ -788,6 +829,8 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
     let mut watcher = RecommendedWatcher::new(notify_tx, Config::default())
         .expect("failed to create filesystem watcher");
     let mut watched_paths: Vec<PathBuf> = Vec::new();
+    // The config file path, if any; changes emit `ConfigChanged` instead of `DirectoryChanged`.
+    let mut watched_config: Option<PathBuf> = None;
 
     loop {
         while let Ok(req) = watch_rx.try_recv() {
@@ -795,6 +838,18 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
                 let _ = watcher.unwatch(path);
             }
             watched_paths.clear();
+            // Register config file's parent dir (if not already covered by a pane path).
+            if let Some(ref cfg) = req.config_path {
+                if let Some(parent) = cfg.parent() {
+                    let parent = parent.to_path_buf();
+                    if watched_paths.iter().all(|p| p != &parent)
+                        && watcher.watch(&parent, RecursiveMode::NonRecursive).is_ok()
+                    {
+                        watched_paths.push(parent);
+                    }
+                }
+            }
+            watched_config = req.config_path;
             for path in req.paths {
                 if watched_paths.iter().all(|p| p != &path)
                     && watcher.watch(&path, RecursiveMode::NonRecursive).is_ok()
@@ -809,6 +864,13 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
                 continue;
             };
             for path in event.paths {
+                // Exact match on the config file → emit ConfigChanged and skip dir change.
+                if watched_config.as_deref() == Some(path.as_path()) {
+                    if result_tx.send(JobResult::ConfigChanged).is_err() {
+                        return;
+                    }
+                    continue;
+                }
                 let changed_dir = if path.is_dir() {
                     path
                 } else {
@@ -825,6 +887,29 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
 
         std::thread::sleep(std::time::Duration::from_millis(200));
     }
+}
+
+/// Recursively sum the size in bytes of all regular files under `path`.
+/// Directories without read permission are silently skipped.
+fn sum_dir_size(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    let mut total = 0u64;
+    for entry in entries.flatten() {
+        match entry.file_type() {
+            Ok(ft) if ft.is_file() => {
+                if let Ok(meta) = entry.metadata() {
+                    total += meta.len();
+                }
+            }
+            Ok(ft) if ft.is_dir() => {
+                total += sum_dir_size(&entry.path());
+            }
+            _ => {}
+        }
+    }
+    total
 }
 
 fn walk_for_files(root: &Path, max_depth: usize) -> Vec<PathBuf> {
@@ -1779,6 +1864,7 @@ mod tests {
             .watch_tx
             .send(WatchRequest {
                 paths: vec![root.clone()],
+                config_path: None,
             })
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));

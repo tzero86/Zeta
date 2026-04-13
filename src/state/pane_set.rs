@@ -22,6 +22,12 @@ impl PaneSetState {
         }
     }
 
+    /// Set the initial pane layout. Used when restoring from a saved session.
+    pub fn with_layout(mut self, layout: PaneLayout) -> Self {
+        self.pane_layout = layout;
+        self
+    }
+
     pub fn active_pane(&self) -> &PaneState {
         match self.focus {
             PaneFocus::Left | PaneFocus::Preview => &self.left,

@@ -32,6 +32,8 @@ pub enum FocusLayer {
     Pane,
     /// One-line quick-filter input is active for the focused pane.
     PaneFilter,
+    /// Inline rename is active on the focused pane.
+    PaneInlineRename,
     /// The editor panel is focused.
     Editor,
     /// The preview panel is focused.

@@ -179,9 +179,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             };
             editor_panel_rect = Some(editor_area);
             markdown_preview_panel_rect = md_area_opt;
+            let ed_cfg = state.config().editor.clone();
 
             if let Some(editor) = state.editor_mut() {
-                let editor_view = editor_render_state(editor, editor_area, editor_focused);
+                let editor_view = editor_render_state(
+                    editor,
+                    editor_area,
+                    editor_focused,
+                    ed_cfg.tab_width,
+                    ed_cfg.word_wrap,
+                );
                 render_editor(
                     frame,
                     editor_area,
@@ -195,6 +202,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         replace_query: &replace_query,
                         loading: editor_loading,
                         cheap_mode: cheap_tools_mode && !editor_focused,
+                        cheap_tab_width: ed_cfg.tab_width,
                     },
                 );
 
@@ -577,7 +585,7 @@ mod tests {
             width: 80,
             height: 24,
         };
-        let rs = editor_render_state(&mut editor, area, true);
+        let rs = editor_render_state(&mut editor, area, true, 4, false);
         assert_eq!(rs.visible_start, 0);
     }
 

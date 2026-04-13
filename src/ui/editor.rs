@@ -17,16 +17,26 @@ pub struct RenderEditorArgs<'a> {
     pub replace_query: &'a str,
     pub loading: bool,
     pub cheap_mode: bool,
+    /// Tab width used in cheap_mode and highlighted rendering.
+    pub cheap_tab_width: u8,
 }
 
 pub fn editor_render_state(
     editor: &mut EditorBuffer,
     area: Rect,
     is_active: bool,
+    tab_width: u8,
+    word_wrap: bool,
 ) -> EditorRenderState {
     let viewport_cols = area.width.saturating_sub(6) as usize;
     let viewport_rows = area.height.saturating_sub(2) as usize;
-    editor.render_state(viewport_rows, viewport_cols, is_active)
+    editor.render_state(
+        viewport_rows,
+        viewport_cols,
+        is_active,
+        tab_width,
+        word_wrap,
+    )
 }
 
 pub fn editor_highlighted_render_state<'a>(
@@ -34,9 +44,10 @@ pub fn editor_highlighted_render_state<'a>(
     area: Rect,
     syntect_theme: &str,
     palette: ThemePalette,
+    tab_width: u8,
 ) -> (usize, &'a [crate::highlight::HighlightedLine]) {
     let height = area.height.saturating_sub(2) as usize;
-    editor.visible_highlighted_window(height, syntect_theme, palette.text_primary)
+    editor.visible_highlighted_window(height, syntect_theme, palette.text_primary, tab_width)
 }
 
 pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'_>) {
@@ -50,6 +61,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         replace_query,
         loading,
         cheap_mode,
+        cheap_tab_width,
     } = args;
     let border_style = if is_focused {
         Style::default()
@@ -95,6 +107,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         };
 
     let gutter_width = 6u16;
+    let use_plain_wrapped = cheap_mode || render_state.word_wrap;
     if loading {
         let loading_text = editor
             .path
@@ -107,11 +120,11 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 .bg(palette.surface_bg),
         );
         frame.render_widget(loading, content_area);
-    } else if cheap_mode {
-        let (first_line_num, visible_lines) =
-            editor.visible_line_window(content_area.height as usize);
-        let plain_lines: Vec<crate::highlight::HighlightedLine> = visible_lines
-            .into_iter()
+    } else if use_plain_wrapped {
+        let plain_lines: Vec<crate::highlight::HighlightedLine> = render_state
+            .visible_lines
+            .iter()
+            .cloned()
             .map(|line| vec![(palette.text_primary, Modifier::empty(), line.into())])
             .collect();
         render_code_view(
@@ -119,16 +132,25 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
             content_area,
             CodeViewRenderArgs {
                 lines: &plain_lines,
-                first_line_number: first_line_num + 1,
+                first_line_number: render_state.visible_start + 1,
                 gutter_width,
                 scroll_col: render_state.scroll_col,
-                cursor_row: None,
+                cursor_row: if cheap_mode {
+                    None
+                } else {
+                    render_state.cursor_visible_row
+                },
                 palette,
             },
         );
     } else {
-        let (first_line_num, highlighted) =
-            editor_highlighted_render_state(editor, content_area, syntect_theme, palette);
+        let (first_line_num, highlighted) = editor_highlighted_render_state(
+            editor,
+            content_area,
+            syntect_theme,
+            palette,
+            cheap_tab_width,
+        );
 
         render_code_view(
             frame,
@@ -179,15 +201,24 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         frame.render_widget(bar, bar_area);
     }
 
-    if !loading && !cheap_mode && render_state.cursor_visible_row.is_some() {
-        let (line, column) = editor.cursor_line_col();
-        let visible_line = line.saturating_sub(render_state.visible_start);
-        let content_x = content_area.x + gutter_width;
-        let cursor_y =
-            content_area.y + (visible_line as u16).min(content_area.height.saturating_sub(1));
-        let visible_col = column.saturating_sub(render_state.scroll_col);
-        let cursor_x = content_x
-            + (visible_col as u16).min(content_area.width.saturating_sub(gutter_width + 1));
-        frame.set_cursor_position((cursor_x, cursor_y));
+    if !loading && !cheap_mode {
+        if let Some(cursor_visual_row) = render_state.cursor_visible_row {
+            let content_x = content_area.x + gutter_width;
+            let cursor_y = content_area.y
+                + (cursor_visual_row as u16).min(content_area.height.saturating_sub(1));
+            let viewport_cols = content_area.width.saturating_sub(gutter_width) as usize;
+            let visual_col = render_state.cursor_visual_col.unwrap_or_else(|| {
+                // Fallback: raw char col (no tab expansion).
+                editor.cursor_line_col().1
+            });
+            let visible_col = if render_state.word_wrap && viewport_cols > 0 {
+                visual_col % viewport_cols
+            } else {
+                visual_col.saturating_sub(render_state.scroll_col)
+            };
+            let cursor_x = content_x
+                + (visible_col as u16).min(content_area.width.saturating_sub(gutter_width + 1));
+            frame.set_cursor_position((cursor_x, cursor_y));
+        }
     }
 }

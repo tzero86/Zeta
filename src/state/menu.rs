@@ -254,6 +254,12 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                     action: Action::OpenSelectedInEditor,
                 },
                 MenuItem {
+                    label: "Open Externally",
+                    shortcut: "o",
+                    mnemonic: 'e',
+                    action: Action::OpenInDefaultApp,
+                },
+                MenuItem {
                     label: "Copy",
                     shortcut: "F5",
                     mnemonic: 'c',
@@ -376,6 +382,12 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                     shortcut: "T",
                     mnemonic: 't',
                     action: Action::OpenMenu(MenuId::Themes),
+                },
+                MenuItem {
+                    label: "Toggle Details View",
+                    shortcut: "Ctrl+L",
+                    mnemonic: 'd',
+                    action: Action::ToggleDetailsView,
                 },
             ],
             MenuId::Themes => vec![

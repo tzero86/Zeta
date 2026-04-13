@@ -53,6 +53,8 @@ pub struct AppConfig {
     pub preview_on_selection: bool,
     #[serde(default)]
     pub bookmarks: Vec<PathBuf>,
+    #[serde(default)]
+    pub editor: EditorConfig,
 }
 
 impl Default for AppConfig {
@@ -65,6 +67,31 @@ impl Default for AppConfig {
             preview_panel_open: false,
             preview_on_selection: true,
             bookmarks: Vec::new(),
+            editor: EditorConfig::default(),
+        }
+    }
+}
+
+/// Per-editor settings (tab width, word wrap).
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct EditorConfig {
+    /// Number of spaces a `\t` expands to in the editor view (default 4).
+    #[serde(default = "default_tab_width")]
+    pub tab_width: u8,
+    /// Soft-wrap long lines at the viewport boundary.
+    #[serde(default)]
+    pub word_wrap: bool,
+}
+
+fn default_tab_width() -> u8 {
+    4
+}
+
+impl Default for EditorConfig {
+    fn default() -> Self {
+        Self {
+            tab_width: 4,
+            word_wrap: false,
         }
     }
 }

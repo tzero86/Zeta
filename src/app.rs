@@ -17,8 +17,8 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
 use crate::jobs::{
-    self, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest, JobResult,
-    PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
+    self, DirSizeRequest, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest,
+    JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
 };
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
@@ -33,6 +33,8 @@ pub struct App {
     state: AppState,
     pub layout_cache: LayoutCache,
     last_pane_click: Option<(bool, usize, std::time::Instant)>, // (left_pane, row, time)
+    /// Absolute path to the loaded config file; watched for live reload.
+    config_path: std::path::PathBuf,
 }
 
 impl App {
@@ -45,6 +47,7 @@ impl App {
             .compile_keymap()
             .context("failed to compile configured key bindings")?;
         let (workers, job_results) = jobs::spawn_workers();
+        let config_path = loaded_config.path.clone();
         let state = AppState::bootstrap(loaded_config, started_at)
             .context("failed to bootstrap application state")?;
         let mut app = Self {
@@ -54,6 +57,7 @@ impl App {
             state,
             layout_cache: LayoutCache::default(),
             last_pane_click: None,
+            config_path,
         };
 
         for command in app.state.initial_commands() {
@@ -72,7 +76,6 @@ impl App {
                 cache = ui::render(frame, &mut self.state);
             })?;
             self.layout_cache = cache;
-
             // Terminal resize logic
             if let Some(t_area) = cache.terminal_panel {
                 // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
@@ -87,10 +90,24 @@ impl App {
                     }
                 }
             }
-
             self.state.mark_drawn();
             self.process_next_event()?;
         }
+
+        // Persist session so next launch restores pane directories and settings.
+        let session = crate::session::SessionState {
+            left_cwd: Some(self.state.panes.left.cwd.clone()),
+            right_cwd: Some(self.state.panes.right.cwd.clone()),
+            left_sort: Some(self.state.panes.left.sort_mode),
+            right_sort: Some(self.state.panes.right.sort_mode),
+            left_hidden: self.state.panes.left.show_hidden,
+            right_hidden: self.state.panes.right.show_hidden,
+            layout: Some(self.state.panes.pane_layout),
+        };
+        let session_path = crate::session::SessionState::session_path(std::path::Path::new(
+            self.state.config_path(),
+        ));
+        let _ = session.save(&session_path); // non-fatal
 
         Ok(())
     }
@@ -193,11 +210,50 @@ impl App {
                         })?;
                     }
                 }
+                JobResult::ConfigChanged => {
+                    // Re-read config non-fatally; keymap and theme take effect immediately.
+                    if let Ok(new_config) = AppConfig::load(&self.config_path) {
+                        // Recompile keymap if bindings changed; non-fatal on error.
+                        if new_config.keymap != self.state.config().keymap {
+                            if let Ok(km) = new_config.compile_keymap() {
+                                self.keymap = km;
+                            }
+                        }
+                        self.state.apply_config_reload(new_config);
+                    }
+                }
                 other => {
+                    let scanned_pane = if let JobResult::DirectoryScanned { pane, .. } = &other {
+                        Some(*pane)
+                    } else {
+                        None
+                    };
                     let refresh_watch = matches!(&other, JobResult::DirectoryScanned { .. });
                     self.state.apply_job_result(other);
                     if refresh_watch {
                         self.sync_watched_paths()?;
+                    }
+                    // Dispatch dir-size calculations for directory entries after any scan.
+                    // Results arrive as DirSizeCalculated and update entry.size_bytes in place.
+                    if let Some(pane) = scanned_pane {
+                        let pane_state = self.state.panes.pane(pane);
+                        if pane_state.details_view
+                            || matches!(
+                                pane_state.sort_mode,
+                                crate::pane::SortMode::Size | crate::pane::SortMode::SizeDesc
+                            )
+                        {
+                            for entry in &pane_state.entries {
+                                if entry.kind == crate::fs::EntryKind::Directory
+                                    && entry.name != ".."
+                                {
+                                    let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
+                                        pane,
+                                        path: entry.path.clone(),
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -219,9 +275,14 @@ impl App {
         if right != paths[0] {
             paths.push(right);
         }
+        let config_path = if self.config_path.as_os_str().is_empty() {
+            None
+        } else {
+            Some(self.config_path.clone())
+        };
         self.workers
             .watch_tx
-            .send(WatchRequest { paths })
+            .send(WatchRequest { paths, config_path })
             .context("failed to update watched directories")?;
         Ok(())
     }
@@ -529,6 +590,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
+        FocusLayer::PaneInlineRename => Action::from_inline_rename_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
         FocusLayer::Terminal => Action::from_terminal_key_event(key_event),
         FocusLayer::MarkdownPreview => {
@@ -567,6 +629,12 @@ fn route_mouse_event(
 
     let col = event.column;
     let row = event.row;
+
+    // Inline rename is keyboard-only; absorb mouse input so the displayed row
+    // cannot diverge from the file that will actually be renamed.
+    if matches!(focus, FocusLayer::PaneInlineRename) {
+        return None;
+    }
 
     match event.kind {
         // -------------------------------------------------------------------

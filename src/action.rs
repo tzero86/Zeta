@@ -103,6 +103,16 @@ pub enum Action {
     OpenNewDirectoryPrompt,
     OpenNewFilePrompt,
     OpenRenamePrompt,
+    /// Start inline (in-place) rename of the selected entry. Buffer pre-filled with current name.
+    BeginInlineRename,
+    /// Commit the inline rename buffer: perform the filesystem rename.
+    ConfirmInlineRename,
+    /// Discard the inline rename buffer without renaming.
+    CancelInlineRename,
+    /// Append a character to the inline rename buffer.
+    InlineRenameType(char),
+    /// Delete the last character from the inline rename buffer.
+    InlineRenameBackspace,
     OpenSelectedInEditor,
     OpenSettingsPanel,
     PreviewFile {
@@ -161,6 +171,8 @@ pub enum Action {
     CycleSortMode,
     ToggleDiffMode,
     DiffSyncToOther,
+    /// Toggle between the compact name-only list and the detailed columns view.
+    ToggleDetailsView,
     /// Mouse click on a pane entry row.
     PaneClick {
         left_pane: bool,
@@ -171,6 +183,16 @@ pub enum Action {
         left_pane: bool,
         row: usize,
     },
+    /// Open the selected file with the OS default application.
+    OpenInDefaultApp,
+    /// Extend the pane selection downward, marking each stepped-over entry.
+    ExtendSelectionDown,
+    /// Extend the pane selection upward, marking each stepped-over entry.
+    ExtendSelectionUp,
+    /// Copy the selected entry's path to the system clipboard.
+    CopyPathToClipboard,
+    /// Paste text from the system clipboard at the editor cursor.
+    EditorPaste,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -340,7 +362,11 @@ impl Action {
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiffSyncToOther)
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
+            KeyCode::Enter | KeyCode::Right => Some(Self::EnterSelection),
+            // Char('l') without Ctrl is the vim right/enter binding.
+            KeyCode::Char('l') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::EnterSelection)
+            }
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char(' ') => Some(Self::ToggleMark),
             KeyCode::Char('M') if key_event.modifiers == KeyModifiers::SHIFT => {
@@ -366,13 +392,35 @@ impl Action {
                 Some(Self::OpenBookmarks)
             }
             KeyCode::Char('/') => Some(Self::OpenPaneFilter),
+            // Shift+arrow range-select must come before plain Down/Up (guards don't apply to OR patterns).
+            KeyCode::Down if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ExtendSelectionDown)
+            }
+            KeyCode::Up if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::ExtendSelectionUp)
+            }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
+            KeyCode::Char('o') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::OpenInDefaultApp)
+            }
+            KeyCode::Char('c') | KeyCode::Char('C')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::CopyPathToClipboard)
+            }
             KeyCode::Char('s') | KeyCode::Char('S')
                 if key_event.modifiers == KeyModifiers::NONE
                     || key_event.modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::CycleSortMode)
+            }
+            KeyCode::Char('l') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::ToggleDetailsView)
+            }
+            // 'r' for inline rename (intuitive, not otherwise bound in pane context).
+            KeyCode::Char('r') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::BeginInlineRename)
             }
             _ => None,
         }
@@ -432,6 +480,21 @@ impl Action {
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::PaneFilterInput(ch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys when inline rename is active. Consumes ALL input.
+    pub fn from_inline_rename_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CancelInlineRename),
+            KeyCode::Enter => Some(Self::ConfirmInlineRename),
+            KeyCode::Backspace => Some(Self::InlineRenameBackspace),
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::InlineRenameType(ch))
             }
             _ => None,
         }
@@ -581,6 +644,9 @@ impl Action {
         if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::CycleFocus);
         }
+        if key_event.code == KeyCode::Char('r') && key_event.modifiers == KeyModifiers::NONE {
+            return Some(Self::BeginInlineRename);
+        }
         if keymap.switch_pane.matches(&key_event) {
             return Some(Self::FocusNextPane);
         }
@@ -651,6 +717,9 @@ impl Action {
             KeyCode::F(3) => Some(Self::EditorSearchNext),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
+            }
+            KeyCode::Char('v') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorPaste)
             }
             KeyCode::Char(ch)
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
