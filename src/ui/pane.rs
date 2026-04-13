@@ -39,6 +39,8 @@ struct RenderItemArgs<'a> {
     git_status: Option<FileStatus>,
     diff_colour: Option<ratatui::style::Color>,
     details_view: bool,
+    /// Optional display-name override (used by inline rename on the selected row).
+    display_name: Option<String>,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -114,6 +116,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     };
     let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
+    let selected_visible = pane.visible_selection(visible_height);
     let items: Vec<ListItem<'_>> = if pane.entries.is_empty() {
         vec![ListItem::new("(empty)")]
     } else {
@@ -123,6 +126,13 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
             .map(|(index, entry)| {
                 let diff_colour = if state.diff_mode {
                     state.diff_map.get(&entry.name).map(|s| s.colour(is_left))
+                } else {
+                    None
+                };
+                let display_name = if selected_visible == Some(index) {
+                    pane.rename_state
+                        .as_ref()
+                        .map(|rs| format!("{}│", rs.buffer))
                 } else {
                     None
                 };
@@ -137,6 +147,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                     git_status: git.and_then(|g| g.status_for(&entry.path)),
                     diff_colour,
                     details_view: pane.details_view,
+                    display_name,
                 })
             })
             .collect()
@@ -208,6 +219,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         git_status,
         diff_colour,
         details_view,
+        display_name,
     } = args;
     let icon = icon_for_kind(entry.kind, icon_mode);
     // --- Details view: flat columns (mark | icon | git | name | size | date) ---
@@ -227,10 +239,10 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         let name_width = available_width
             .saturating_sub(left_fixed + right_fixed + 1)
             .max(1);
-        let name = match entry.kind {
+        let name = display_name.unwrap_or_else(|| match entry.kind {
             EntryKind::Directory => format!("{}/", entry.name),
             _ => entry.name.clone(),
-        };
+        });
         let name = truncate_text(&name, name_width);
         let spacer_width = available_width
             .saturating_sub(left_fixed + display_width(&name) + right_fixed)
@@ -270,10 +282,10 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     let branch = if is_last { "└" } else { "├" };
     // icon already bound above
     let mark_prefix = if is_marked { "* " } else { "  " };
-    let name = match entry.kind {
+    let name = display_name.unwrap_or_else(|| match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
         _ => entry.name.clone(),
-    };
+    });
     let meta = format_entry_meta(entry);
     let icon_slot = format_icon_slot(icon, icon_mode);
     let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);

@@ -33,6 +33,8 @@ pub struct App {
     state: AppState,
     pub layout_cache: LayoutCache,
     last_pane_click: Option<(bool, usize, std::time::Instant)>, // (left_pane, row, time)
+    /// Absolute path to the loaded config file; watched for live reload.
+    config_path: std::path::PathBuf,
 }
 
 impl App {
@@ -45,6 +47,7 @@ impl App {
             .compile_keymap()
             .context("failed to compile configured key bindings")?;
         let (workers, job_results) = jobs::spawn_workers();
+        let config_path = loaded_config.path.clone();
         let state = AppState::bootstrap(loaded_config, started_at)
             .context("failed to bootstrap application state")?;
         let mut app = Self {
@@ -54,6 +57,7 @@ impl App {
             state,
             layout_cache: LayoutCache::default(),
             last_pane_click: None,
+            config_path,
         };
 
         for command in app.state.initial_commands() {
@@ -206,6 +210,18 @@ impl App {
                         })?;
                     }
                 }
+                JobResult::ConfigChanged => {
+                    // Re-read config non-fatally; keymap and theme take effect immediately.
+                    if let Ok(new_config) = AppConfig::load(&self.config_path) {
+                        // Recompile keymap if bindings changed; non-fatal on error.
+                        if new_config.keymap != self.state.config().keymap {
+                            if let Ok(km) = new_config.compile_keymap() {
+                                self.keymap = km;
+                            }
+                        }
+                        self.state.apply_config_reload(new_config);
+                    }
+                }
                 other => {
                     let scanned_pane = if let JobResult::DirectoryScanned { pane, .. } = &other {
                         Some(*pane)
@@ -259,9 +275,14 @@ impl App {
         if right != paths[0] {
             paths.push(right);
         }
+        let config_path = if self.config_path.as_os_str().is_empty() {
+            None
+        } else {
+            Some(self.config_path.clone())
+        };
         self.workers
             .watch_tx
-            .send(WatchRequest { paths })
+            .send(WatchRequest { paths, config_path })
             .context("failed to update watched directories")?;
         Ok(())
     }
@@ -569,6 +590,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
+        FocusLayer::PaneInlineRename => Action::from_inline_rename_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
         FocusLayer::Terminal => Action::from_terminal_key_event(key_event),
         FocusLayer::MarkdownPreview => {

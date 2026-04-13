@@ -17,6 +17,10 @@ pub struct EditorRenderState {
     pub visible_lines: Vec<String>,
     pub cursor_visible_row: Option<usize>,
     pub scroll_col: usize,
+    /// True when word-wrap is active; the UI should not apply horizontal scroll.
+    pub word_wrap: bool,
+    /// Visual column of cursor (tabs expanded); replaces raw char col for cursor drawing.
+    pub cursor_visual_col: Option<usize>,
 }
 
 // ---------------------------------------------------------------------------
@@ -93,9 +97,9 @@ pub struct EditorBuffer {
     /// Used as the cache key for `highlight_cache` — scrolling alone never
     /// increments this, so highlighting is free during scroll.
     edit_version: usize,
-    /// Full-file syntax-highlighted lines, keyed by `(edit_version, theme)`.
+    /// Full-file syntax-highlighted lines, keyed by `(edit_version, theme, tab_width)`.
     /// `None` until first render. Recomputed only when text actually changes.
-    highlight_cache: Option<(usize, String, Vec<HighlightedLine>)>,
+    highlight_cache: Option<(usize, String, u8, Vec<HighlightedLine>)>,
 }
 
 impl EditorBuffer {
@@ -288,6 +292,47 @@ impl EditorBuffer {
     // Rendering
     // -----------------------------------------------------------------------
 
+    /// Expand `\t` to `tab_width` spaces for display. Leaves other chars unchanged.
+    fn expand_tabs(s: &str, tab_width: usize) -> String {
+        if tab_width == 0 || !s.contains('\t') {
+            return s.to_string();
+        }
+        let pad = " ".repeat(tab_width);
+        s.replace('\t', &pad)
+    }
+
+    /// Visual column of the cursor accounting for tab expansion.
+    pub fn cursor_visual_col(&self, tab_width: usize) -> usize {
+        let (_, char_col) = self.cursor_line_col();
+        if tab_width <= 1 {
+            return char_col;
+        }
+        // Count visual columns up to char_col in the cursor's logical line.
+        let (line_idx, _) = self.cursor_line_col();
+        let line = self.text.line(line_idx).to_string();
+        let mut vis = 0usize;
+        for (i, ch) in line.chars().enumerate() {
+            if i >= char_col {
+                break;
+            }
+            vis += if ch == '\t' { tab_width } else { 1 };
+        }
+        vis
+    }
+
+    /// Number of visual rows a display string occupies given `cols` viewport width.
+    fn visual_row_count(s: &str, cols: usize) -> usize {
+        if cols == 0 {
+            return 1;
+        }
+        // Each wrapped segment counts as one row; empty line still occupies one row.
+        let len = s.chars().count();
+        if len == 0 {
+            1
+        } else {
+            len.div_ceil(cols)
+        }
+    }
     /// Returns syntax-highlighted lines for the visible viewport.
     ///
     /// The full-file highlight result is cached by `edit_version` so repeated
@@ -298,6 +343,7 @@ impl EditorBuffer {
         height: usize,
         syntect_theme: &str,
         fallback_color: Color,
+        tab_width: u8,
     ) -> (usize, &[HighlightedLine]) {
         if height == 0 {
             return (0, &[]);
@@ -310,14 +356,15 @@ impl EditorBuffer {
             .and_then(|e| e.to_str())
             .map(str::to_owned);
 
-        // Recompute only when text has changed or theme/ext has changed.
-        let cache_valid = self
-            .highlight_cache
-            .as_ref()
-            .is_some_and(|(v, t, _)| *v == self.edit_version && t == syntect_theme);
+        // Recompute when text, theme, or tab_width changes.
+        let cache_valid = self.highlight_cache.as_ref().is_some_and(|(v, t, tw, _)| {
+            *v == self.edit_version && t == syntect_theme && *tw == tab_width
+        });
 
         if !cache_valid {
-            let text = normalize_preview_text(&self.text.to_string());
+            let raw = normalize_preview_text(&self.text.to_string());
+            // Expand tabs before highlighting so gutter alignment is correct.
+            let text = Self::expand_tabs(&raw, tab_width as usize);
             let all_lines = match highlight_text(&text, ext.as_deref(), syntect_theme) {
                 Some(lines) => lines,
                 None => self
@@ -326,37 +373,110 @@ impl EditorBuffer {
                     .map(|l| {
                         let s = normalize_preview_text(&l.to_string());
                         let s = s.strip_suffix('\n').unwrap_or(&s).to_string();
+                        let s = Self::expand_tabs(&s, tab_width as usize);
                         vec![(fallback_color, Modifier::empty(), s.into())]
                     })
                     .collect(),
             };
-            self.highlight_cache = Some((self.edit_version, syntect_theme.to_string(), all_lines));
+            self.highlight_cache = Some((
+                self.edit_version,
+                syntect_theme.to_string(),
+                tab_width,
+                all_lines,
+            ));
         }
 
-        let (start, _) = self.visible_line_window(height);
-        let all_lines = &self.highlight_cache.as_ref().unwrap().2;
+        let (start, _, _) = self.visible_line_window_h(height, 0, tab_width, false);
+        let all_lines = &self.highlight_cache.as_ref().unwrap().3;
         let end = (start + height).min(all_lines.len());
         (start, &all_lines[start..end])
     }
 
-    /// Returns the visible line window as plain strings.
-    ///
-    /// Uses direct rope line access — O(height), not O(total_lines).
-    pub fn visible_line_window(&self, height: usize) -> (usize, Vec<String>) {
-        if height == 0 {
-            return (0, Vec::new());
+    /// Compute the visible line window for rendering `viewport_rows` rows.
+    /// When `word_wrap` is true, lines are soft-wrapped at `viewport_cols`.
+    /// Returns `(visible_start, visual_lines, cursor_visual_row)`.
+    pub fn visible_line_window_h(
+        &self,
+        viewport_rows: usize,
+        viewport_cols: usize,
+        tab_width: u8,
+        word_wrap: bool,
+    ) -> (usize, Vec<String>, usize) {
+        if viewport_rows == 0 {
+            return (0, Vec::new(), 0);
         }
         let total = self.text.len_lines();
         let (cursor_line, _) = self.cursor_line_col();
-        let start = (cursor_line + 1).saturating_sub(height);
-        let end = (start + height).min(total);
-        let visible = (start..end)
-            .map(|i| {
-                let s = normalize_preview_text(&self.text.line(i).to_string());
-                s.strip_suffix('\n').unwrap_or(&s).to_string()
-            })
-            .collect();
-        (start, visible)
+        let tab_w = tab_width as usize;
+        let vis_col = self.cursor_visual_col(tab_w);
+
+        // Determine the logical-line start of the visible window.
+        let start = if !word_wrap || viewport_cols == 0 {
+            // Non-wrap: cursor sits on the last visible line (matches original behaviour).
+            (cursor_line + 1).saturating_sub(viewport_rows)
+        } else {
+            // Wrap: walk backwards from cursor_line until we have enough visual rows
+            // to show `viewport_rows` lines, keeping cursor near the bottom third.
+            let cursor_wrap_row = vis_col / viewport_cols.max(1);
+            // Visual rows the cursor line contributes above the cursor position.
+            let rows_needed_above = cursor_wrap_row.min(viewport_rows.saturating_sub(1));
+            let target_start_visual = viewport_rows.saturating_sub(rows_needed_above + 1);
+            // Walk backwards from cursor_line, accumulating visual rows.
+            let mut rows_above = 0usize;
+            let mut s = cursor_line;
+            while s > 0 && rows_above < target_start_visual {
+                s -= 1;
+                let raw = normalize_preview_text(&self.text.line(s).to_string());
+                let line_str = {
+                    let r = raw.strip_suffix('\n').unwrap_or(&raw);
+                    Self::expand_tabs(r, tab_w)
+                };
+                rows_above += Self::visual_row_count(&line_str, viewport_cols);
+            }
+            s
+        };
+
+        // Collect visual lines from start until viewport is filled.
+        let mut visual_lines: Vec<String> = Vec::new();
+        let mut cursor_visual_row: usize = 0;
+        let mut found_cursor = false;
+        let mut logi = start;
+        while visual_lines.len() < viewport_rows && logi < total {
+            let raw = normalize_preview_text(&self.text.line(logi).to_string());
+            let line = {
+                let s = raw.strip_suffix('\n').unwrap_or(&raw);
+                Self::expand_tabs(s, tab_w)
+            };
+            if word_wrap && viewport_cols > 0 && line.chars().count() > viewport_cols {
+                // Emit wrapped sub-rows.
+                let chars: Vec<char> = line.chars().collect();
+                let mut sub_start = 0;
+                let mut sub_row = 0usize;
+                while sub_start < chars.len() && visual_lines.len() < viewport_rows {
+                    let sub_end = (sub_start + viewport_cols).min(chars.len());
+                    let sub: String = chars[sub_start..sub_end].iter().collect();
+                    if logi == cursor_line && !found_cursor {
+                        let cursor_sub = vis_col / viewport_cols;
+                        if sub_row == cursor_sub {
+                            cursor_visual_row = visual_lines.len();
+                            found_cursor = true;
+                        }
+                    }
+                    visual_lines.push(sub);
+                    sub_start = sub_end;
+                    sub_row += 1;
+                }
+            } else {
+                if logi == cursor_line && !found_cursor {
+                    cursor_visual_row = visual_lines.len();
+                    found_cursor = true;
+                }
+                visual_lines.push(line);
+            }
+            logi += 1;
+        }
+
+        (start, visual_lines, cursor_visual_row)
     }
 
     pub fn cursor_line_col(&self) -> (usize, usize) {
@@ -384,18 +504,27 @@ impl EditorBuffer {
         viewport_rows: usize,
         viewport_cols: usize,
         is_active: bool,
+        tab_width: u8,
+        word_wrap: bool,
     ) -> EditorRenderState {
-        self.clamp_horizontal_scroll(viewport_cols);
-        let (visible_start, visible_lines) = self.visible_line_window(viewport_rows);
+        // In word-wrap mode horizontal scroll is irrelevant; keep it for non-wrap.
+        if !word_wrap {
+            self.clamp_horizontal_scroll(viewport_cols);
+        }
+        let (visible_start, visible_lines, cursor_wrap_row) =
+            self.visible_line_window_h(viewport_rows, viewport_cols, tab_width, word_wrap);
+        let vis_col = self.cursor_visual_col(tab_width as usize);
         EditorRenderState {
             visible_start,
             visible_lines,
             cursor_visible_row: if is_active {
-                Some(self.cursor_line_col().0.saturating_sub(visible_start))
+                Some(cursor_wrap_row)
             } else {
                 None
             },
-            scroll_col: self.scroll_col,
+            scroll_col: if word_wrap { 0 } else { self.scroll_col },
+            word_wrap,
+            cursor_visual_col: if is_active { Some(vis_col) } else { None },
         }
     }
 
@@ -628,7 +757,7 @@ mod tests {
                 buf.insert_char(ch);
             }
         }
-        let (start, visible) = buf.visible_line_window(2);
+        let (start, visible, _) = buf.visible_line_window_h(2, 80, 4, false);
         assert_eq!(start, 2);
         assert_eq!(visible.len(), 2);
     }

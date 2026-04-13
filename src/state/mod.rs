@@ -28,7 +28,7 @@ use crate::finder::FileFinderState;
 use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationStatus, JobResult};
-use crate::pane::{PaneId, PaneState};
+use crate::pane::{InlineRenameState, PaneId, PaneState};
 pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
@@ -139,6 +139,14 @@ impl AppState {
 
     pub fn config_path(&self) -> &str {
         &self.config_path
+    }
+
+    /// Apply a freshly loaded config without a full restart.
+    /// Only updates fields that can change at runtime (theme, icon mode, editor prefs).
+    pub fn apply_config_reload(&mut self, new_config: AppConfig) {
+        self.icon_mode = new_config.icon_mode;
+        self.theme = new_config.resolve_theme();
+        self.config = new_config;
     }
 
     pub fn initial_commands(&self) -> Vec<Command> {
@@ -997,6 +1005,59 @@ impl AppState {
                     String::from("details view off")
                 };
             }
+            Action::BeginInlineRename => {
+                // Pre-fill buffer with the current entry name (without trailing slash).
+                if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    let original_path = entry.path.clone();
+                    let name = entry.name.trim_end_matches('/').to_string();
+                    self.panes.active_pane_mut().rename_state = Some(InlineRenameState {
+                        buffer: name,
+                        original_path,
+                    });
+                }
+            }
+            Action::CancelInlineRename => {
+                self.panes.active_pane_mut().rename_state = None;
+            }
+            Action::ConfirmInlineRename => {
+                let refresh = vec![RefreshTarget {
+                    pane: self.panes.focused_pane_id(),
+                    path: self.panes.active_pane().cwd.clone(),
+                }];
+                if let Some(state) = self.panes.active_pane_mut().rename_state.take() {
+                    let new_name = state.buffer.trim().to_string();
+                    if !new_name.is_empty()
+                        && new_name
+                            != state
+                                .original_path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or_default()
+                    {
+                        if let Some(parent) = state.original_path.parent() {
+                            let destination = parent.join(&new_name);
+                            commands.push(Command::RunFileOperation {
+                                operation: crate::action::FileOperation::Rename {
+                                    source: state.original_path,
+                                    destination,
+                                },
+                                refresh,
+                                collision: CollisionPolicy::Fail,
+                            });
+                        }
+                    }
+                }
+            }
+            Action::InlineRenameType(ch) => {
+                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
+                    rs.buffer.push(*ch);
+                }
+            }
+            Action::InlineRenameBackspace => {
+                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
+                    rs.buffer.pop();
+                }
+            }
             Action::CopyPathToClipboard => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
                     match arboard::Clipboard::new()
@@ -1293,6 +1354,9 @@ impl AppState {
                 );
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
+            JobResult::ConfigChanged => {
+                // Consumed at the app layer; no state reducer work required here.
+            }
         }
     }
 
@@ -1449,6 +1513,9 @@ impl AppState {
         }
         if self.terminal.is_open() && self.terminal.focused {
             return FocusLayer::Terminal;
+        }
+        if self.panes.active_pane().rename_state.is_some() {
+            return FocusLayer::PaneInlineRename;
         }
         if self.panes.active_pane().filter_active {
             return FocusLayer::PaneFilter;
@@ -1810,6 +1877,7 @@ mod tests {
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
             details_view: false,
+            rename_state: None,
         }
     }
 
@@ -1965,6 +2033,7 @@ mod tests {
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
             details_view: false,
+            rename_state: None,
         };
         AppState {
             panes: PaneSetState::new(pane_with_file("./note.txt"), right),

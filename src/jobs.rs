@@ -111,6 +111,8 @@ pub struct FindRequest {
 #[derive(Clone, Debug)]
 pub struct WatchRequest {
     pub paths: Vec<PathBuf>,
+    /// When set, this file is also watched; changes emit `JobResult::ConfigChanged`.
+    pub config_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -203,6 +205,8 @@ pub enum JobResult {
         path: PathBuf,
         bytes: u64,
     },
+    /// The user's config file changed on disk; the app should re-read it.
+    ConfigChanged,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -825,6 +829,8 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
     let mut watcher = RecommendedWatcher::new(notify_tx, Config::default())
         .expect("failed to create filesystem watcher");
     let mut watched_paths: Vec<PathBuf> = Vec::new();
+    // The config file path, if any; changes emit `ConfigChanged` instead of `DirectoryChanged`.
+    let mut watched_config: Option<PathBuf> = None;
 
     loop {
         while let Ok(req) = watch_rx.try_recv() {
@@ -832,6 +838,18 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
                 let _ = watcher.unwatch(path);
             }
             watched_paths.clear();
+            // Register config file's parent dir (if not already covered by a pane path).
+            if let Some(ref cfg) = req.config_path {
+                if let Some(parent) = cfg.parent() {
+                    let parent = parent.to_path_buf();
+                    if watched_paths.iter().all(|p| p != &parent)
+                        && watcher.watch(&parent, RecursiveMode::NonRecursive).is_ok()
+                    {
+                        watched_paths.push(parent);
+                    }
+                }
+            }
+            watched_config = req.config_path;
             for path in req.paths {
                 if watched_paths.iter().all(|p| p != &path)
                     && watcher.watch(&path, RecursiveMode::NonRecursive).is_ok()
@@ -846,6 +864,13 @@ fn run_watcher_worker(watch_rx: Receiver<WatchRequest>, result_tx: Sender<JobRes
                 continue;
             };
             for path in event.paths {
+                // Exact match on the config file → emit ConfigChanged and skip dir change.
+                if watched_config.as_deref() == Some(path.as_path()) {
+                    if result_tx.send(JobResult::ConfigChanged).is_err() {
+                        return;
+                    }
+                    continue;
+                }
                 let changed_dir = if path.is_dir() {
                     path
                 } else {
@@ -1839,6 +1864,7 @@ mod tests {
             .watch_tx
             .send(WatchRequest {
                 paths: vec![root.clone()],
+                config_path: None,
             })
             .unwrap();
         std::thread::sleep(std::time::Duration::from_millis(300));

@@ -103,6 +103,16 @@ pub enum Action {
     OpenNewDirectoryPrompt,
     OpenNewFilePrompt,
     OpenRenamePrompt,
+    /// Start inline (in-place) rename of the selected entry. Buffer pre-filled with current name.
+    BeginInlineRename,
+    /// Commit the inline rename buffer: perform the filesystem rename.
+    ConfirmInlineRename,
+    /// Discard the inline rename buffer without renaming.
+    CancelInlineRename,
+    /// Append a character to the inline rename buffer.
+    InlineRenameType(char),
+    /// Delete the last character from the inline rename buffer.
+    InlineRenameBackspace,
     OpenSelectedInEditor,
     OpenSettingsPanel,
     PreviewFile {
@@ -408,6 +418,10 @@ impl Action {
             KeyCode::Char('l') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::ToggleDetailsView)
             }
+            // 'r' for inline rename (intuitive, not otherwise bound in pane context).
+            KeyCode::Char('r') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::BeginInlineRename)
+            }
             _ => None,
         }
     }
@@ -466,6 +480,21 @@ impl Action {
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::PaneFilterInput(ch))
+            }
+            _ => None,
+        }
+    }
+
+    /// Keys when inline rename is active. Consumes ALL input.
+    pub fn from_inline_rename_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CancelInlineRename),
+            KeyCode::Enter => Some(Self::ConfirmInlineRename),
+            KeyCode::Backspace => Some(Self::InlineRenameBackspace),
+            KeyCode::Char(ch)
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::InlineRenameType(ch))
             }
             _ => None,
         }
