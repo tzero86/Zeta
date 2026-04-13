@@ -74,6 +74,10 @@ pub enum Action {
     ScrollPreviewUp,
     ScrollPreviewPageDown,
     ScrollPreviewPageUp,
+    ScrollDialogDown,
+    ScrollDialogUp,
+    ScrollDialogPageDown,
+    ScrollDialogPageUp,
     MenuActivate,
     /// Mouse click on a menu item — set selection to `index` and activate.
     MenuClickItem(usize),
@@ -711,6 +715,10 @@ impl Action {
             {
                 Some(Self::OpenBookmarks)
             }
+            KeyCode::Down => Some(Self::ScrollDialogDown),
+            KeyCode::Up => Some(Self::ScrollDialogUp),
+            KeyCode::PageDown => Some(Self::ScrollDialogPageDown),
+            KeyCode::PageUp => Some(Self::ScrollDialogPageUp),
             _ => None,
         }
     }

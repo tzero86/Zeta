@@ -17,6 +17,7 @@ pub struct LayoutCache {
     /// Exact markdown preview split rect when editing markdown with live preview.
     pub markdown_preview_panel: Option<Rect>,
     pub status_bar: Rect,
+    pub hint_bar: Rect,
     /// Bounding box of the open menu popup (border included), or `None`.
     pub menu_popup: Option<Rect>,
     pub terminal_panel: Option<Rect>,

@@ -246,6 +246,26 @@ impl OverlayState {
                 self.close_all();
                 self.modal = Some(ModalState::Dialog(DialogState::help()));
             }
+            Action::ScrollDialogDown => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_down(1);
+                }
+            }
+            Action::ScrollDialogUp => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_up(1);
+                }
+            }
+            Action::ScrollDialogPageDown => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_down(10);
+                }
+            }
+            Action::ScrollDialogPageUp => {
+                if let Some(ModalState::Dialog(d)) = self.modal.as_mut() {
+                    d.scroll_up(10);
+                }
+            }
 
             // ── Menu ─────────────────────────────────────────────────────────
             Action::CloseMenu => {

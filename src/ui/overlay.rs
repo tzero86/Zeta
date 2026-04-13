@@ -1,7 +1,10 @@
 use ratatui::layout::Rect;
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use ratatui::widgets::{
+    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Wrap,
+};
 use ratatui::Frame;
 
 use crate::action::MenuId;
@@ -202,8 +205,12 @@ pub fn render_dialog(
     dialog: &DialogState,
     palette: ThemePalette,
 ) {
+    let content_len = dialog.lines.len() as u16;
     let width = area.width.min(68);
-    let height = ((dialog.lines.len() as u16) + 2).min(area.height.saturating_sub(2).max(6));
+    // Cap height so the dialog always fits: reserve space for menu bar, status bar,
+    // key hint bar (3 rows), plus 1 row of breathing room.
+    let max_height = area.height.saturating_sub(4).max(6);
+    let height = (content_len + 2).min(max_height);
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let popup_area = Rect {
@@ -222,6 +229,12 @@ pub fn render_dialog(
     render_modal_backdrop(frame, area, popup_area, palette);
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
+
+    // Clamp scroll so the last visible line is always reachable but we never
+    // scroll past the end.
+    let visible_lines = inner.height as usize;
+    let max_scroll = dialog.lines.len().saturating_sub(visible_lines);
+    let scroll = dialog.scroll.min(max_scroll) as u16;
 
     let styled_lines: Vec<Line> = dialog
         .lines
@@ -263,8 +276,22 @@ pub fn render_dialog(
         })
         .collect();
 
-    let paragraph = Paragraph::new(styled_lines).style(elevated_surface_style(palette));
+    let paragraph = Paragraph::new(styled_lines)
+        .style(elevated_surface_style(palette))
+        .scroll((scroll, 0));
     frame.render_widget(paragraph, inner);
+
+    // Render a scrollbar when content overflows the visible area.
+    if dialog.lines.len() > visible_lines {
+        let mut scrollbar_state = ScrollbarState::new(max_scroll + 1).position(scroll as usize);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼")),
+            popup_area,
+            &mut scrollbar_state,
+        );
+    }
 }
 
 pub fn render_collision_dialog(

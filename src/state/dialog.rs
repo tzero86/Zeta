@@ -13,6 +13,7 @@ use super::PromptState;
 pub struct DialogState {
     pub title: &'static str,
     pub lines: Vec<String>,
+    pub scroll: usize,
 }
 
 impl DialogState {
@@ -62,6 +63,7 @@ impl DialogState {
                 String::from("  F1\tOpen help for shortcuts and workflows"),
                 String::from("  Esc / Enter\tClose this window"),
             ],
+            scroll: 0,
         }
     }
 
@@ -97,7 +99,16 @@ impl DialogState {
                 String::from("  Ctrl+R / ssh\tConnect to SSH server (command palette)"),
                 String::from("  Esc / Enter\tClose windows and cancel dialogs"),
             ],
+            scroll: 0,
         }
+    }
+
+    pub fn scroll_down(&mut self, step: usize) {
+        self.scroll = self.scroll.saturating_add(step);
+    }
+
+    pub fn scroll_up(&mut self, step: usize) {
+        self.scroll = self.scroll.saturating_sub(step);
     }
 }
 

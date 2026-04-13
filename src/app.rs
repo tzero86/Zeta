@@ -860,6 +860,7 @@ mod tests {
                 height: 1,
             },
             menu_popup: None,
+            hint_bar: Rect::default(),
             terminal_panel: None,
         }
     }

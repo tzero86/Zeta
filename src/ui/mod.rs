@@ -18,7 +18,7 @@ pub use layout_cache::LayoutCache;
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::Line;
+use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
@@ -49,6 +49,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         .constraints([
             Constraint::Length(1),
             Constraint::Min(1),
+            Constraint::Length(1),
             Constraint::Length(1),
         ])
         .split(frame.area());
@@ -316,6 +317,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(status, areas[2]);
+    render_key_hints(frame, areas[3], state, palette);
 
     LayoutCache {
         menu_bar: areas[0],
@@ -326,9 +328,103 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         file_preview_panel: file_preview_panel_rect,
         markdown_preview_panel: markdown_preview_panel_rect,
         status_bar: areas[2],
+        hint_bar: areas[3],
         menu_popup: menu_popup_rect,
         terminal_panel: terminal_area,
     }
+}
+
+fn render_key_hints(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    palette: crate::config::ThemePalette,
+) {
+    use crate::state::ModalKind;
+
+    let hints: &[(&str, &str)] = match state.focus_layer() {
+        crate::state::FocusLayer::Modal(ModalKind::Dialog) => &[
+            ("\u{2191}\u{2193}", "Scroll"),
+            ("PgUp/Dn", "Page"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Collision) => &[
+            ("O", "Overwrite"),
+            ("R", "Rename"),
+            ("S", "Skip"),
+            ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Prompt) => {
+            &[("Enter", "Confirm"), ("Esc", "Cancel")]
+        }
+        crate::state::FocusLayer::Modal(ModalKind::Settings) => &[
+            ("\u{2191}\u{2193}", "Navigate"),
+            ("Space", "Toggle"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::Bookmarks) => {
+            &[("Enter", "Go"), ("Del", "Remove"), ("Esc", "Close")]
+        }
+        crate::state::FocusLayer::Modal(ModalKind::Palette)
+        | crate::state::FocusLayer::Modal(ModalKind::FileFinder) => &[
+            ("\u{2191}\u{2193}", "Navigate"),
+            ("Enter", "Open"),
+            ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::Editor => &[
+            ("Ctrl+S", "Save"),
+            ("Ctrl+F", "Find"),
+            ("F3", "Next"),
+            ("Esc", "Close"),
+        ],
+        crate::state::FocusLayer::Preview | crate::state::FocusLayer::MarkdownPreview => {
+            &[("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
+        }
+        _ => &[
+            ("F1", "Help"),
+            ("F3", "View"),
+            ("F4", "Edit"),
+            ("F5", "Copy"),
+            ("F6", "Move"),
+            ("F7", "Mkdir"),
+            ("F8", "Delete"),
+            ("F10", "Quit"),
+        ],
+    };
+
+    let key_style = Style::default()
+        .fg(palette.status_bg)
+        .bg(palette.key_hint_fg)
+        .add_modifier(Modifier::BOLD);
+    let label_style = Style::default()
+        .fg(palette.text_primary)
+        .bg(palette.status_bg);
+    let sep_style = Style::default().bg(palette.status_bg);
+
+    let mut spans: Vec<Span> = Vec::new();
+    let mut used_width = 0u16;
+
+    for (key, label) in hints {
+        let key_text = format!(" {} ", key);
+        let label_text = format!(" {} ", label);
+        let segment_width = (key_text.chars().count() + label_text.chars().count()) as u16;
+        if used_width + segment_width > area.width {
+            break;
+        }
+        spans.push(Span::styled(key_text, key_style));
+        spans.push(Span::styled(label_text, label_style));
+        used_width += segment_width;
+    }
+
+    // Fill remainder with status background so the bar doesn't look torn.
+    if used_width < area.width {
+        spans.push(Span::styled(
+            " ".repeat((area.width - used_width) as usize),
+            sep_style,
+        ));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 #[cfg(test)]
