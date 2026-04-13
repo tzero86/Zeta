@@ -4,7 +4,10 @@
 //! `portable-pty`'s `try_clone_reader()` does not reliably deliver output
 //! on Windows ConPTY.  On Unix we keep `portable-pty` which works fine.
 
-use std::io::{self, Read, Write};
+use std::{
+    io::{self, Read, Write},
+    sync::{Arc, Mutex},
+};
 use std::path::Path;
 
 /// A running pseudo-terminal session.
@@ -147,7 +150,7 @@ impl PlatformPty {
 #[cfg(not(windows))]
 struct PlatformPty {
     master: Option<Box<dyn portable_pty::MasterPty + Send>>,
-    _child: Option<Box<dyn portable_pty::Child + Send>>,
+    _child: Option<Arc<Mutex<Box<dyn portable_pty::Child + Send>>>>,
 }
 
 #[cfg(not(windows))]
@@ -181,7 +184,7 @@ impl PlatformPty {
 
         Ok(Self {
             master: Some(pair.master),
-            _child: Some(child),
+            _child: Some(Arc::new(Mutex::new(child))),
         })
     }
 
@@ -221,15 +224,14 @@ impl PlatformPty {
     }
 
     fn exit_waiter(&self) -> io::Result<Box<dyn FnOnce() + Send>> {
-        let mut child = self
+        let child_arc_clone = self
             ._child
             .as_ref()
             .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no child process"))?
-            .try_clone()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .clone();
 
         Ok(Box::new(move || {
-            let _ = child.wait();
+            let _ = child_arc_clone.lock().unwrap().wait();
         }))
     }
 }

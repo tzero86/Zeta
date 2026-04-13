@@ -19,6 +19,7 @@ pub enum ThemePreset {
     Norton,
     Neon,
     Monochrome,
+    Dracula,
 }
 
 impl ThemePreset {
@@ -31,6 +32,7 @@ impl ThemePreset {
             Self::Norton => "norton",
             Self::Neon => "neon",
             Self::Monochrome => "monochrome",
+            Self::Dracula => "dracula",
         }
     }
 }
@@ -321,6 +323,11 @@ impl ThemePalette {
                 preset: String::from("monochrome"),
                 warning: None,
             },
+            ThemePreset::Dracula => ResolvedTheme {
+                palette: Self::dracula(),
+                preset: String::from("dracula"),
+                warning: None,
+            },
         }
     }
 
@@ -489,6 +496,33 @@ impl ThemePalette {
         }
     }
 
+    fn dracula() -> Self {
+        Self {
+            menu_bg: Color::Rgb(40, 42, 54), // #282A36
+            menu_fg: Color::Rgb(248, 248, 242), // #F8F8F2
+            menu_active_bg: Color::Rgb(68, 71, 90), // #44475A
+            menu_mnemonic_fg: Color::Rgb(255, 121, 198), // #FF79C6
+            border_focus: Color::Rgb(189, 147, 249), // #BD93F9
+            border_editor_focus: Color::Rgb(80, 250, 123), // #50FA7B
+            selection_bg: Color::Rgb(68, 71, 90), // #44475A
+            selection_fg: Color::Rgb(248, 248, 242), // #F8F8F2
+            surface_bg: Color::Rgb(40, 42, 54), // #282A36
+            tools_bg: Color::Rgb(52, 55, 70), // #343746
+            prompt_bg: Color::Rgb(33, 34, 44), // #21222C
+            prompt_border: Color::Rgb(189, 147, 249), // #BD93F9
+            text_primary: Color::Rgb(248, 248, 242), // #F8F8F2
+            text_muted: Color::Rgb(98, 114, 164), // #6272A4
+            directory_fg: Color::Rgb(139, 233, 253), // #8BE9FD
+            symlink_fg: Color::Rgb(80, 250, 123), // #50FA7B
+            file_fg: Color::Rgb(248, 248, 242), // #F8F8F2
+            status_bg: Color::Rgb(255, 184, 108), // #FFB86C
+            status_fg: Color::Rgb(40, 42, 54), // #282A36
+            logo_accent: Color::Rgb(255, 121, 198), // #FF79C6
+            key_hint_fg: Color::Rgb(241, 250, 140), // #F1FA8C
+            syntect_theme: "Dracula",
+        }
+    }
+
     fn norton() -> Self {
         // Classic Norton Commander: navy blue, gold, white, blue
         Self {
@@ -528,6 +562,7 @@ impl ThemePreset {
             "norton" => Some(Self::Norton),
             "neon" => Some(Self::Neon),
             "monochrome" => Some(Self::Monochrome),
+            "dracula" => Some(Self::Dracula),
             _ => None,
         }
     }

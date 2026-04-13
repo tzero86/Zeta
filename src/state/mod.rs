@@ -1074,7 +1074,8 @@ impl AppState {
                     ThemePreset::Sandbar => ThemePreset::Oxide,
                     ThemePreset::Oxide => ThemePreset::Matrix,
                     ThemePreset::Matrix => ThemePreset::Norton,
-                    ThemePreset::Norton => ThemePreset::Neon,
+                    ThemePreset::Norton => ThemePreset::Dracula,
+                    ThemePreset::Dracula => ThemePreset::Neon,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
@@ -1431,11 +1432,15 @@ impl AppState {
                 value: self.theme.preset.clone(),
                 hint: "Enter",
                 field: SettingsField::Theme(match self.theme.preset.as_str() {
+                    "fjord" => ThemePreset::Fjord,
                     "sandbar" => ThemePreset::Sandbar,
                     "oxide" => ThemePreset::Oxide,
                     "matrix" => ThemePreset::Matrix,
                     "norton" => ThemePreset::Norton,
-                    _ => ThemePreset::Fjord,
+                    "neon" => ThemePreset::Neon,
+                    "monochrome" => ThemePreset::Monochrome,
+                    "dracula" => ThemePreset::Dracula,
+                    _ => ThemePreset::Neon, // Fallback to Neon if an unknown theme string is somehow loaded
                 }),
             },
             SettingsEntry {
