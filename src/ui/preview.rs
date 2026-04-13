@@ -15,6 +15,8 @@ pub struct WrappedPreviewRow {
     pub line_tokens: HighlightedLine,
 }
 
+const PREVIEW_GUTTER_WIDTH: u16 = 4;
+
 pub fn wrap_preview_line(
     line_number: usize,
     line_tokens: &HighlightedLine,
@@ -90,9 +92,9 @@ pub fn wrap_preview_line(
 
 pub fn preview_gutter_label(line_number: usize, is_continuation: bool) -> String {
     if is_continuation {
-        "     ".to_string()
+        " ".repeat(PREVIEW_GUTTER_WIDTH as usize)
     } else {
-        format!("{:>4} ", line_number)
+        format!("{:>3} ", line_number)
     }
 }
 
@@ -109,7 +111,7 @@ pub fn render_wrapped_preview_view(
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(6), Constraint::Min(1)])
+        .constraints([Constraint::Length(PREVIEW_GUTTER_WIDTH), Constraint::Min(1)])
         .split(area);
     let gutter_area = chunks[0];
     let content_area = chunks[1];
@@ -187,15 +189,24 @@ pub fn render_wrapped_preview_view(
     }
 }
 
-pub fn render_preview_panel(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    view: Option<&ViewBuffer>,
-    filename: &str,
-    is_focused: bool,
-    palette: ThemePalette,
-    cheap_mode: bool,
-) {
+pub struct RenderPreviewArgs<'a> {
+    pub view: Option<&'a ViewBuffer>,
+    pub filename: &'a str,
+    pub is_focused: bool,
+    pub palette: ThemePalette,
+    pub cheap_mode: bool,
+    pub borders: Borders,
+}
+
+pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPreviewArgs<'_>) {
+    let RenderPreviewArgs {
+        view,
+        filename,
+        is_focused,
+        palette,
+        cheap_mode,
+        borders,
+    } = args;
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_focus)
@@ -206,7 +217,7 @@ pub fn render_preview_panel(
     let title = format!(" Preview  {} ", filename);
     let block = Block::default()
         .title(title)
-        .borders(Borders::ALL)
+        .borders(borders)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
     let inner = block.inner(area);
@@ -265,5 +276,24 @@ pub fn render_preview_panel(
                 render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::preview_gutter_label;
+
+    #[test]
+    fn preview_gutter_label_uses_four_columns_for_line_numbers() {
+        let label = preview_gutter_label(7, false);
+        assert_eq!(label, "  7 ");
+        assert_eq!(label.chars().count(), 4);
+    }
+
+    #[test]
+    fn preview_gutter_label_uses_four_columns_for_wrapped_rows() {
+        let label = preview_gutter_label(7, true);
+        assert_eq!(label, "    ");
+        assert_eq!(label.chars().count(), 4);
     }
 }

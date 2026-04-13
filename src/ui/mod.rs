@@ -34,7 +34,7 @@ use crate::ui::overlay::{
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
-use crate::ui::preview::render_preview_panel;
+use crate::ui::preview::{render_preview_panel, RenderPreviewArgs};
 use crate::ui::settings::render_settings_panel;
 use crate::ui::ssh::render_ssh_connect_dialog;
 
@@ -42,6 +42,18 @@ use ratatui::widgets::Borders;
 
 /// Render the full TUI. Returns a `LayoutCache` recording each panel's `Rect`
 /// so the event loop can use it for mouse hit-testing without re-running layout.
+fn tool_outer_borders(is_split: bool, is_primary: bool) -> Borders {
+    if is_split {
+        if is_primary {
+            Borders::TOP | Borders::BOTTOM
+        } else {
+            Borders::TOP | Borders::LEFT | Borders::BOTTOM
+        }
+    } else {
+        Borders::TOP | Borders::BOTTOM
+    }
+}
+
 pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let palette = state.theme().palette;
     let areas = Layout::default()
@@ -138,7 +150,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 label: first_label,
                 is_focused: left_focused,
                 is_left: true,
-                borders: Borders::TOP | Borders::LEFT | Borders::BOTTOM,
+                borders: pane::pane_outer_borders(state.pane_layout(), true),
                 state,
                 git: state.git_status(PaneId::Left),
             },
@@ -152,7 +164,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 label: second_label,
                 is_focused: right_focused,
                 is_left: false,
-                borders: Borders::ALL,
+                borders: pane::pane_outer_borders(state.pane_layout(), false),
                 state,
                 git: state.git_status(PaneId::Right),
             },
@@ -203,6 +215,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         loading: editor_loading,
                         cheap_mode: cheap_tools_mode && !editor_focused,
                         cheap_tab_width: ed_cfg.tab_width,
+                        borders: tool_outer_borders(md_area_opt.is_some(), true),
                     },
                 );
 
@@ -216,7 +229,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                             .join("\n");
                         let block = ratatui::widgets::Block::default()
                             .title(" Markdown Preview ")
-                            .borders(ratatui::widgets::Borders::ALL)
+                            .borders(tool_outer_borders(true, false))
                             .border_style(ratatui::style::Style::default().fg(palette.text_muted))
                             .style(ratatui::style::Style::default().bg(palette.tools_bg));
                         let inner = block.inner(md_area);
@@ -228,7 +241,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         );
                     } else {
                         render_markdown_preview(
-                            frame, md_area, &source, palette, md_scroll, md_focused,
+                            frame,
+                            md_area,
+                            &source,
+                            palette,
+                            md_scroll,
+                            md_focused,
+                            tool_outer_borders(true, false),
                         );
                     }
                 }
@@ -240,11 +259,14 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             render_preview_panel(
                 frame,
                 tools_area,
-                preview_view,
-                &filename,
-                state.is_preview_focused(),
-                palette,
-                cheap_tools_mode && !state.is_preview_focused(),
+                RenderPreviewArgs {
+                    view: preview_view,
+                    filename: &filename,
+                    is_focused: state.is_preview_focused(),
+                    palette,
+                    cheap_mode: cheap_tools_mode && !state.is_preview_focused(),
+                    borders: tool_outer_borders(false, true),
+                },
             );
         }
     }
@@ -443,16 +465,19 @@ mod tests {
     use crate::icon::icon_for_kind;
     use crate::palette::all_entries;
     use crate::preview::ViewBuffer;
+    use crate::state::PaneLayout;
     use ratatui::layout::Rect;
     use ratatui::style::{Color, Modifier};
+    use ratatui::widgets::Borders;
 
     use super::editor::editor_render_state;
     use super::menu_bar::top_bar_logo_spans;
-    use super::pane::{format_icon_slot, pane_chrome_style};
+    use super::pane::{format_icon_slot, pane_chrome_style, pane_outer_borders};
     use super::styles::{
         command_palette_entry_hint_style, command_palette_entry_label_style,
         command_palette_header_style, elevated_surface_style, overlay_title_style,
     };
+    use super::tool_outer_borders;
 
     fn test_palette() -> ThemePalette {
         ThemePalette {
@@ -510,6 +535,49 @@ mod tests {
         let s = overlay_title_style(p);
         assert_eq!(s.fg, Some(p.menu_mnemonic_fg));
         assert!(s.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn side_by_side_pane_borders_trim_outer_left_and_right_edges() {
+        assert_eq!(
+            pane_outer_borders(PaneLayout::SideBySide, true),
+            Borders::TOP | Borders::BOTTOM
+        );
+        assert_eq!(
+            pane_outer_borders(PaneLayout::SideBySide, false),
+            Borders::TOP | Borders::LEFT | Borders::BOTTOM
+        );
+    }
+
+    #[test]
+    fn stacked_pane_borders_trim_outer_side_edges() {
+        assert_eq!(
+            pane_outer_borders(PaneLayout::Stacked, true),
+            Borders::TOP | Borders::BOTTOM
+        );
+        assert_eq!(
+            pane_outer_borders(PaneLayout::Stacked, false),
+            Borders::BOTTOM
+        );
+    }
+    #[test]
+    fn single_tool_panel_borders_trim_outer_left_and_right_edges() {
+        assert_eq!(
+            tool_outer_borders(false, true),
+            Borders::TOP | Borders::BOTTOM
+        );
+    }
+
+    #[test]
+    fn split_tool_panels_keep_only_internal_separator() {
+        assert_eq!(
+            tool_outer_borders(true, true),
+            Borders::TOP | Borders::BOTTOM
+        );
+        assert_eq!(
+            tool_outer_borders(true, false),
+            Borders::TOP | Borders::LEFT | Borders::BOTTOM
+        );
     }
 
     #[test]

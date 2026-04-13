@@ -10,7 +10,7 @@ use crate::fs::{EntryInfo, EntryKind};
 use crate::git::{FileStatus, RepoStatus};
 use crate::icon::icon_for_kind;
 use crate::pane::PaneState;
-use crate::state::AppState;
+use crate::state::{AppState, PaneLayout};
 
 pub struct PaneChrome {
     pub border: Style,
@@ -59,6 +59,25 @@ pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome 
             border: Style::default().fg(palette.text_muted),
             title: Style::default().fg(palette.text_muted),
             surface: Style::default().bg(palette.tools_bg),
+        }
+    }
+}
+
+pub fn pane_outer_borders(layout: PaneLayout, is_primary: bool) -> Borders {
+    match layout {
+        PaneLayout::SideBySide => {
+            if is_primary {
+                Borders::TOP | Borders::BOTTOM
+            } else {
+                Borders::TOP | Borders::LEFT | Borders::BOTTOM
+            }
+        }
+        PaneLayout::Stacked => {
+            if is_primary {
+                Borders::TOP | Borders::BOTTOM
+            } else {
+                Borders::BOTTOM
+            }
         }
     }
 }
