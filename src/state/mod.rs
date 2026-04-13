@@ -697,9 +697,8 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message = format!(
-                        "confirm permanent delete for {count} marked items: {preview}"
-                    );
+                    self.status_message =
+                        format!("confirm permanent delete for {count} marked items: {preview}");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let entry_name = entry.name.clone();
                     let entry_path = entry.path.clone();
@@ -807,52 +806,51 @@ impl AppState {
                             let batch_sources: BTreeSet<PathBuf> =
                                 prompt.source_paths.iter().cloned().collect();
                             for source in &prompt.source_paths {
-                                let (operation, refresh_path) =
-                                    match kind {
-                                        PromptKind::Copy => {
-                                            let target_path = source
-                                                .file_name()
-                                                .map(|n| dest_dir.join(n))
-                                                .unwrap_or_else(|| dest_dir.clone());
-                                            let copy_target =
-                                                if Self::archive_member_source(source).is_some() {
-                                                    dest_dir.clone()
-                                                } else {
-                                                    target_path.clone()
-                                                };
-                                            let operation =
-                                                self.copy_operation_for_source(source, &copy_target);
-                                            let refresh_path =
-                                                self.refresh_target_path_for_transfer(source, &copy_target);
-                                            (Some(operation), refresh_path)
-                                        }
-                                        PromptKind::Move => {
-                                            let target_path = source
-                                                .file_name()
-                                                .map(|n| dest_dir.join(n))
-                                                .unwrap_or_else(|| dest_dir.clone());
-                                            let operation = FileOperation::Move {
-                                                source: source.clone(),
-                                                destination: target_path.clone(),
+                                let (operation, refresh_path) = match kind {
+                                    PromptKind::Copy => {
+                                        let target_path = source
+                                            .file_name()
+                                            .map(|n| dest_dir.join(n))
+                                            .unwrap_or_else(|| dest_dir.clone());
+                                        let copy_target =
+                                            if Self::archive_member_source(source).is_some() {
+                                                dest_dir.clone()
+                                            } else {
+                                                target_path.clone()
                                             };
-                                            let refresh_path = self
-                                                .refresh_target_path_for_transfer(source, &target_path);
-                                            (Some(operation), refresh_path)
-                                        }
-                                        PromptKind::Trash => (
-                                            Some(FileOperation::Trash {
-                                                path: source.clone(),
-                                            }),
-                                            self.panes.active_pane().cwd.clone(),
-                                        ),
-                                        PromptKind::Delete => (
-                                            Some(FileOperation::Delete {
-                                                path: source.clone(),
-                                            }),
-                                            self.panes.active_pane().cwd.clone(),
-                                        ),
-                                        _ => (None, self.panes.active_pane().cwd.clone()),
-                                    };
+                                        let operation =
+                                            self.copy_operation_for_source(source, &copy_target);
+                                        let refresh_path = self
+                                            .refresh_target_path_for_transfer(source, &copy_target);
+                                        (Some(operation), refresh_path)
+                                    }
+                                    PromptKind::Move => {
+                                        let target_path = source
+                                            .file_name()
+                                            .map(|n| dest_dir.join(n))
+                                            .unwrap_or_else(|| dest_dir.clone());
+                                        let operation = FileOperation::Move {
+                                            source: source.clone(),
+                                            destination: target_path.clone(),
+                                        };
+                                        let refresh_path = self
+                                            .refresh_target_path_for_transfer(source, &target_path);
+                                        (Some(operation), refresh_path)
+                                    }
+                                    PromptKind::Trash => (
+                                        Some(FileOperation::Trash {
+                                            path: source.clone(),
+                                        }),
+                                        self.panes.active_pane().cwd.clone(),
+                                    ),
+                                    PromptKind::Delete => (
+                                        Some(FileOperation::Delete {
+                                            path: source.clone(),
+                                        }),
+                                        self.panes.active_pane().cwd.clone(),
+                                    ),
+                                    _ => (None, self.panes.active_pane().cwd.clone()),
+                                };
                                 if let Some(op) = operation {
                                     commands.push(Command::RunFileOperation {
                                         operation: op,
@@ -924,14 +922,18 @@ impl AppState {
                                             destination,
                                         }),
                                     }
-                                })
+                                }),
                             };
                             let should_close_overlay = if let Some(operation) = operation {
                                 let refresh_path = match &operation {
-                                    FileOperation::Copy { source, destination }
-                                    | FileOperation::Move { source, destination } => {
-                                        self.refresh_target_path_for_transfer(source, destination)
+                                    FileOperation::Copy {
+                                        source,
+                                        destination,
                                     }
+                                    | FileOperation::Move {
+                                        source,
+                                        destination,
+                                    } => self.refresh_target_path_for_transfer(source, destination),
                                     FileOperation::ExtractArchive { destination, .. } => {
                                         destination.clone()
                                     }
@@ -1864,10 +1866,7 @@ impl AppState {
         if name == current {
             return Ok(None);
         }
-        let parent = source
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_default();
+        let parent = source.parent().map(Path::to_path_buf).unwrap_or_default();
         Ok(Some(parent.join(name)))
     }
 
@@ -1878,7 +1877,11 @@ impl AppState {
             FileOperation::Rename { source, .. } => source.clone(),
             FileOperation::Trash { path } => path.clone(),
             FileOperation::Delete { path } => path.clone(),
-            FileOperation::ExtractArchive { archive, inner_path, .. } => archive.join(inner_path),
+            FileOperation::ExtractArchive {
+                archive,
+                inner_path,
+                ..
+            } => archive.join(inner_path),
             FileOperation::CreateDirectory { path } | FileOperation::CreateFile { path } => {
                 path.clone()
             }
@@ -2465,140 +2468,162 @@ mod tests {
         );
     }
 
-#[test]
-fn batch_prompt_submit_does_not_clear_marks_at_dispatch() {
-    let mut state = test_state();
-    state.panes.right.cwd = PathBuf::from("/tmp/target");
-    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
-    let mut prompt = PromptState::with_value(
-        PromptKind::Copy,
-        "Copy Marked Items",
-        PathBuf::from("/tmp/target"),
-        None,
-        String::from("/tmp/target"),
-    );
-    prompt.source_paths = vec![PathBuf::from("./note.txt")];
-    state.overlay.open_prompt(prompt);
+    #[test]
+    fn batch_prompt_submit_does_not_clear_marks_at_dispatch() {
+        let mut state = test_state();
+        state.panes.right.cwd = PathBuf::from("/tmp/target");
+        state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+        let mut prompt = PromptState::with_value(
+            PromptKind::Copy,
+            "Copy Marked Items",
+            PathBuf::from("/tmp/target"),
+            None,
+            String::from("/tmp/target"),
+        );
+        prompt.source_paths = vec![PathBuf::from("./note.txt")];
+        state.overlay.open_prompt(prompt);
 
-    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    assert_eq!(commands.len(), 1);
-    assert_eq!(state.panes.left.marked_count(), 1);
-    assert!(state.pending_batch.is_some());
-}
+        assert_eq!(commands.len(), 1);
+        assert_eq!(state.panes.left.marked_count(), 1);
+        assert!(state.pending_batch.is_some());
+    }
 
-#[test]
-fn batch_full_success_clears_marks_and_sets_completed_status() {
-    let mut state = test_state();
-    state.panes.right.cwd = PathBuf::from("/tmp/target");
-    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
-    let mut prompt = PromptState::with_value(
-        PromptKind::Copy,
-        "Copy Marked Items",
-        PathBuf::from("/tmp/target"),
-        None,
-        String::from("/tmp/target"),
-    );
-    prompt.source_paths = vec![PathBuf::from("./note.txt")];
-    state.overlay.open_prompt(prompt);
-    state.apply(Action::PromptSubmit).expect("submit should work");
+    #[test]
+    fn batch_full_success_clears_marks_and_sets_completed_status() {
+        let mut state = test_state();
+        state.panes.right.cwd = PathBuf::from("/tmp/target");
+        state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+        let mut prompt = PromptState::with_value(
+            PromptKind::Copy,
+            "Copy Marked Items",
+            PathBuf::from("/tmp/target"),
+            None,
+            String::from("/tmp/target"),
+        );
+        prompt.source_paths = vec![PathBuf::from("./note.txt")];
+        state.overlay.open_prompt(prompt);
+        state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    state.file_operation_status = Some(FileOperationStatus {
-        operation: "copy",
-        completed: 1,
-        total: 1,
-        current_path: PathBuf::from("./note.txt"),
-    });
-    state.apply_job_result(JobResult::FileOperationCompleted {
-        message: String::from("copied"),
-        refreshed: Vec::new(),
-        elapsed_ms: 1,
-    });
+        state.file_operation_status = Some(FileOperationStatus {
+            operation: "copy",
+            completed: 1,
+            total: 1,
+            current_path: PathBuf::from("./note.txt"),
+        });
+        state.apply_job_result(JobResult::FileOperationCompleted {
+            message: String::from("copied"),
+            refreshed: Vec::new(),
+            elapsed_ms: 1,
+        });
 
-    assert_eq!(state.panes.left.marked_count(), 0);
-    assert!(state.pending_batch.is_none());
-    assert_eq!(state.status_message, "completed 1 items");
-}
+        assert_eq!(state.panes.left.marked_count(), 0);
+        assert!(state.pending_batch.is_none());
+        assert_eq!(state.status_message, "completed 1 items");
+    }
 
-#[test]
-fn batch_partial_failure_keeps_failed_marks_only() {
-    let mut state = test_state();
-    state.panes.right.cwd = PathBuf::from("/tmp/target");
-    state.panes.left.entries.push(EntryInfo {
-        name: String::from("two.txt"),
-        path: PathBuf::from("./two.txt"),
-        kind: EntryKind::File,
-        size_bytes: Some(64),
-        modified: None,
-    });
-    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
-    state.panes.left.marked.insert(PathBuf::from("./two.txt"));
-    let mut prompt = PromptState::with_value(
-        PromptKind::Copy,
-        "Copy Marked Items",
-        PathBuf::from("/tmp/target"),
-        None,
-        String::from("/tmp/target"),
-    );
-    prompt.source_paths = vec![PathBuf::from("./note.txt"), PathBuf::from("./two.txt")];
-    state.overlay.open_prompt(prompt);
-    state.apply(Action::PromptSubmit).expect("submit should work");
+    #[test]
+    fn batch_partial_failure_keeps_failed_marks_only() {
+        let mut state = test_state();
+        state.panes.right.cwd = PathBuf::from("/tmp/target");
+        state.panes.left.entries.push(EntryInfo {
+            name: String::from("two.txt"),
+            path: PathBuf::from("./two.txt"),
+            kind: EntryKind::File,
+            size_bytes: Some(64),
+            modified: None,
+        });
+        state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+        state.panes.left.marked.insert(PathBuf::from("./two.txt"));
+        let mut prompt = PromptState::with_value(
+            PromptKind::Copy,
+            "Copy Marked Items",
+            PathBuf::from("/tmp/target"),
+            None,
+            String::from("/tmp/target"),
+        );
+        prompt.source_paths = vec![PathBuf::from("./note.txt"), PathBuf::from("./two.txt")];
+        state.overlay.open_prompt(prompt);
+        state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    state.file_operation_status = Some(FileOperationStatus {
-        operation: "copy",
-        completed: 1,
-        total: 2,
-        current_path: PathBuf::from("./note.txt"),
-    });
-    state.apply_job_result(JobResult::FileOperationCompleted {
-        message: String::from("copied"),
-        refreshed: Vec::new(),
-        elapsed_ms: 1,
-    });
-    assert_eq!(state.panes.left.marked_count(), 2);
-    assert!(state.pending_batch.is_some());
+        state.file_operation_status = Some(FileOperationStatus {
+            operation: "copy",
+            completed: 1,
+            total: 2,
+            current_path: PathBuf::from("./note.txt"),
+        });
+        state.apply_job_result(JobResult::FileOperationCompleted {
+            message: String::from("copied"),
+            refreshed: Vec::new(),
+            elapsed_ms: 1,
+        });
+        assert_eq!(state.panes.left.marked_count(), 2);
+        assert!(state.pending_batch.is_some());
 
-    state.apply_job_result(JobResult::JobFailed {
-        pane: PaneId::Left,
-        path: PathBuf::from("./two.txt"),
-        message: String::from("permission denied"),
-        elapsed_ms: 2,
-    });
+        state.apply_job_result(JobResult::JobFailed {
+            pane: PaneId::Left,
+            path: PathBuf::from("./two.txt"),
+            message: String::from("permission denied"),
+            elapsed_ms: 2,
+        });
 
-    assert!(!state.panes.left.marked.contains(&PathBuf::from("./note.txt")));
-    assert!(state.panes.left.marked.contains(&PathBuf::from("./two.txt")));
-    assert!(state.pending_batch.is_none());
-    assert_eq!(state.status_message, "partially completed: 1 succeeded, 1 failed");
-}
+        assert!(!state
+            .panes
+            .left
+            .marked
+            .contains(&PathBuf::from("./note.txt")));
+        assert!(state
+            .panes
+            .left
+            .marked
+            .contains(&PathBuf::from("./two.txt")));
+        assert!(state.pending_batch.is_none());
+        assert_eq!(
+            state.status_message,
+            "partially completed: 1 succeeded, 1 failed"
+        );
+    }
 
-#[test]
-fn batch_full_failure_keeps_marks_and_reports_failed_status() {
-    let mut state = test_state();
-    state.panes.right.cwd = PathBuf::from("/tmp/target");
-    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
-    let mut prompt = PromptState::with_value(
-        PromptKind::Delete,
-        "Delete Marked Items Permanently",
-        PathBuf::from("."),
-        None,
-        String::new(),
-    );
-    prompt.source_paths = vec![PathBuf::from("./note.txt")];
-    state.overlay.open_prompt(prompt);
-    state.apply(Action::PromptSubmit).expect("submit should work");
+    #[test]
+    fn batch_full_failure_keeps_marks_and_reports_failed_status() {
+        let mut state = test_state();
+        state.panes.right.cwd = PathBuf::from("/tmp/target");
+        state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+        let mut prompt = PromptState::with_value(
+            PromptKind::Delete,
+            "Delete Marked Items Permanently",
+            PathBuf::from("."),
+            None,
+            String::new(),
+        );
+        prompt.source_paths = vec![PathBuf::from("./note.txt")];
+        state.overlay.open_prompt(prompt);
+        state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    state.apply_job_result(JobResult::JobFailed {
-        pane: PaneId::Left,
-        path: PathBuf::from("./note.txt"),
-        message: String::from("permission denied"),
-        elapsed_ms: 2,
-    });
+        state.apply_job_result(JobResult::JobFailed {
+            pane: PaneId::Left,
+            path: PathBuf::from("./note.txt"),
+            message: String::from("permission denied"),
+            elapsed_ms: 2,
+        });
 
-    assert!(state.panes.left.marked.contains(&PathBuf::from("./note.txt")));
-    assert!(state.pending_batch.is_none());
-    assert_eq!(state.status_message, "failed 1 items");
-}
-
+        assert!(state
+            .panes
+            .left
+            .marked
+            .contains(&PathBuf::from("./note.txt")));
+        assert!(state.pending_batch.is_none());
+        assert_eq!(state.status_message, "failed 1 items");
+    }
 
     #[test]
     fn toggle_hidden_files_flips_active_pane_flag() {
@@ -2875,7 +2900,6 @@ fn batch_full_failure_keeps_marks_and_reports_failed_status() {
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
 
-
     #[test]
     fn collision_job_result_opens_resolution_dialog() {
         let mut state = test_state();
@@ -2963,76 +2987,82 @@ fn batch_full_failure_keeps_marks_and_reports_failed_status() {
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
 
-#[test]
-fn prompt_submit_rename_rejects_path_like_targets() {
-    let mut state = test_state();
-    state.overlay.open_prompt(PromptState::with_value(
-        PromptKind::Rename,
-        "Rename",
-        PathBuf::from("/tmp/base"),
-        Some(PathBuf::from("/tmp/base/old.txt")),
-        String::from("nested/new.txt"),
-    ));
+    #[test]
+    fn prompt_submit_rename_rejects_path_like_targets() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Rename,
+            "Rename",
+            PathBuf::from("/tmp/base"),
+            Some(PathBuf::from("/tmp/base/old.txt")),
+            String::from("nested/new.txt"),
+        ));
 
-    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    assert!(commands.is_empty());
-    assert_eq!(state.status_message, "rename target must be a name, not a path");
-    assert!(state.overlay.prompt().is_some());
-}
+        assert!(commands.is_empty());
+        assert_eq!(
+            state.status_message,
+            "rename target must be a name, not a path"
+        );
+        assert!(state.overlay.prompt().is_some());
+    }
 
-#[test]
-fn prompt_submit_rename_same_name_is_no_op() {
-    let mut state = test_state();
-    state.overlay.open_prompt(PromptState::with_value(
-        PromptKind::Rename,
-        "Rename",
-        PathBuf::from("/tmp/base"),
-        Some(PathBuf::from("/tmp/base/old.txt")),
-        String::from("old.txt"),
-    ));
+    #[test]
+    fn prompt_submit_rename_same_name_is_no_op() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Rename,
+            "Rename",
+            PathBuf::from("/tmp/base"),
+            Some(PathBuf::from("/tmp/base/old.txt")),
+            String::from("old.txt"),
+        ));
 
-    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+        let commands = state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
 
-    assert!(commands.is_empty());
-    assert_eq!(state.status_message, "rename unchanged");
-    assert!(state.overlay.prompt().is_some());
-}
+        assert!(commands.is_empty());
+        assert_eq!(state.status_message, "rename unchanged");
+        assert!(state.overlay.prompt().is_some());
+    }
 
-#[test]
-fn inline_rename_empty_name_keeps_editor_open_and_sets_status() {
-    let mut state = test_state();
-    state.panes.left.rename_state = Some(InlineRenameState {
-        buffer: String::from("   "),
-        original_path: PathBuf::from("./note.txt"),
-    });
+    #[test]
+    fn inline_rename_empty_name_keeps_editor_open_and_sets_status() {
+        let mut state = test_state();
+        state.panes.left.rename_state = Some(InlineRenameState {
+            buffer: String::from("   "),
+            original_path: PathBuf::from("./note.txt"),
+        });
 
-    let commands = state
-        .apply(Action::ConfirmInlineRename)
-        .expect("inline rename should validate");
+        let commands = state
+            .apply(Action::ConfirmInlineRename)
+            .expect("inline rename should validate");
 
-    assert!(commands.is_empty());
-    assert_eq!(state.status_message, "name cannot be empty");
-    assert!(state.panes.left.rename_state.is_some());
-}
+        assert!(commands.is_empty());
+        assert_eq!(state.status_message, "name cannot be empty");
+        assert!(state.panes.left.rename_state.is_some());
+    }
 
-#[test]
-fn inline_rename_same_name_is_no_op() {
-    let mut state = test_state();
-    state.panes.left.rename_state = Some(InlineRenameState {
-        buffer: String::from("note.txt"),
-        original_path: PathBuf::from("./note.txt"),
-    });
+    #[test]
+    fn inline_rename_same_name_is_no_op() {
+        let mut state = test_state();
+        state.panes.left.rename_state = Some(InlineRenameState {
+            buffer: String::from("note.txt"),
+            original_path: PathBuf::from("./note.txt"),
+        });
 
-    let commands = state
-        .apply(Action::ConfirmInlineRename)
-        .expect("inline rename should validate");
+        let commands = state
+            .apply(Action::ConfirmInlineRename)
+            .expect("inline rename should validate");
 
-    assert!(commands.is_empty());
-    assert_eq!(state.status_message, "rename unchanged");
-    assert!(state.panes.left.rename_state.is_none());
-}
-
+        assert!(commands.is_empty());
+        assert_eq!(state.status_message, "rename unchanged");
+        assert!(state.panes.left.rename_state.is_none());
+    }
 
     #[test]
     fn resolve_prompt_target_joins_relative_values_to_base_path() {
@@ -3087,37 +3117,39 @@ fn inline_rename_same_name_is_no_op() {
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
 
+    #[test]
+    fn open_delete_prompt_summarizes_marked_items() {
+        let mut state = test_state();
+        state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
+        state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
 
-#[test]
-fn open_delete_prompt_summarizes_marked_items() {
-    let mut state = test_state();
-    state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
-    state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("trash prompt should open");
 
-    state
-        .apply(Action::OpenDeletePrompt)
-        .expect("trash prompt should open");
+        assert!(state.overlay.prompt().is_some());
+        assert!(state.status_message.contains("2 marked items"));
+        assert!(
+            state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt")
+        );
+    }
 
-    assert!(state.overlay.prompt().is_some());
-    assert!(state.status_message.contains("2 marked items"));
-    assert!(state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt"));
-}
+    #[test]
+    fn open_permanent_delete_prompt_summarizes_marked_items() {
+        let mut state = test_state();
+        state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
+        state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
 
-#[test]
-fn open_permanent_delete_prompt_summarizes_marked_items() {
-    let mut state = test_state();
-    state.panes.left.marked.insert(PathBuf::from("./beta.txt"));
-    state.panes.left.marked.insert(PathBuf::from("./alpha.txt"));
+        state
+            .apply(Action::OpenPermanentDeletePrompt)
+            .expect("delete prompt should open");
 
-    state
-        .apply(Action::OpenPermanentDeletePrompt)
-        .expect("delete prompt should open");
-
-    assert!(state.overlay.prompt().is_some());
-    assert!(state.status_message.contains("2 marked items"));
-    assert!(state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt"));
-}
-
+        assert!(state.overlay.prompt().is_some());
+        assert!(state.status_message.contains("2 marked items"));
+        assert!(
+            state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt")
+        );
+    }
 
     #[test]
     fn open_delete_prompt_sets_trash_confirmation_message() {
