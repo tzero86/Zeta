@@ -20,6 +20,7 @@ pub enum ThemePreset {
     Neon,
     Monochrome,
     Dracula,
+    Zeta,
 }
 
 impl ThemePreset {
@@ -33,6 +34,7 @@ impl ThemePreset {
             Self::Neon => "neon",
             Self::Monochrome => "monochrome",
             Self::Dracula => "dracula",
+            Self::Zeta => "zeta",
         }
     }
 }
@@ -231,7 +233,7 @@ pub struct ThemeConfig {
 impl Default for ThemeConfig {
     fn default() -> Self {
         Self {
-            preset: String::from("neon"),
+            preset: String::from("zeta"),
             status_bar_label: String::from("Zeta"),
         }
     }
@@ -276,10 +278,10 @@ impl ThemePalette {
         match ThemePreset::from_name(&config.preset) {
             Some(preset) => Self::from_preset(preset),
             None => ResolvedTheme {
-                palette: Self::neon(),
-                preset: String::from("neon"),
+                palette: Self::zeta(),
+                preset: String::from("zeta"),
                 warning: Some(format!(
-                    "unknown theme preset '{}', using neon",
+                    "unknown theme preset '{}', using zeta",
                     config.preset
                 )),
             },
@@ -326,6 +328,11 @@ impl ThemePalette {
             ThemePreset::Dracula => ResolvedTheme {
                 palette: Self::dracula(),
                 preset: String::from("dracula"),
+                warning: None,
+            },
+            ThemePreset::Zeta => ResolvedTheme {
+                palette: Self::zeta(),
+                preset: String::from("zeta"),
                 warning: None,
             },
         }
@@ -550,6 +557,34 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
         }
     }
+    fn zeta() -> Self {
+        // Official Zeta theme: deep slate + periwinkle blue.
+        // Signature accent: #82aaff (periwinkle). Secondary: #ff9e64 (amber).
+        Self {
+            menu_bg: Color::Rgb(26, 27, 46),
+            menu_fg: Color::Rgb(200, 211, 245),
+            menu_active_bg: Color::Rgb(45, 48, 96),
+            menu_mnemonic_fg: Color::Rgb(255, 158, 100),
+            border_focus: Color::Rgb(130, 170, 255),
+            border_editor_focus: Color::Rgb(195, 232, 141),
+            selection_bg: Color::Rgb(45, 48, 96),
+            selection_fg: Color::Rgb(200, 211, 245),
+            surface_bg: Color::Rgb(26, 27, 46),
+            tools_bg: Color::Rgb(30, 32, 48),
+            prompt_bg: Color::Rgb(22, 22, 37),
+            prompt_border: Color::Rgb(130, 170, 255),
+            text_primary: Color::Rgb(200, 211, 245),
+            text_muted: Color::Rgb(84, 92, 126),
+            directory_fg: Color::Rgb(130, 170, 255),
+            symlink_fg: Color::Rgb(195, 232, 141),
+            file_fg: Color::Rgb(169, 184, 232),
+            status_bg: Color::Rgb(45, 48, 96),
+            status_fg: Color::Rgb(200, 211, 245),
+            logo_accent: Color::Rgb(255, 158, 100),
+            key_hint_fg: Color::Rgb(130, 170, 255),
+            syntect_theme: "base16-ocean.dark",
+        }
+    }
 }
 
 impl ThemePreset {
@@ -563,6 +598,7 @@ impl ThemePreset {
             "neon" => Some(Self::Neon),
             "monochrome" => Some(Self::Monochrome),
             "dracula" => Some(Self::Dracula),
+            "zeta" => Some(Self::Zeta),
             _ => None,
         }
     }

@@ -168,7 +168,13 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             MenuId::Themes => vec![
                 MenuItem {
-                    label: "Theme: Neon (default)",
+                    label: "Theme: Zeta (default)",
+                    shortcut: "Z",
+                    mnemonic: 'z',
+                    action: Action::SetTheme(ThemePreset::Zeta),
+                },
+                MenuItem {
+                    label: "Theme: Neon",
                     shortcut: "E",
                     mnemonic: 'e',
                     action: Action::SetTheme(ThemePreset::Neon),
@@ -374,7 +380,13 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             MenuId::Themes => vec![
                 MenuItem {
-                    label: "Theme: Neon (default)",
+                    label: "Theme: Zeta (default)",
+                    shortcut: "Z",
+                    mnemonic: 'z',
+                    action: Action::SetTheme(ThemePreset::Zeta),
+                },
+                MenuItem {
+                    label: "Theme: Neon",
                     shortcut: "E",
                     mnemonic: 'e',
                     action: Action::SetTheme(ThemePreset::Neon),

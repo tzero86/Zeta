@@ -1070,6 +1070,7 @@ impl AppState {
         match entry.field {
             SettingsField::Theme(current) => {
                 let next = match current {
+                    ThemePreset::Zeta => ThemePreset::Neon,
                     ThemePreset::Neon => ThemePreset::Monochrome,
                     ThemePreset::Monochrome => ThemePreset::Fjord,
                     ThemePreset::Fjord => ThemePreset::Sandbar,
@@ -1077,7 +1078,7 @@ impl AppState {
                     ThemePreset::Oxide => ThemePreset::Matrix,
                     ThemePreset::Matrix => ThemePreset::Norton,
                     ThemePreset::Norton => ThemePreset::Dracula,
-                    ThemePreset::Dracula => ThemePreset::Neon,
+                    ThemePreset::Dracula => ThemePreset::Zeta,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();

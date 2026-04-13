@@ -393,13 +393,13 @@ fn render_key_hints(
     };
 
     let key_style = Style::default()
-        .fg(palette.status_bg)
+        .fg(palette.surface_bg)
         .bg(palette.key_hint_fg)
         .add_modifier(Modifier::BOLD);
     let label_style = Style::default()
         .fg(palette.text_primary)
-        .bg(palette.status_bg);
-    let sep_style = Style::default().bg(palette.status_bg);
+        .bg(palette.surface_bg);
+    let sep_style = Style::default().bg(palette.surface_bg);
 
     let mut spans: Vec<Span> = Vec::new();
     let mut used_width = 0u16;

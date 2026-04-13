@@ -233,7 +233,13 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "Appearance",
-            label: "Theme: Neon (default)",
+            label: "Theme: Zeta (default)",
+            hint: "zeta",
+            action: Action::SetTheme(ThemePreset::Zeta),
+        },
+        PaletteEntry {
+            category: "Appearance",
+            label: "Theme: Neon",
             hint: "neon",
             action: Action::SetTheme(ThemePreset::Neon),
         },
