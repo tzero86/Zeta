@@ -16,7 +16,7 @@ pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -28,7 +28,7 @@ use crate::editor::EditorBuffer;
 use crate::finder::FileFinderState;
 use crate::fs;
 use crate::fs::EntryKind;
-use crate::jobs::{FileOperationStatus, JobResult};
+use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
 use crate::pane::{InlineRenameState, PaneId, PaneState};
 pub use ssh::*;
 
@@ -42,10 +42,9 @@ pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
 #[derive(Debug)]
 struct PendingBatchOperation {
     pane: PaneId,
-    queued_sources: VecDeque<PathBuf>,
+    pending_operations: Vec<FileOperationIdentity>,
     original_sources: BTreeSet<PathBuf>,
     failed_sources: BTreeSet<PathBuf>,
-    settled_count: usize,
     total_count: usize,
 }
 
@@ -804,10 +803,9 @@ impl AppState {
                                 }
                             };
                             let count = prompt.source_paths.len();
-                            let queued_sources: VecDeque<PathBuf> =
-                                prompt.source_paths.iter().cloned().collect();
                             let batch_sources: BTreeSet<PathBuf> =
-                                queued_sources.iter().cloned().collect();
+                                prompt.source_paths.iter().cloned().collect();
+                            let mut pending_operations = Vec::with_capacity(count);
                             for source in &prompt.source_paths {
                                 let (operation, refresh_path) = match kind {
                                     PromptKind::Copy => {
@@ -855,6 +853,8 @@ impl AppState {
                                     _ => (None, self.panes.active_pane().cwd.clone()),
                                 };
                                 if let Some(op) = operation {
+                                    pending_operations
+                                        .push(FileOperationIdentity::from_operation(&op));
                                     commands.push(Command::RunFileOperation {
                                         operation: op,
                                         refresh: self
@@ -865,10 +865,9 @@ impl AppState {
                             }
                             self.pending_batch = Some(PendingBatchOperation {
                                 pane: self.panes.focused_pane_id(),
-                                queued_sources,
+                                pending_operations,
                                 original_sources: batch_sources,
                                 failed_sources: BTreeSet::new(),
-                                settled_count: 0,
                                 total_count: count,
                             });
                             self.overlay.close_all();
@@ -1240,6 +1239,7 @@ impl AppState {
                 }
             }
             JobResult::FileOperationCompleted {
+                identity,
                 message,
                 refreshed,
                 elapsed_ms,
@@ -1251,7 +1251,7 @@ impl AppState {
                     self.panes.pane_mut(pane.pane).set_entries(pane.entries);
                 }
                 if self.pending_batch.is_some() {
-                    self.note_batch_settled(None, false);
+                    self.note_batch_settled(&identity, false);
                     if self.pending_batch.is_some() {
                         self.status_message = format!("{message} in {elapsed_ms} ms");
                     }
@@ -1261,14 +1261,14 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::FileOperationCollision {
+                identity,
                 operation,
                 refresh,
                 path,
                 elapsed_ms,
             } => {
                 self.file_operation_status = None;
-                let source_path = Self::file_operation_source_path(&operation);
-                self.note_batch_settled(Some(source_path), true);
+                self.note_batch_settled(&identity, true);
                 self.overlay.set_collision(CollisionState {
                     operation,
                     refresh,
@@ -1287,24 +1287,27 @@ impl AppState {
             }
             JobResult::JobFailed {
                 path,
+                file_op,
                 message,
                 elapsed_ms,
                 ..
             } => {
                 self.file_operation_status = None;
-                if self.pending_batch.is_some() {
-                    self.note_batch_settled(Some(path.clone()), true);
+                let failure_status = format!(
+                    "job failed for {} after {elapsed_ms} ms: {message}",
+                    path.display()
+                );
+                if let Some(file_op) = file_op.as_ref() {
                     if self.pending_batch.is_some() {
-                        self.status_message = format!(
-                            "job failed for {} after {elapsed_ms} ms: {message}",
-                            path.display()
-                        );
+                        self.note_batch_settled(file_op, true);
+                        if self.pending_batch.is_some() {
+                            self.status_message = failure_status;
+                        }
+                    } else {
+                        self.status_message = failure_status;
                     }
                 } else {
-                    self.status_message = format!(
-                        "job failed for {} after {elapsed_ms} ms: {message}",
-                        path.display()
-                    );
+                    self.status_message = failure_status;
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
@@ -1875,49 +1878,19 @@ impl AppState {
         Ok(Some(parent.join(name)))
     }
 
-    fn file_operation_source_path(operation: &FileOperation) -> PathBuf {
-        match operation {
-            FileOperation::Copy { source, .. } => source.clone(),
-            FileOperation::Move { source, .. } => source.clone(),
-            FileOperation::Rename { source, .. } => source.clone(),
-            FileOperation::Trash { path } => path.clone(),
-            FileOperation::Delete { path } => path.clone(),
-            FileOperation::ExtractArchive {
-                archive,
-                inner_path,
-                ..
-            } => archive.join(inner_path),
-            FileOperation::CreateDirectory { path } | FileOperation::CreateFile { path } => {
-                path.clone()
-            }
-        }
-    }
-
-    fn note_batch_settled(&mut self, source_path: Option<PathBuf>, failed: bool) {
+    fn note_batch_settled(&mut self, identity: &FileOperationIdentity, failed: bool) {
         let mut finalize: Option<(PaneId, BTreeSet<PathBuf>, BTreeSet<PathBuf>, usize)> = None;
         if let Some(batch) = self.pending_batch.as_mut() {
-            let settled_source = match source_path {
-                Some(path) => {
-                    if batch.queued_sources.front() == Some(&path) {
-                        batch.queued_sources.pop_front()
-                    } else if let Some(index) = batch
-                        .queued_sources
-                        .iter()
-                        .position(|candidate| candidate == &path)
-                    {
-                        batch.queued_sources.remove(index)
-                    } else {
-                        None
-                    }
-                }
-                None => batch.queued_sources.pop_front(),
-            };
-            if let Some(source_path) = settled_source {
-                batch.settled_count += 1;
+            if let Some(index) = batch
+                .pending_operations
+                .iter()
+                .position(|candidate| candidate == identity)
+            {
+                let settled_operation = batch.pending_operations.remove(index);
                 if failed {
-                    batch.failed_sources.insert(source_path);
+                    batch.failed_sources.insert(settled_operation.source);
                 }
-                if batch.settled_count >= batch.total_count {
+                if batch.pending_operations.is_empty() {
                     finalize = Some((
                         batch.pane,
                         batch.original_sources.clone(),
@@ -2051,7 +2024,7 @@ mod tests {
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
-    use crate::jobs::{FileOperationStatus, JobResult};
+    use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
 
     use super::{
@@ -2535,9 +2508,13 @@ mod tests {
             operation: "move",
             completed: 1,
             total: 1,
-            current_path: PathBuf::from("/tmp/target/note.txt"),
+            current_path: PathBuf::from("/tmp/not-the-source-or-destination.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            identity: FileOperationIdentity::from_operation(&FileOperation::Move {
+                source: PathBuf::from("./note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            }),
             message: String::from("moved"),
             refreshed: Vec::new(),
             elapsed_ms: 1,
@@ -2577,9 +2554,14 @@ mod tests {
             operation: "extract",
             completed: 1,
             total: 1,
-            current_path: state.panes.right.cwd.join("note.txt"),
+            current_path: root.join("wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            identity: FileOperationIdentity::from_operation(&FileOperation::ExtractArchive {
+                archive: archive_path.clone(),
+                inner_path: PathBuf::from("nested/note.txt"),
+                destination: state.panes.right.cwd.clone(),
+            }),
             message: String::from("extracted"),
             refreshed: Vec::new(),
             elapsed_ms: 1,
@@ -2614,9 +2596,13 @@ mod tests {
             operation: "copy",
             completed: 1,
             total: 1,
-            current_path: PathBuf::from("./note.txt"),
+            current_path: PathBuf::from("/tmp/wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            }),
             message: String::from("copied"),
             refreshed: Vec::new(),
             elapsed_ms: 1,
@@ -2657,9 +2643,13 @@ mod tests {
             operation: "copy",
             completed: 1,
             total: 2,
-            current_path: PathBuf::from("./note.txt"),
+            current_path: PathBuf::from("/tmp/irrelevant-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./two.txt"),
+                destination: PathBuf::from("/tmp/target/two.txt"),
+            }),
             message: String::from("copied"),
             refreshed: Vec::new(),
             elapsed_ms: 1,
@@ -2669,17 +2659,23 @@ mod tests {
 
         state.apply_job_result(JobResult::JobFailed {
             pane: PaneId::Left,
-            path: PathBuf::from("./two.txt"),
+            path: PathBuf::from("./note.txt"),
+            file_op: Some(FileOperationIdentity::from_operation(
+                &FileOperation::Copy {
+                    source: PathBuf::from("./note.txt"),
+                    destination: PathBuf::from("/tmp/target/note.txt"),
+                },
+            )),
             message: String::from("permission denied"),
             elapsed_ms: 2,
         });
 
-        assert!(!state
+        assert!(state
             .panes
             .left
             .marked
             .contains(&PathBuf::from("./note.txt")));
-        assert!(state
+        assert!(!state
             .panes
             .left
             .marked
@@ -2688,6 +2684,44 @@ mod tests {
         assert_eq!(
             state.status_message,
             "partially completed: 1 succeeded, 1 failed"
+        );
+    }
+
+    #[test]
+    fn non_file_job_failed_does_not_settle_pending_batch() {
+        let mut state = test_state();
+        state.panes.right.cwd = PathBuf::from("/tmp/target");
+        state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+        let mut prompt = PromptState::with_value(
+            PromptKind::Copy,
+            "Copy Marked Items",
+            PathBuf::from("/tmp/target"),
+            None,
+            String::from("/tmp/target"),
+        );
+        prompt.source_paths = vec![PathBuf::from("./note.txt")];
+        state.overlay.open_prompt(prompt);
+        state
+            .apply(Action::PromptSubmit)
+            .expect("submit should work");
+
+        state.apply_job_result(JobResult::JobFailed {
+            pane: PaneId::Left,
+            path: PathBuf::from("./note.txt"),
+            file_op: None,
+            message: String::from("unrelated scan failed"),
+            elapsed_ms: 2,
+        });
+
+        assert!(state
+            .panes
+            .left
+            .marked
+            .contains(&PathBuf::from("./note.txt")));
+        assert!(state.pending_batch.is_some());
+        assert_eq!(
+            state.status_message,
+            "job failed for ./note.txt after 2 ms: unrelated scan failed"
         );
     }
 
@@ -2712,6 +2746,11 @@ mod tests {
         state.apply_job_result(JobResult::JobFailed {
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
+            file_op: Some(FileOperationIdentity::from_operation(
+                &FileOperation::Delete {
+                    path: PathBuf::from("./note.txt"),
+                },
+            )),
             message: String::from("permission denied"),
             elapsed_ms: 2,
         });
@@ -2820,6 +2859,10 @@ mod tests {
         });
 
         state.apply_job_result(JobResult::FileOperationCompleted {
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("/tmp/source/note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            }),
             message: String::from("copied to /tmp/target/note.txt"),
             refreshed: Vec::new(),
             elapsed_ms: 42,
@@ -3005,6 +3048,10 @@ mod tests {
         let mut state = test_state();
 
         state.apply_job_result(JobResult::FileOperationCollision {
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./note.txt"),
+                destination: PathBuf::from("/tmp/target/note.txt"),
+            }),
             operation: FileOperation::Copy {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
