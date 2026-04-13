@@ -86,6 +86,10 @@ impl AppState {
         self.overlay.set_editor_menu_mode(enabled);
     }
 
+    fn can_focus_preview_panel(&self) -> bool {
+        self.preview.panel_open && self.preview.view.is_some()
+    }
+
     pub fn bootstrap(loaded_config: LoadedConfig, started_at: Instant) -> Result<Self> {
         let cwd = fs::current_dir()?;
         let secondary = cwd
@@ -389,7 +393,7 @@ impl AppState {
                 self.editor.markdown_preview_focused = false;
             }
             Action::FocusPreviewPanel => {
-                if self.preview.panel_open {
+                if self.can_focus_preview_panel() {
                     self.editor.markdown_preview_focused = false;
                     self.panes.focus = if self.panes.focus == PaneFocus::Preview {
                         self.status_message = String::from("preview focus returned to file pane");
@@ -398,6 +402,11 @@ impl AppState {
                         self.status_message = String::from("preview panel focused");
                         PaneFocus::Preview
                     };
+                } else if self.preview.panel_open {
+                    if self.panes.focus == PaneFocus::Preview {
+                        self.panes.focus = PaneFocus::Left;
+                    }
+                    self.status_message = String::from("preview panel has no content to focus");
                 }
             }
             Action::FocusMarkdownPreview => {
@@ -1642,7 +1651,7 @@ impl AppState {
         self.preview.panel_open
     }
     pub fn is_preview_focused(&self) -> bool {
-        self.panes.focus == PaneFocus::Preview
+        self.can_focus_preview_panel() && self.panes.focus == PaneFocus::Preview
     }
 
     // Editor accessor — delegate to EditorState
@@ -3365,9 +3374,36 @@ mod tests {
     }
 
     #[test]
+    fn empty_preview_panel_does_not_take_focus() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+
+        state
+            .apply(Action::FocusPreviewPanel)
+            .expect("focus preview should succeed");
+
+        assert_eq!(state.panes.focus, PaneFocus::Left);
+        assert!(matches!(state.focus_layer(), FocusLayer::Pane));
+    }
+
+    #[test]
+    fn empty_preview_panel_never_claims_preview_focus_layer() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.panes.focus = PaneFocus::Preview;
+
+        assert!(matches!(state.focus_layer(), FocusLayer::Pane));
+        assert!(!state.is_preview_focused());
+    }
+
+    #[test]
     fn focus_preview_panel_toggles_even_when_editor_exists() {
         let mut state = test_state();
         state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("./note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
         state.editor.buffer = Some(EditorBuffer::default());
 
         state
