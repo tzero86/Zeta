@@ -17,8 +17,8 @@ use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
 use crate::jobs::{
-    self, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest, JobResult,
-    PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
+    self, DirSizeRequest, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest,
+    JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
 };
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
@@ -207,10 +207,37 @@ impl App {
                     }
                 }
                 other => {
+                    let scanned_pane = if let JobResult::DirectoryScanned { pane, .. } = &other {
+                        Some(*pane)
+                    } else {
+                        None
+                    };
                     let refresh_watch = matches!(&other, JobResult::DirectoryScanned { .. });
                     self.state.apply_job_result(other);
                     if refresh_watch {
                         self.sync_watched_paths()?;
+                    }
+                    // Dispatch dir-size calculations for directory entries after any scan.
+                    // Results arrive as DirSizeCalculated and update entry.size_bytes in place.
+                    if let Some(pane) = scanned_pane {
+                        let pane_state = self.state.panes.pane(pane);
+                        if pane_state.details_view
+                            || matches!(
+                                pane_state.sort_mode,
+                                crate::pane::SortMode::Size | crate::pane::SortMode::SizeDesc
+                            )
+                        {
+                            for entry in &pane_state.entries {
+                                if entry.kind == crate::fs::EntryKind::Directory
+                                    && entry.name != ".."
+                                {
+                                    let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
+                                        pane,
+                                        path: entry.path.clone(),
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             },

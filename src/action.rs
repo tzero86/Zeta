@@ -161,6 +161,8 @@ pub enum Action {
     CycleSortMode,
     ToggleDiffMode,
     DiffSyncToOther,
+    /// Toggle between the compact name-only list and the detailed columns view.
+    ToggleDetailsView,
     /// Mouse click on a pane entry row.
     PaneClick {
         left_pane: bool,
@@ -350,7 +352,11 @@ impl Action {
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiffSyncToOther)
             }
-            KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => Some(Self::EnterSelection),
+            KeyCode::Enter | KeyCode::Right => Some(Self::EnterSelection),
+            // Char('l') without Ctrl is the vim right/enter binding.
+            KeyCode::Char('l') if key_event.modifiers == KeyModifiers::NONE => {
+                Some(Self::EnterSelection)
+            }
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char(' ') => Some(Self::ToggleMark),
             KeyCode::Char('M') if key_event.modifiers == KeyModifiers::SHIFT => {
@@ -398,6 +404,9 @@ impl Action {
                     || key_event.modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::CycleSortMode)
+            }
+            KeyCode::Char('l') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::ToggleDetailsView)
             }
             _ => None,
         }

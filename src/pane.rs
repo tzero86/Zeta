@@ -77,6 +77,8 @@ pub struct PaneState {
     pub filter_active: bool,
     /// Anchor index for Shift+arrow range selection. `None` when no range is active.
     pub mark_anchor: Option<usize>,
+    /// When true, the pane renders a flat column view (icon | name | size | date).
+    pub details_view: bool,
     // Navigation history
     pub history_back: Vec<PathBuf>, // dirs we came FROM (oldest first)
     pub history_forward: Vec<PathBuf>, // dirs we can go forward to
@@ -122,6 +124,7 @@ impl PaneState {
             filter_query: String::new(),
             filter_active: false,
             mark_anchor: None,
+            details_view: false,
             history_back: Vec::new(),
             history_forward: Vec::new(),
             filtered_indices: RefCell::new(Vec::new()),

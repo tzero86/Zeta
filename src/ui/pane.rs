@@ -38,6 +38,7 @@ struct RenderItemArgs<'a> {
     icon_mode: IconMode,
     git_status: Option<FileStatus>,
     diff_colour: Option<ratatui::style::Color>,
+    details_view: bool,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -135,6 +136,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                     icon_mode,
                     git_status: git.and_then(|g| g.status_for(&entry.path)),
                     diff_colour,
+                    details_view: pane.details_view,
                 })
             })
             .collect()
@@ -166,6 +168,34 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     }
 }
 
+/// Convert days since Unix epoch to (year, month, day) using the Proleptic Gregorian calendar.
+fn days_to_ymd(days: u64) -> (u32, u32, u32) {
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z % 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y as u32, m as u32, d as u32)
+}
+
+/// Format a `SystemTime` as `"YYYY-MM-DD HH:MM"` (exactly 16 chars).
+fn format_timestamp(time: std::time::SystemTime) -> String {
+    let Ok(dur) = time.duration_since(std::time::UNIX_EPOCH) else {
+        return String::from("                "); // 16 spaces
+    };
+    let secs = dur.as_secs();
+    let mins = (secs / 60) % 60;
+    let hours = (secs / 3_600) % 24;
+    let days = secs / 86_400;
+    let (year, month, day) = days_to_ymd(days);
+    format!("{year:04}-{month:02}-{day:02} {hours:02}:{mins:02}")
+}
+
 fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     let RenderItemArgs {
         entry,
@@ -177,11 +207,68 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         icon_mode,
         git_status,
         diff_colour,
+        details_view,
     } = args;
+    let icon = icon_for_kind(entry.kind, icon_mode);
+    // --- Details view: flat columns (mark | icon | git | name | size | date) ---
+    if details_view {
+        let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
+        let icon_slot = format_icon_slot(icon, icon_mode);
+        let icon_slot_width = display_width(&icon_slot);
+        let mark_prefix = if is_marked { "* " } else { "  " };
+        let (git_char, git_colour) = match git_status {
+            Some(s) => (s.symbol(), s.colour()),
+            None => (' ', palette.text_muted),
+        };
+        // Fixed right: 9 (size) + 1 (gap) + 16 (date) = 26
+        let right_fixed = 26usize;
+        // Fixed left: 2 (mark) + icon_slot_width + 1 (space) + 1 (git) + 1 (space)
+        let left_fixed = 2 + icon_slot_width + 3;
+        let name_width = available_width
+            .saturating_sub(left_fixed + right_fixed + 1)
+            .max(1);
+        let name = match entry.kind {
+            EntryKind::Directory => format!("{}/", entry.name),
+            _ => entry.name.clone(),
+        };
+        let name = truncate_text(&name, name_width);
+        let spacer_width = available_width
+            .saturating_sub(left_fixed + display_width(&name) + right_fixed)
+            .max(0);
+        let size_str = match (entry.kind, entry.size_bytes) {
+            (EntryKind::Directory, Some(b)) => format!("{:>9}", human_size(b)),
+            (EntryKind::Directory, None) => format!("{:>9}", "dir"),
+            (EntryKind::Symlink, _) => format!("{:>9}", "link"),
+            (EntryKind::Archive, _) => format!("{:>9}", "archive"),
+            (EntryKind::Other, _) => format!("{:>9}", "other"),
+            (EntryKind::File, Some(b)) => format!("{:>9}", human_size(b)),
+            (EntryKind::File, None) => format!("{:>9}", "file"),
+        };
+        let date_str = entry
+            .modified
+            .map(format_timestamp)
+            .unwrap_or_else(|| String::from("                "));
+        let name_style = if let Some(dc) = diff_colour {
+            row_styles.name.fg(dc)
+        } else {
+            row_styles.name
+        };
+        return ListItem::new(Line::from(vec![
+            Span::styled(mark_prefix.to_string(), row_styles.mark),
+            Span::styled(format!("{icon_slot} "), row_styles.icon),
+            Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+            Span::raw(" "),
+            Span::styled(name, name_style),
+            Span::raw(" ".repeat(spacer_width)),
+            Span::styled(size_str, row_styles.meta),
+            Span::raw(" "),
+            Span::styled(date_str, row_styles.meta),
+        ]));
+    }
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };
-    let icon = icon_for_kind(entry.kind, icon_mode);
+    // icon already bound above
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
@@ -325,7 +412,10 @@ pub fn truncate_text(value: &str, max_width: usize) -> String {
 
 pub fn format_entry_meta(entry: &EntryInfo) -> String {
     match entry.kind {
-        EntryKind::Directory => String::from("dir"),
+        EntryKind::Directory => match entry.size_bytes {
+            Some(size) => format!("dir {}", human_size(size)),
+            None => String::from("dir"),
+        },
         EntryKind::Symlink => String::from("link"),
         EntryKind::Archive => String::from("archive"),
         EntryKind::Other => String::from("other"),

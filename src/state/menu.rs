@@ -383,6 +383,12 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
                     mnemonic: 't',
                     action: Action::OpenMenu(MenuId::Themes),
                 },
+                MenuItem {
+                    label: "Toggle Details View",
+                    shortcut: "Ctrl+L",
+                    mnemonic: 'd',
+                    action: Action::ToggleDetailsView,
+                },
             ],
             MenuId::Themes => vec![
                 MenuItem {

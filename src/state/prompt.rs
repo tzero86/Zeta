@@ -18,6 +18,8 @@ pub struct PromptState {
     pub title: &'static str,
     pub base_path: PathBuf,
     pub source_path: Option<PathBuf>,
+    /// For batch operations: the full set of source paths. Empty in single-file mode.
+    pub source_paths: Vec<PathBuf>,
     pub value: String,
 }
 
@@ -44,6 +46,7 @@ impl PromptState {
             title,
             base_path,
             source_path,
+            source_paths: Vec::new(),
             value,
         }
     }
