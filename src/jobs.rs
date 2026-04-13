@@ -148,11 +148,13 @@ pub enum JobResult {
         elapsed_ms: u128,
     },
     FileOperationCompleted {
+        identity: FileOperationIdentity,
         message: String,
         refreshed: Vec<RefreshedPane>,
         elapsed_ms: u128,
     },
     FileOperationCollision {
+        identity: FileOperationIdentity,
         operation: FileOperation,
         refresh: Vec<RefreshTarget>,
         path: PathBuf,
@@ -164,6 +166,7 @@ pub enum JobResult {
     JobFailed {
         pane: PaneId,
         path: PathBuf,
+        file_op: Option<FileOperationIdentity>,
         message: String,
         elapsed_ms: u128,
     },
@@ -214,6 +217,85 @@ pub struct RefreshedPane {
     pub pane: PaneId,
     pub path: PathBuf,
     pub entries: Vec<EntryInfo>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum FileOperationKind {
+    Copy,
+    CreateDirectory,
+    CreateFile,
+    Delete,
+    Trash,
+    Move,
+    Rename,
+    ExtractArchive,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct FileOperationIdentity {
+    pub kind: FileOperationKind,
+    pub source: PathBuf,
+    pub destination: Option<PathBuf>,
+}
+
+impl FileOperationIdentity {
+    pub fn from_operation(operation: &FileOperation) -> Self {
+        match operation {
+            FileOperation::Copy {
+                source,
+                destination,
+            } => Self {
+                kind: FileOperationKind::Copy,
+                source: source.clone(),
+                destination: Some(destination.clone()),
+            },
+            FileOperation::CreateDirectory { path } => Self {
+                kind: FileOperationKind::CreateDirectory,
+                source: path.clone(),
+                destination: Some(path.clone()),
+            },
+            FileOperation::CreateFile { path } => Self {
+                kind: FileOperationKind::CreateFile,
+                source: path.clone(),
+                destination: Some(path.clone()),
+            },
+            FileOperation::Delete { path } => Self {
+                kind: FileOperationKind::Delete,
+                source: path.clone(),
+                destination: None,
+            },
+            FileOperation::Trash { path } => Self {
+                kind: FileOperationKind::Trash,
+                source: path.clone(),
+                destination: None,
+            },
+            FileOperation::Move {
+                source,
+                destination,
+            } => Self {
+                kind: FileOperationKind::Move,
+                source: source.clone(),
+                destination: Some(destination.clone()),
+            },
+            FileOperation::Rename {
+                source,
+                destination,
+            } => Self {
+                kind: FileOperationKind::Rename,
+                source: source.clone(),
+                destination: Some(destination.clone()),
+            },
+            FileOperation::ExtractArchive {
+                archive,
+                inner_path,
+                destination,
+            } => Self {
+                kind: FileOperationKind::ExtractArchive,
+                source: archive.join(inner_path),
+                destination: Some(destination.clone()),
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -269,6 +351,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                         Err(err) => JobResult::JobFailed {
                             pane: req.pane,
                             path: req.path,
+                            file_op: None,
                             message: err.to_string(),
                             elapsed_ms: started_at.elapsed().as_millis(),
                         },
@@ -580,6 +663,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             let _ = result_tx.send(JobResult::JobFailed {
                                 pane: req.pane,
                                 path: archive_path,
+                                file_op: None,
                                 message: format!("failed to open archive: {err}"),
                                 elapsed_ms: started_at.elapsed().as_millis(),
                             });
@@ -715,6 +799,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                     Err(e) => JobResult::JobFailed {
                                         pane: req.pane,
                                         path: req.path,
+                                        file_op: None,
                                         message: format!("SFTP scan failed: {}", e),
                                         elapsed_ms: started_at.elapsed().as_millis(),
                                     },
@@ -744,8 +829,11 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                 pane,
                             );
 
+                            let identity = FileOperationIdentity::from_operation(&req.operation);
+
                             let job_result = match result {
                                 Ok(msg) => JobResult::FileOperationCompleted {
+                                    identity: identity.clone(),
                                     message: msg,
                                     refreshed: vec![],
                                     elapsed_ms: started_at.elapsed().as_millis(),
@@ -753,6 +841,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                 Err((path, msg)) => JobResult::JobFailed {
                                     pane,
                                     path,
+                                    file_op: Some(identity),
                                     message: msg,
                                     elapsed_ms: started_at.elapsed().as_millis(),
                                 },
@@ -1201,8 +1290,8 @@ fn run_file_operation(
     result_tx: &Sender<JobResult>,
 ) -> Result<JobResult, JobResult> {
     let started_at = Instant::now();
+    let identity = FileOperationIdentity::from_operation(&operation);
     let operation_label = describe_operation(&operation);
-    let primary_path = primary_path(&operation);
     let failure_pane = refresh
         .first()
         .map(|target| target.pane)
@@ -1235,6 +1324,7 @@ fn run_file_operation(
     if let Err(error) = op_result {
         return match error {
             FileSystemError::PathExists { path } => Err(JobResult::FileOperationCollision {
+                identity,
                 operation,
                 refresh,
                 path: PathBuf::from(path),
@@ -1242,7 +1332,8 @@ fn run_file_operation(
             }),
             other => Err(JobResult::JobFailed {
                 pane: failure_pane,
-                path: primary_path,
+                path: identity.source.clone(),
+                file_op: Some(identity),
                 message: other.to_string(),
                 elapsed_ms: started_at.elapsed().as_millis(),
             }),
@@ -1262,6 +1353,7 @@ fn run_file_operation(
                 return Err(JobResult::JobFailed {
                     pane: target.pane,
                     path: target.path,
+                    file_op: Some(identity),
                     message: error.to_string(),
                     elapsed_ms: started_at.elapsed().as_millis(),
                 });
@@ -1270,6 +1362,7 @@ fn run_file_operation(
     }
 
     Ok(JobResult::FileOperationCompleted {
+        identity,
         message: operation_label,
         refreshed,
         elapsed_ms: started_at.elapsed().as_millis(),
@@ -1358,19 +1451,6 @@ const EXDEV_ERROR: i32 = 18;
 
 #[cfg(not(unix))]
 const EXDEV_ERROR: i32 = -1;
-
-fn primary_path(operation: &FileOperation) -> PathBuf {
-    match operation {
-        FileOperation::Copy { source, .. } => source.clone(),
-        FileOperation::CreateDirectory { path } => path.clone(),
-        FileOperation::CreateFile { path } => path.clone(),
-        FileOperation::Delete { path } => path.clone(),
-        FileOperation::Trash { path } => path.clone(),
-        FileOperation::Move { source, .. } => source.clone(),
-        FileOperation::Rename { source, .. } => source.clone(),
-        FileOperation::ExtractArchive { archive, .. } => archive.clone(),
-    }
-}
 
 fn describe_operation(operation: &FileOperation) -> String {
     match operation {
@@ -1628,6 +1708,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                 let _ = result_tx.send(JobResult::JobFailed {
                                     pane: PaneId::Left,
                                     path: PathBuf::new(),
+                                    file_op: None,
                                     message: msg,
                                     elapsed_ms: 0,
                                 });
@@ -1638,6 +1719,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                         let _ = result_tx.send(JobResult::JobFailed {
                             pane: PaneId::Left,
                             path: PathBuf::new(),
+                            file_op: None,
                             message: format!("Failed to spawn terminal: {e}"),
                             elapsed_ms: 0,
                         });
@@ -1664,6 +1746,190 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_operation_identity_maps_each_variant() {
+        let shared_path = PathBuf::from("/tmp/note.txt");
+        let cases = [
+            (
+                FileOperation::Copy {
+                    source: PathBuf::from("/tmp/source.txt"),
+                    destination: PathBuf::from("/tmp/dest.txt"),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::Copy,
+                    source: PathBuf::from("/tmp/source.txt"),
+                    destination: Some(PathBuf::from("/tmp/dest.txt")),
+                },
+            ),
+            (
+                FileOperation::CreateDirectory {
+                    path: shared_path.clone(),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::CreateDirectory,
+                    source: shared_path.clone(),
+                    destination: Some(shared_path.clone()),
+                },
+            ),
+            (
+                FileOperation::CreateFile {
+                    path: shared_path.clone(),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::CreateFile,
+                    source: shared_path.clone(),
+                    destination: Some(shared_path.clone()),
+                },
+            ),
+            (
+                FileOperation::Delete {
+                    path: shared_path.clone(),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::Delete,
+                    source: shared_path.clone(),
+                    destination: None,
+                },
+            ),
+            (
+                FileOperation::Trash {
+                    path: shared_path.clone(),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::Trash,
+                    source: shared_path.clone(),
+                    destination: None,
+                },
+            ),
+            (
+                FileOperation::Move {
+                    source: PathBuf::from("/tmp/old.txt"),
+                    destination: PathBuf::from("/tmp/new.txt"),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::Move,
+                    source: PathBuf::from("/tmp/old.txt"),
+                    destination: Some(PathBuf::from("/tmp/new.txt")),
+                },
+            ),
+            (
+                FileOperation::Rename {
+                    source: PathBuf::from("/tmp/before.txt"),
+                    destination: PathBuf::from("/tmp/after.txt"),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::Rename,
+                    source: PathBuf::from("/tmp/before.txt"),
+                    destination: Some(PathBuf::from("/tmp/after.txt")),
+                },
+            ),
+            (
+                FileOperation::ExtractArchive {
+                    archive: PathBuf::from("/tmp/bundle.zip"),
+                    inner_path: PathBuf::from("nested/note.txt"),
+                    destination: PathBuf::from("/tmp/out"),
+                },
+                FileOperationIdentity {
+                    kind: FileOperationKind::ExtractArchive,
+                    source: PathBuf::from("/tmp/bundle.zip").join("nested/note.txt"),
+                    destination: Some(PathBuf::from("/tmp/out")),
+                },
+            ),
+        ];
+
+        for (operation, expected) in cases {
+            assert_eq!(FileOperationIdentity::from_operation(&operation), expected);
+        }
+    }
+
+    #[test]
+    fn run_file_operation_completed_result_carries_identity() {
+        let tmpdir = tempfile::tempdir().expect("tempdir should exist");
+        let path = tmpdir.path().join("created.txt");
+        let (result_tx, _result_rx) = bounded(1);
+
+        let result = run_file_operation(
+            FileOperation::CreateFile { path: path.clone() },
+            vec![],
+            CollisionPolicy::Fail,
+            &result_tx,
+        )
+        .expect("create file should succeed");
+
+        assert_eq!(
+            result,
+            JobResult::FileOperationCompleted {
+                identity: FileOperationIdentity {
+                    kind: FileOperationKind::CreateFile,
+                    source: path.clone(),
+                    destination: Some(path.clone()),
+                },
+                message: format!("created {}", path.display()),
+                refreshed: Vec::new(),
+                elapsed_ms: result_elapsed_ms(&result),
+            }
+        );
+    }
+
+    #[test]
+    fn run_file_operation_failure_results_carry_identity() {
+        let tmpdir = tempfile::tempdir().expect("tempdir should exist");
+        let collision_path = tmpdir.path().join("existing.txt");
+        std::fs::write(&collision_path, b"existing").expect("existing file should be created");
+        let missing_path = tmpdir.path().join("missing.txt");
+        let (result_tx, _result_rx) = bounded(1);
+
+        let collision = run_file_operation(
+            FileOperation::CreateFile {
+                path: collision_path.clone(),
+            },
+            vec![],
+            CollisionPolicy::Fail,
+            &result_tx,
+        )
+        .expect_err("existing destination should collide");
+        let failure = run_file_operation(
+            FileOperation::Delete {
+                path: missing_path.clone(),
+            },
+            vec![],
+            CollisionPolicy::Fail,
+            &result_tx,
+        )
+        .expect_err("missing path should fail");
+
+        assert!(matches!(
+            collision,
+            JobResult::FileOperationCollision {
+                identity: FileOperationIdentity {
+                    kind: FileOperationKind::CreateFile,
+                    source,
+                    destination: Some(destination),
+                },
+                ..
+            } if source == collision_path && destination == collision_path
+        ));
+        assert!(matches!(
+            failure,
+            JobResult::JobFailed {
+                path,
+                file_op: Some(FileOperationIdentity {
+                    kind: FileOperationKind::Delete,
+                    source,
+                    destination: None,
+                }),
+                ..
+            } if path == missing_path && source == missing_path
+        ));
+    }
+
+    fn result_elapsed_ms(result: &JobResult) -> u128 {
+        match result {
+            JobResult::FileOperationCompleted { elapsed_ms, .. } => *elapsed_ms,
+            _ => panic!("expected file operation completion result"),
+        }
+    }
 
     #[test]
     fn git_worker_responds_to_request() {

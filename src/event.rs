@@ -7,5 +7,5 @@ pub enum AppEvent {
     Input(KeyEvent),
     Mouse(MouseEvent),
     Resize { width: u16, height: u16 },
-    Job(JobResult),
+    Job(Box<JobResult>),
 }
