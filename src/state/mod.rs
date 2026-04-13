@@ -16,6 +16,7 @@ pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -37,6 +38,15 @@ pub use menu::{menu_tabs, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
+
+#[derive(Debug)]
+struct PendingBatchOperation {
+    pane: PaneId,
+    original_sources: BTreeSet<PathBuf>,
+    failed_sources: BTreeSet<PathBuf>,
+    settled_count: usize,
+    total_count: usize,
+}
 
 #[derive(Debug)]
 pub struct AppState {
@@ -61,10 +71,13 @@ pub struct AppState {
     /// the full content area.
     editor_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
+    /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
     pub diff_mode: bool,
     pub diff_map: std::collections::HashMap<String, crate::diff::DiffStatus>,
+    /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
+    pending_batch: Option<PendingBatchOperation>,
 }
 
 impl AppState {
@@ -134,6 +147,7 @@ impl AppState {
             pending_reveal: None,
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
+            pending_batch: None,
         })
     }
 
@@ -786,6 +800,8 @@ impl AppState {
                                 }
                             };
                             let count = prompt.source_paths.len();
+                            let batch_sources: BTreeSet<PathBuf> =
+                                prompt.source_paths.iter().cloned().collect();
                             for source in &prompt.source_paths {
                                 let (operation, refresh_path) =
                                     match kind {
@@ -803,10 +819,7 @@ impl AppState {
                                             let operation =
                                                 self.copy_operation_for_source(source, &copy_target);
                                             let refresh_path =
-                                                self.refresh_target_path_for_transfer(
-                                                    source,
-                                                    &copy_target,
-                                                );
+                                                self.refresh_target_path_for_transfer(source, &copy_target);
                                             (Some(operation), refresh_path)
                                         }
                                         PromptKind::Move => {
@@ -845,12 +858,21 @@ impl AppState {
                                     });
                                 }
                             }
+                            self.pending_batch = Some(PendingBatchOperation {
+                                pane: self.panes.focused_pane_id(),
+                                original_sources: batch_sources,
+                                failed_sources: BTreeSet::new(),
+                                settled_count: 0,
+                                total_count: count,
+                            });
                             self.overlay.close_all();
                             self.status_message = match kind {
                                 PromptKind::Copy => format!("copying {count} items"),
                                 PromptKind::Move => format!("moving {count} items"),
                                 PromptKind::Trash => format!("trashing {count} items"),
-                                PromptKind::Delete => format!("deleting {count} items permanently"),
+                                PromptKind::Delete => {
+                                    format!("deleting {count} items permanently")
+                                }
                                 _ => String::from("processing items"),
                             };
                         } else {
@@ -1196,12 +1218,24 @@ impl AppState {
                 elapsed_ms,
             } => {
                 self.overlay.close_all();
+                let completed_path = self
+                    .file_operation_status
+                    .as_ref()
+                    .map(|status| status.current_path.clone());
                 self.file_operation_status = None;
                 for pane in refreshed {
                     self.panes.pane_mut(pane.pane).cwd = pane.path;
                     self.panes.pane_mut(pane.pane).set_entries(pane.entries);
                 }
-                self.status_message = format!("{message} in {elapsed_ms} ms");
+                if let Some(path) = completed_path {
+                    let had_batch = self.pending_batch.is_some();
+                    self.note_batch_settled(path, false);
+                    if !had_batch || self.pending_batch.is_some() {
+                        self.status_message = format!("{message} in {elapsed_ms} ms");
+                    }
+                } else {
+                    self.status_message = format!("{message} in {elapsed_ms} ms");
+                }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::FileOperationCollision {
@@ -1211,15 +1245,19 @@ impl AppState {
                 elapsed_ms,
             } => {
                 self.file_operation_status = None;
+                let source_path = Self::file_operation_source_path(&operation);
+                self.note_batch_settled(source_path, true);
                 self.overlay.set_collision(CollisionState {
                     operation,
                     refresh,
                     path: path.clone(),
                 });
-                self.status_message = format!(
-                    "destination exists after {elapsed_ms} ms: {}",
-                    path.display()
-                );
+                if self.pending_batch.is_some() {
+                    self.status_message = format!(
+                        "destination exists after {elapsed_ms} ms: {}",
+                        path.display()
+                    );
+                }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::FileOperationProgress { status } => {
@@ -1232,10 +1270,14 @@ impl AppState {
                 ..
             } => {
                 self.file_operation_status = None;
-                self.status_message = format!(
-                    "job failed for {} after {elapsed_ms} ms: {message}",
-                    path.display()
-                );
+                let had_batch = self.pending_batch.is_some();
+                self.note_batch_settled(path.clone(), true);
+                if !had_batch || self.pending_batch.is_some() {
+                    self.status_message = format!(
+                        "job failed for {} after {elapsed_ms} ms: {message}",
+                        path.display()
+                    );
+                }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::PreviewLoaded { path, view } => {
@@ -1768,6 +1810,60 @@ impl AppState {
     // Private Helpers
     // =========================================================================
 
+    fn file_operation_source_path(operation: &FileOperation) -> PathBuf {
+        match operation {
+            FileOperation::Copy { source, .. } => source.clone(),
+            FileOperation::Move { source, .. } => source.clone(),
+            FileOperation::Rename { source, .. } => source.clone(),
+            FileOperation::Trash { path } => path.clone(),
+            FileOperation::Delete { path } => path.clone(),
+            FileOperation::ExtractArchive { archive, inner_path, .. } => archive.join(inner_path),
+            FileOperation::CreateDirectory { path } | FileOperation::CreateFile { path } => {
+                path.clone()
+            }
+        }
+    }
+
+    fn note_batch_settled(&mut self, source_path: PathBuf, failed: bool) {
+        let mut finalize: Option<(PaneId, BTreeSet<PathBuf>, BTreeSet<PathBuf>, usize)> = None;
+        if let Some(batch) = self.pending_batch.as_mut() {
+            if batch.original_sources.contains(&source_path) {
+                batch.settled_count += 1;
+                if failed {
+                    batch.failed_sources.insert(source_path);
+                }
+                if batch.settled_count >= batch.total_count {
+                    finalize = Some((
+                        batch.pane,
+                        batch.original_sources.clone(),
+                        batch.failed_sources.clone(),
+                        batch.total_count,
+                    ));
+                }
+            }
+        }
+        if let Some((pane_id, originals, failed_sources, total_count)) = finalize {
+            let succeeded = total_count.saturating_sub(failed_sources.len());
+            let pane = self.panes.pane_mut(pane_id);
+            for source in originals {
+                if !failed_sources.contains(&source) {
+                    pane.marked.remove(&source);
+                }
+            }
+            self.status_message = if failed_sources.is_empty() {
+                format!("completed {succeeded} items")
+            } else if succeeded == 0 {
+                format!("failed {total_count} items")
+            } else {
+                format!(
+                    "partially completed: {succeeded} succeeded, {} failed",
+                    failed_sources.len()
+                )
+            };
+            self.pending_batch = None;
+        }
+    }
+
     fn copy_operation_for_source(&self, source: &Path, target_path: &Path) -> FileOperation {
         if let Some((archive_path, inner_path)) = Self::archive_member_source(source) {
             FileOperation::ExtractArchive {
@@ -2092,6 +2188,7 @@ mod tests {
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
             terminal: crate::state::terminal::TerminalState::default(),
+            pending_batch: None,
         }
     }
 
@@ -2306,6 +2403,141 @@ mod tests {
             vec![Command::DispatchAction(Action::NavigateToParent)]
         );
     }
+
+#[test]
+fn batch_prompt_submit_does_not_clear_marks_at_dispatch() {
+    let mut state = test_state();
+    state.panes.right.cwd = PathBuf::from("/tmp/target");
+    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+    let mut prompt = PromptState::with_value(
+        PromptKind::Copy,
+        "Copy Marked Items",
+        PathBuf::from("/tmp/target"),
+        None,
+        String::from("/tmp/target"),
+    );
+    prompt.source_paths = vec![PathBuf::from("./note.txt")];
+    state.overlay.open_prompt(prompt);
+
+    let commands = state.apply(Action::PromptSubmit).expect("submit should work");
+
+    assert_eq!(commands.len(), 1);
+    assert_eq!(state.panes.left.marked_count(), 1);
+    assert!(state.pending_batch.is_some());
+}
+
+#[test]
+fn batch_full_success_clears_marks_and_sets_completed_status() {
+    let mut state = test_state();
+    state.panes.right.cwd = PathBuf::from("/tmp/target");
+    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+    let mut prompt = PromptState::with_value(
+        PromptKind::Copy,
+        "Copy Marked Items",
+        PathBuf::from("/tmp/target"),
+        None,
+        String::from("/tmp/target"),
+    );
+    prompt.source_paths = vec![PathBuf::from("./note.txt")];
+    state.overlay.open_prompt(prompt);
+    state.apply(Action::PromptSubmit).expect("submit should work");
+
+    state.file_operation_status = Some(FileOperationStatus {
+        operation: "copy",
+        completed: 1,
+        total: 1,
+        current_path: PathBuf::from("./note.txt"),
+    });
+    state.apply_job_result(JobResult::FileOperationCompleted {
+        message: String::from("copied"),
+        refreshed: Vec::new(),
+        elapsed_ms: 1,
+    });
+
+    assert_eq!(state.panes.left.marked_count(), 0);
+    assert!(state.pending_batch.is_none());
+    assert_eq!(state.status_message, "completed 1 items");
+}
+
+#[test]
+fn batch_partial_failure_keeps_failed_marks_only() {
+    let mut state = test_state();
+    state.panes.right.cwd = PathBuf::from("/tmp/target");
+    state.panes.left.entries.push(EntryInfo {
+        name: String::from("two.txt"),
+        path: PathBuf::from("./two.txt"),
+        kind: EntryKind::File,
+        size_bytes: Some(64),
+        modified: None,
+    });
+    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+    state.panes.left.marked.insert(PathBuf::from("./two.txt"));
+    let mut prompt = PromptState::with_value(
+        PromptKind::Copy,
+        "Copy Marked Items",
+        PathBuf::from("/tmp/target"),
+        None,
+        String::from("/tmp/target"),
+    );
+    prompt.source_paths = vec![PathBuf::from("./note.txt"), PathBuf::from("./two.txt")];
+    state.overlay.open_prompt(prompt);
+    state.apply(Action::PromptSubmit).expect("submit should work");
+
+    state.file_operation_status = Some(FileOperationStatus {
+        operation: "copy",
+        completed: 1,
+        total: 2,
+        current_path: PathBuf::from("./note.txt"),
+    });
+    state.apply_job_result(JobResult::FileOperationCompleted {
+        message: String::from("copied"),
+        refreshed: Vec::new(),
+        elapsed_ms: 1,
+    });
+    assert_eq!(state.panes.left.marked_count(), 2);
+    assert!(state.pending_batch.is_some());
+
+    state.apply_job_result(JobResult::JobFailed {
+        pane: PaneId::Left,
+        path: PathBuf::from("./two.txt"),
+        message: String::from("permission denied"),
+        elapsed_ms: 2,
+    });
+
+    assert!(!state.panes.left.marked.contains(&PathBuf::from("./note.txt")));
+    assert!(state.panes.left.marked.contains(&PathBuf::from("./two.txt")));
+    assert!(state.pending_batch.is_none());
+    assert_eq!(state.status_message, "partially completed: 1 succeeded, 1 failed");
+}
+
+#[test]
+fn batch_full_failure_keeps_marks_and_reports_failed_status() {
+    let mut state = test_state();
+    state.panes.right.cwd = PathBuf::from("/tmp/target");
+    state.panes.left.marked.insert(PathBuf::from("./note.txt"));
+    let mut prompt = PromptState::with_value(
+        PromptKind::Delete,
+        "Delete Marked Items Permanently",
+        PathBuf::from("."),
+        None,
+        String::new(),
+    );
+    prompt.source_paths = vec![PathBuf::from("./note.txt")];
+    state.overlay.open_prompt(prompt);
+    state.apply(Action::PromptSubmit).expect("submit should work");
+
+    state.apply_job_result(JobResult::JobFailed {
+        pane: PaneId::Left,
+        path: PathBuf::from("./note.txt"),
+        message: String::from("permission denied"),
+        elapsed_ms: 2,
+    });
+
+    assert!(state.panes.left.marked.contains(&PathBuf::from("./note.txt")));
+    assert!(state.pending_batch.is_none());
+    assert_eq!(state.status_message, "failed 1 items");
+}
+
 
     #[test]
     fn toggle_hidden_files_flips_active_pane_flag() {
