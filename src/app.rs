@@ -128,7 +128,7 @@ impl App {
     fn process_next_event(&mut self) -> Result<()> {
         // First, drain ALL pending job results to keep the UI in sync with workers.
         while let Ok(result) = self.job_results.try_recv() {
-            self.handle_event(AppEvent::Job(result))?;
+            self.handle_event(AppEvent::Job(Box::new(result)))?;
         }
 
         // Then process at most one input/resize event per frame.
@@ -195,7 +195,7 @@ impl App {
             AppEvent::Resize { width, height } => {
                 self.dispatch(Action::Resize { width, height })?;
             }
-            AppEvent::Job(result) => match result {
+            AppEvent::Job(result) => match *result {
                 JobResult::DirectoryChanged { path } => {
                     if self.state.left_pane().cwd == path {
                         self.execute_command(Command::ScanPane {
