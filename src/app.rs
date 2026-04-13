@@ -115,10 +115,11 @@ impl App {
     fn execute_command_try(&mut self, command: Command) -> Result<()> {
         match command {
             Command::ResizeTerminal { cols, rows } => {
-                let _ = self
-                    .workers
-                    .terminal_tx
-                    .try_send(crate::jobs::TerminalRequest::Resize { cols, rows });
+                let _ = self.workers.terminal_tx.try_send(crate::jobs::TerminalRequest::Resize {
+                    workspace_id: self.state.active_workspace_index(),
+                    cols,
+                    rows,
+                });
             }
             other => self.execute_command(other)?,
         }
@@ -197,23 +198,50 @@ impl App {
             }
             AppEvent::Job(result) => match *result {
                 JobResult::DirectoryChanged { path } => {
-                    if self.state.left_pane().cwd == path {
-                        self.execute_command(Command::ScanPane {
-                            pane: crate::pane::PaneId::Left,
-                            path: path.clone(),
-                        })?;
-                    }
-                    if self.state.right_pane().cwd == path {
-                        self.execute_command(Command::ScanPane {
-                            pane: crate::pane::PaneId::Right,
-                            path,
-                        })?;
+                    for workspace_id in 0..self.state.workspace_count() {
+                        for pane in [crate::pane::PaneId::Left, crate::pane::PaneId::Right] {
+                            let pane_state = self.state.workspace(workspace_id).panes.pane(pane);
+                            if pane_state.cwd == path {
+                                let scan_path = path.clone();
+                                if let Some(address) = pane_state.remote_address() {
+                                    let session_id = format!(
+                                        "{}@{}",
+                                        std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
+                                        address
+                                    );
+                                    self.workers
+                                        .sftp_tx
+                                        .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                                            workspace_id,
+                                            pane,
+                                            path: scan_path,
+                                            session_id,
+                                        }))
+                                        .context("failed to queue SFTP scan job")?;
+                                } else {
+                                    self.workers
+                                        .scan_tx
+                                        .send(ScanRequest {
+                                            workspace_id,
+                                            pane,
+                                            path: scan_path.clone(),
+                                        })
+                                        .context("failed to queue background scan job")?;
+                                    self.workers
+                                        .git_tx
+                                        .send(GitStatusRequest {
+                                            workspace_id,
+                                            pane,
+                                            path: scan_path,
+                                        })
+                                        .context("failed to queue git status job")?;
+                                }
+                            }
+                        }
                     }
                 }
                 JobResult::ConfigChanged => {
-                    // Re-read config non-fatally; keymap and theme take effect immediately.
                     if let Ok(new_config) = AppConfig::load(&self.config_path) {
-                        // Recompile keymap if bindings changed; non-fatal on error.
                         if new_config.keymap != self.state.config().keymap {
                             if let Ok(km) = new_config.compile_keymap() {
                                 self.keymap = km;
@@ -223,8 +251,13 @@ impl App {
                     }
                 }
                 other => {
-                    let scanned_pane = if let JobResult::DirectoryScanned { pane, .. } = &other {
-                        Some(*pane)
+                    let scanned_target = if let JobResult::DirectoryScanned {
+                        workspace_id,
+                        pane,
+                        ..
+                    } = &other
+                    {
+                        Some((*workspace_id, *pane))
                     } else {
                         None
                     };
@@ -233,10 +266,8 @@ impl App {
                     if refresh_watch {
                         self.sync_watched_paths()?;
                     }
-                    // Dispatch dir-size calculations for directory entries after any scan.
-                    // Results arrive as DirSizeCalculated and update entry.size_bytes in place.
-                    if let Some(pane) = scanned_pane {
-                        let pane_state = self.state.panes.pane(pane);
+                    if let Some((workspace_id, pane)) = scanned_target {
+                        let pane_state = self.state.workspace(workspace_id).panes.pane(pane);
                         if pane_state.details_view
                             || matches!(
                                 pane_state.sort_mode,
@@ -244,10 +275,9 @@ impl App {
                             )
                         {
                             for entry in &pane_state.entries {
-                                if entry.kind == crate::fs::EntryKind::Directory
-                                    && entry.name != ".."
-                                {
+                                if entry.kind == crate::fs::EntryKind::Directory && entry.name != ".." {
                                     let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
+                                        workspace_id,
                                         pane,
                                         path: entry.path.clone(),
                                     });
@@ -270,10 +300,14 @@ impl App {
     }
 
     fn sync_watched_paths(&mut self) -> Result<()> {
-        let mut paths = vec![self.state.left_pane().cwd.clone()];
-        let right = self.state.right_pane().cwd.clone();
-        if right != paths[0] {
-            paths.push(right);
+        let mut paths = Vec::new();
+        for workspace_id in 0..self.state.workspace_count() {
+            let workspace = self.state.workspace(workspace_id);
+            for path in [&workspace.panes.left.cwd, &workspace.panes.right.cwd] {
+                if paths.iter().all(|existing| existing != path) {
+                    paths.push(path.clone());
+                }
+            }
         }
         let config_path = if self.config_path.as_os_str().is_empty() {
             None
@@ -344,15 +378,15 @@ impl App {
     fn execute_command(&mut self, command: Command) -> Result<()> {
         match command {
             Command::OpenEditor { path } => {
+                let workspace_id = self.state.active_workspace_index();
                 self.state.begin_open_editor(path.clone());
                 self.workers
                     .editor_tx
-                    .send(EditorLoadRequest { path })
+                    .send(EditorLoadRequest { workspace_id, path })
                     .context("failed to queue background editor load job")?;
             }
             Command::PreviewFile { path } => {
-                // If the active pane is in archive mode, include archive metadata so the
-                // preview worker can extract the archived file contents.
+                let workspace_id = self.state.active_workspace_index();
                 let mut archive = None;
                 let mut inner = None;
                 if self.state.panes.active_pane().in_archive() {
@@ -372,6 +406,7 @@ impl App {
                 self.workers
                     .preview_tx
                     .send(PreviewRequest {
+                        workspace_id,
                         path,
                         syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
                         archive,
@@ -379,21 +414,19 @@ impl App {
                     })
                     .context("failed to queue background preview job")?;
             }
-
             Command::RunFileOperation {
                 operation,
                 refresh,
                 collision,
             } => {
-                // Determine source and destination backends from file paths
-                // and pane modes
+                let workspace_id = self.state.active_workspace_index();
                 let (src_session, dst_session) = self.determine_backends_for_operation(&operation);
 
-                // If either side is remote, we need SFTP
                 if src_session.is_some() || dst_session.is_some() {
                     self.workers
                         .sftp_tx
                         .send(jobs::SftpRequest::FileOp(jobs::SftpFileOpRequest {
+                            workspace_id,
                             operation: operation.clone(),
                             src_session: src_session.clone(),
                             dst_session: dst_session.clone(),
@@ -402,10 +435,10 @@ impl App {
                         }))
                         .context("failed to queue SFTP file operation")?;
                 } else {
-                    // Pure local operation
                     self.workers
                         .file_op_tx
                         .send(FileOpRequest {
+                            workspace_id,
                             operation,
                             backend: crate::jobs::BackendRef::Local,
                             refresh,
@@ -417,10 +450,8 @@ impl App {
                 }
             }
             Command::ScanPane { pane, path } => {
-                // Check if pane is in remote mode and route to SFTP
+                let workspace_id = self.state.active_workspace_index();
                 if let Some(address) = self.state.panes.pane(pane).remote_address() {
-                    // For remote panes, send to SFTP worker
-                    // Parse session ID from address
                     let session_id = format!(
                         "{}@{}",
                         std::env::var("USER").unwrap_or_else(|_| "user".to_string()),
@@ -430,24 +461,28 @@ impl App {
                     self.workers
                         .sftp_tx
                         .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                            workspace_id,
                             pane,
                             path: path.clone(),
                             session_id,
                         }))
                         .context("failed to queue SFTP scan job")?;
                 } else {
-                    // Local pane - use normal scan
                     self.workers
                         .scan_tx
                         .send(ScanRequest {
+                            workspace_id,
                             pane,
                             path: path.clone(),
                         })
                         .context("failed to queue background scan job")?;
-                    // Fire a git status refresh alongside every directory scan.
                     self.workers
                         .git_tx
-                        .send(GitStatusRequest { pane, path })
+                        .send(GitStatusRequest {
+                            workspace_id,
+                            pane,
+                            path,
+                        })
                         .context("failed to queue git status job")?;
                 }
             }
@@ -456,9 +491,11 @@ impl App {
                 root,
                 max_depth,
             } => {
+                let workspace_id = self.state.active_workspace_index();
                 self.workers
                     .find_tx
                     .send(FindRequest {
+                        workspace_id,
                         pane,
                         root,
                         max_depth,
@@ -466,9 +503,10 @@ impl App {
                     .context("failed to queue background file finder job")?;
             }
             Command::OpenArchive { path, inner } => {
-                // Request archive listing for the active pane with provided inner path.
+                let workspace_id = self.state.active_workspace_index();
                 let pane = self.state.panes.focused_pane_id();
                 let req = jobs::ArchiveListRequest {
+                    workspace_id,
                     pane,
                     archive_path: path.clone(),
                     inner_path: inner.clone(),
@@ -479,7 +517,6 @@ impl App {
                     .context("failed to queue archive listing job")?;
             }
             Command::OpenShell { path } => {
-                // Drop out of TUI, spawn shell process, then re-enter.
                 use crossterm::execute;
                 use crossterm::terminal::{
                     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -487,12 +524,10 @@ impl App {
                 use std::io::{self};
                 use std::process::Command as StdCommand;
 
-                // Leave alternate screen, restore terminal, spawn shell
                 disable_raw_mode().ok();
                 let mut stdout = io::stdout();
                 execute!(stdout, LeaveAlternateScreen).ok();
 
-                // Pick a shell (Windows/cmd, others/sh)
                 let shell = std::env::var("SHELL").unwrap_or_else(|_| {
                     if cfg!(windows) {
                         std::env::var("COMSPEC").unwrap_or_else(|_| String::from("cmd.exe"))
@@ -503,7 +538,6 @@ impl App {
 
                 let _ = StdCommand::new(shell).current_dir(path).status();
 
-                // Wait for shell to exit, then re-enter alternate screen and raw mode
                 execute!(stdout, EnterAlternateScreen).ok();
                 enable_raw_mode().ok();
             }
@@ -513,12 +547,10 @@ impl App {
                 credential: _,
                 pane: _,
             } => {
-                // TODO: Implement SSH connection logic
                 self.state
                     .set_error_status(format!("SSH connect to {} - not yet implemented", address));
             }
             Command::DisconnectSSH { pane } => {
-                // Switch back to local mode and scan home directory
                 self.state.panes.pane_mut(pane).mode = crate::pane::PaneMode::Real;
                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
                 self.execute_command(Command::ScanPane {
@@ -530,6 +562,7 @@ impl App {
                 self.workers
                     .terminal_tx
                     .send(crate::jobs::TerminalRequest::Spawn {
+                        workspace_id: self.state.active_workspace_index(),
                         cwd,
                         cols: self.state.terminal.cols,
                         rows: self.state.terminal.rows,
@@ -539,13 +572,20 @@ impl App {
             Command::WriteTerminal(bytes) => {
                 self.workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Write(bytes))
+                    .send(crate::jobs::TerminalRequest::Write {
+                        workspace_id: self.state.active_workspace_index(),
+                        bytes,
+                    })
                     .context("failed to queue terminal write job")?;
             }
             Command::ResizeTerminal { cols, rows } => {
                 self.workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Resize { cols, rows })
+                    .send(crate::jobs::TerminalRequest::Resize {
+                        workspace_id: self.state.active_workspace_index(),
+                        cols,
+                        rows,
+                    })
                     .context("failed to queue terminal resize job")?;
             }
             Command::DispatchAction(action) => {
@@ -578,6 +618,11 @@ fn route_key_event(
     use crossterm::event::{KeyCode, KeyModifiers};
 
     let alt_f3 = key_event.code == KeyCode::F(3) && key_event.modifiers == KeyModifiers::ALT;
+
+    if let Some(action) = Action::from_workspace_key_event(key_event) {
+        return Some(action);
+    }
+
 
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),

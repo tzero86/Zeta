@@ -131,12 +131,20 @@ impl AppState {
         &mut self.workspaces[idx]
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
-    fn switch_to_workspace(&mut self, idx: usize) {
+    pub fn active_workspace_index(&self) -> usize {
+        self.active_workspace_idx
+    }
+
+    pub fn workspace_count(&self) -> usize {
+        self.workspaces.len()
+    }
+
+    fn switch_to_workspace(&mut self, idx: usize) -> Vec<Command> {
         if idx >= self.workspaces.len() || idx == self.active_workspace_idx {
-            return;
+            return Vec::new();
         }
 
+        let should_initialize = self.workspace(idx).last_scan_time_ms.is_none();
         self.active_workspace_idx = idx;
         if self.active_workspace().panes.focus == PaneFocus::Preview
             && !self.can_focus_preview_panel()
@@ -144,6 +152,22 @@ impl AppState {
             self.active_workspace_mut().panes.focus = PaneFocus::Left;
         }
         self.sync_editor_menu_mode();
+        self.status_message = format!("workspace {} active", idx + 1);
+
+        if !should_initialize {
+            return Vec::new();
+        }
+
+        vec![
+            Command::ScanPane {
+                pane: PaneId::Left,
+                path: self.panes.left.cwd.clone(),
+            },
+            Command::ScanPane {
+                pane: PaneId::Right,
+                path: self.panes.right.cwd.clone(),
+            },
+        ]
     }
 
     fn sync_editor_menu_mode(&mut self) {
@@ -245,6 +269,9 @@ impl AppState {
     }
 
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
+        if let Action::SwitchToWorkspace(idx) = action {
+            return Ok(self.switch_to_workspace(idx));
+        }
 
         let mut commands = Vec::new();
         commands.extend(self.overlay.apply(&action)?);
@@ -1275,15 +1302,40 @@ impl AppState {
     }
 
     pub fn apply_job_result(&mut self, result: JobResult) {
+        let target_workspace = match &result {
+            JobResult::DirectoryScanned { workspace_id, .. }
+            | JobResult::ArchiveListed { workspace_id, .. }
+            | JobResult::FileOperationCompleted { workspace_id, .. }
+            | JobResult::FileOperationCollision { workspace_id, .. }
+            | JobResult::FileOperationProgress { workspace_id, .. }
+            | JobResult::JobFailed { workspace_id, .. }
+            | JobResult::PreviewLoaded { workspace_id, .. }
+            | JobResult::EditorLoaded { workspace_id, .. }
+            | JobResult::EditorLoadFailed { workspace_id, .. }
+            | JobResult::GitStatusLoaded { workspace_id, .. }
+            | JobResult::GitStatusAbsent { workspace_id, .. }
+            | JobResult::FindResults { workspace_id, .. }
+            | JobResult::TerminalOutput { workspace_id, .. }
+            | JobResult::TerminalDiagnostic { workspace_id, .. }
+            | JobResult::TerminalExited { workspace_id, .. }
+            | JobResult::DirSizeCalculated { workspace_id, .. } => Some(*workspace_id),
+            JobResult::DirectoryChanged { .. } | JobResult::ConfigChanged => None,
+        };
+
+        let previous_workspace = self.active_workspace_idx;
+        if let Some(workspace_id) = target_workspace {
+            self.active_workspace_idx = workspace_id;
+        }
+
         match result {
             JobResult::DirectoryScanned {
+                workspace_id: _,
                 pane,
                 path,
                 entries,
                 elapsed_ms,
             } => {
                 self.panes.pane_mut(pane).cwd = path.clone();
-                // Prepend a ".." entry so users can click to navigate to the parent.
                 let mut all_entries = entries;
                 if let Some(parent) = path.parent() {
                     let parent_path: PathBuf = parent.to_path_buf();
@@ -1308,7 +1360,6 @@ impl AppState {
                 }
                 self.status_message = format!("refreshed {} in {elapsed_ms} ms", path.display());
                 self.last_scan_time_ms = Some(elapsed_ms);
-                // Recompute diff when diff mode is active.
                 if self.diff_mode {
                     self.diff_map = crate::diff::compute_diff(
                         &self.panes.left.entries,
@@ -1317,6 +1368,7 @@ impl AppState {
                 }
             }
             JobResult::FileOperationCompleted {
+                workspace_id: _,
                 identity,
                 message,
                 refreshed,
@@ -1339,6 +1391,7 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::FileOperationCollision {
+                workspace_id: _,
                 identity,
                 operation,
                 refresh,
@@ -1360,10 +1413,14 @@ impl AppState {
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::FileOperationProgress { status } => {
+            JobResult::FileOperationProgress {
+                workspace_id: _,
+                status,
+            } => {
                 self.file_operation_status = Some(status);
             }
             JobResult::JobFailed {
+                workspace_id: _,
                 path,
                 file_op,
                 message,
@@ -1389,10 +1446,18 @@ impl AppState {
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::PreviewLoaded { path, view } => {
+            JobResult::PreviewLoaded {
+                workspace_id: _,
+                path,
+                view,
+            } => {
                 self.preview.apply_job_loaded(path, view);
             }
-            JobResult::EditorLoaded { path, contents } => {
+            JobResult::EditorLoaded {
+                workspace_id: _,
+                path,
+                contents,
+            } => {
                 let is_expected = self
                     .editor
                     .buffer
@@ -1403,7 +1468,11 @@ impl AppState {
                     self.open_editor(EditorBuffer::from_text(path, contents));
                 }
             }
-            JobResult::EditorLoadFailed { path, message } => {
+            JobResult::EditorLoadFailed {
+                workspace_id: _,
+                path,
+                message,
+            } => {
                 let is_expected = self
                     .editor
                     .buffer
@@ -1415,13 +1484,21 @@ impl AppState {
                     self.set_error_status(format!("failed to open editor buffer: {message}"));
                 }
             }
-            JobResult::GitStatusLoaded { pane, status } => {
+            JobResult::GitStatusLoaded {
+                workspace_id: _,
+                pane,
+                status,
+            } => {
                 self.git[pane as usize] = Some(status);
             }
-            JobResult::GitStatusAbsent { pane } => {
+            JobResult::GitStatusAbsent {
+                workspace_id: _,
+                pane,
+            } => {
                 self.git[pane as usize] = None;
             }
             JobResult::FindResults {
+                workspace_id: _,
                 pane,
                 root,
                 entries,
@@ -1440,17 +1517,28 @@ impl AppState {
             JobResult::DirectoryChanged { path } => {
                 self.status_message = format!("filesystem changed: {}", path.display());
             }
-            JobResult::TerminalOutput(bytes) => {
+            JobResult::TerminalOutput {
+                workspace_id: _,
+                bytes,
+            } => {
                 self.terminal.process_output(&bytes);
             }
-            JobResult::TerminalDiagnostic(msg) => {
-                self.status_message = format!("[Terminal] {}", msg);
+            JobResult::TerminalDiagnostic {
+                workspace_id: _,
+                message,
+            } => {
+                self.status_message = format!("[Terminal] {}", message);
             }
-            JobResult::TerminalExited => {
+            JobResult::TerminalExited { workspace_id: _ } => {
                 self.terminal.close();
                 self.status_message = String::from("terminal session ended");
             }
-            JobResult::DirSizeCalculated { pane, path, bytes } => {
+            JobResult::DirSizeCalculated {
+                workspace_id: _,
+                pane,
+                path,
+                bytes,
+            } => {
                 let p = self.panes.pane_mut(pane);
                 if let Some(entry) = p.entries.iter_mut().find(|e| e.path == path) {
                     entry.size_bytes = Some(bytes);
@@ -1458,13 +1546,13 @@ impl AppState {
                 }
             }
             JobResult::ArchiveListed {
+                workspace_id: _,
                 pane,
                 archive_path,
                 inner_path,
                 entries,
                 elapsed_ms,
             } => {
-                // Enter archive mode for the pane and populate entries
                 let pane_mut = self.panes.pane_mut(pane);
                 pane_mut.mode = crate::pane::PaneMode::Archive {
                     source: archive_path.clone(),
@@ -1478,9 +1566,12 @@ impl AppState {
                 );
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::ConfigChanged => {
-                // Consumed at the app layer; no state reducer work required here.
-            }
+            JobResult::ConfigChanged => {}
+        }
+
+        if target_workspace.is_some() {
+            self.active_workspace_idx = previous_workspace;
+            self.sync_editor_menu_mode();
         }
     }
 
@@ -2179,6 +2270,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2200,6 +2292,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2208,6 +2301,7 @@ mod tests {
             ),
         });
         state.apply_job_result(JobResult::GitStatusAbsent {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
         });
         assert!(state.git_status(crate::pane::PaneId::Left).is_none());
@@ -2219,6 +2313,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2337,6 +2432,63 @@ mod tests {
         );
         assert!(state.workspace(1).editor.replace_active);
         assert_eq!(state.workspace(1).editor.replace_query, "beta");
+    }
+
+    #[test]
+    fn switch_to_workspace_updates_index_and_queues_initial_scans() {
+        let mut state = test_state();
+
+        let commands = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert_eq!(state.active_workspace_index(), 1);
+        assert_eq!(
+            commands,
+            vec![
+                Command::ScanPane {
+                    pane: PaneId::Left,
+                    path: PathBuf::from("."),
+                },
+                Command::ScanPane {
+                    pane: PaneId::Right,
+                    path: PathBuf::from("."),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn directory_scan_result_updates_only_matching_workspace() {
+        let mut state = test_state();
+        state.workspace_mut(0).panes.left.cwd = PathBuf::from("/tmp/ws0");
+
+        state.apply_job_result(JobResult::DirectoryScanned {
+            workspace_id: 1,
+            pane: PaneId::Left,
+            path: PathBuf::from("/tmp/ws1"),
+            entries: vec![],
+            elapsed_ms: 1,
+        });
+
+        assert_eq!(state.workspace(1).panes.left.cwd, PathBuf::from("/tmp/ws1"));
+        assert_eq!(state.workspace(0).panes.left.cwd, PathBuf::from("/tmp/ws0"));
+    }
+
+    #[test]
+    fn file_operation_progress_does_not_leak_across_workspaces() {
+        let mut state = test_state();
+
+        state.apply_job_result(JobResult::FileOperationProgress {
+            workspace_id: 2,
+            status: FileOperationStatus {
+                operation: "copy",
+                completed: 1,
+                total: 3,
+                current_path: PathBuf::from("/tmp/a"),
+            },
+        });
+
+        assert!(state.workspace(2).file_operation_status.is_some());
+        assert!(state.workspace(0).file_operation_status.is_none());
     }
 
     fn test_state() -> AppState {
@@ -2653,6 +2805,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/not-the-source-or-destination.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Move {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -2699,6 +2852,7 @@ mod tests {
             current_path: root.join("wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::ExtractArchive {
                 archive: archive_path.clone(),
                 inner_path: PathBuf::from("nested/note.txt"),
@@ -2741,6 +2895,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -2788,6 +2943,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/irrelevant-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./two.txt"),
                 destination: PathBuf::from("/tmp/target/two.txt"),
@@ -2800,6 +2956,7 @@ mod tests {
         assert!(state.pending_batch.is_some());
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: Some(FileOperationIdentity::from_operation(
@@ -2848,6 +3005,7 @@ mod tests {
             .expect("submit should work");
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: None,
@@ -2886,6 +3044,7 @@ mod tests {
             .expect("submit should work");
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: Some(FileOperationIdentity::from_operation(
@@ -3001,6 +3160,7 @@ mod tests {
         });
 
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("/tmp/source/note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -3190,6 +3350,7 @@ mod tests {
         let mut state = test_state();
 
         state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),

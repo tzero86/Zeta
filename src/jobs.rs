@@ -23,6 +23,7 @@ pub type SessionId = String;
 
 #[derive(Clone, Debug)]
 pub struct SftpScanRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub path: PathBuf,
     pub session_id: SessionId,
@@ -30,6 +31,7 @@ pub struct SftpScanRequest {
 
 #[derive(Clone, Debug)]
 pub struct SftpFileOpRequest {
+    pub workspace_id: usize,
     pub operation: FileOperation,
     pub src_session: Option<SessionId>,
     pub dst_session: Option<SessionId>,
@@ -53,6 +55,7 @@ pub enum SftpRequest {
 
 #[derive(Clone, Debug)]
 pub struct ArchiveListRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub archive_path: PathBuf,
     pub inner_path: PathBuf, // for navigating inside nested directories in the archive
@@ -66,12 +69,14 @@ pub enum BackendRef {
 
 #[derive(Clone, Debug)]
 pub struct ScanRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub struct FileOpRequest {
+    pub workspace_id: usize,
     pub backend: BackendRef,
     pub operation: FileOperation,
     pub refresh: Vec<RefreshTarget>,
@@ -84,6 +89,7 @@ pub struct FileOpRequest {
 
 #[derive(Clone, Debug)]
 pub struct PreviewRequest {
+    pub workspace_id: usize,
     pub path: PathBuf,
     pub syntect_theme: String,
     pub archive: Option<PathBuf>,
@@ -92,17 +98,20 @@ pub struct PreviewRequest {
 
 #[derive(Clone, Debug)]
 pub struct EditorLoadRequest {
+    pub workspace_id: usize,
     pub path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub struct GitStatusRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub struct FindRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub root: PathBuf,
     pub max_depth: usize,
@@ -117,15 +126,28 @@ pub struct WatchRequest {
 
 #[derive(Clone, Debug)]
 pub struct DirSizeRequest {
+    pub workspace_id: usize,
     pub pane: PaneId,
     pub path: PathBuf,
 }
 
 #[derive(Clone, Debug)]
 pub enum TerminalRequest {
-    Spawn { cwd: PathBuf, cols: u16, rows: u16 },
-    Write(Vec<u8>),
-    Resize { cols: u16, rows: u16 },
+    Spawn {
+        workspace_id: usize,
+        cwd: PathBuf,
+        cols: u16,
+        rows: u16,
+    },
+    Write {
+        workspace_id: usize,
+        bytes: Vec<u8>,
+    },
+    Resize {
+        workspace_id: usize,
+        cols: u16,
+        rows: u16,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -135,12 +157,14 @@ pub enum TerminalRequest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum JobResult {
     DirectoryScanned {
+        workspace_id: usize,
         pane: PaneId,
         path: PathBuf,
         entries: Vec<EntryInfo>,
         elapsed_ms: u128,
     },
     ArchiveListed {
+        workspace_id: usize,
         pane: PaneId,
         archive_path: PathBuf,
         inner_path: PathBuf,
@@ -148,12 +172,14 @@ pub enum JobResult {
         elapsed_ms: u128,
     },
     FileOperationCompleted {
+        workspace_id: usize,
         identity: FileOperationIdentity,
         message: String,
         refreshed: Vec<RefreshedPane>,
         elapsed_ms: u128,
     },
     FileOperationCollision {
+        workspace_id: usize,
         identity: FileOperationIdentity,
         operation: FileOperation,
         refresh: Vec<RefreshTarget>,
@@ -161,9 +187,11 @@ pub enum JobResult {
         elapsed_ms: u128,
     },
     FileOperationProgress {
+        workspace_id: usize,
         status: FileOperationStatus,
     },
     JobFailed {
+        workspace_id: usize,
         pane: PaneId,
         path: PathBuf,
         file_op: Option<FileOperationIdentity>,
@@ -171,27 +199,33 @@ pub enum JobResult {
         elapsed_ms: u128,
     },
     PreviewLoaded {
+        workspace_id: usize,
         path: PathBuf,
         view: crate::preview::ViewBuffer,
     },
     EditorLoaded {
+        workspace_id: usize,
         path: PathBuf,
         contents: String,
     },
     EditorLoadFailed {
+        workspace_id: usize,
         path: PathBuf,
         message: String,
     },
     /// Git status fetched successfully for a pane's working directory.
     GitStatusLoaded {
+        workspace_id: usize,
         pane: PaneId,
         status: crate::git::RepoStatus,
     },
     /// The path is not inside a git repository (or git is not available).
     GitStatusAbsent {
+        workspace_id: usize,
         pane: PaneId,
     },
     FindResults {
+        workspace_id: usize,
         pane: PaneId,
         root: PathBuf,
         entries: Vec<PathBuf>,
@@ -199,11 +233,20 @@ pub enum JobResult {
     DirectoryChanged {
         path: PathBuf,
     },
-    TerminalOutput(Vec<u8>),
-    TerminalDiagnostic(String),
-    TerminalExited,
+    TerminalOutput {
+        workspace_id: usize,
+        bytes: Vec<u8>,
+    },
+    TerminalDiagnostic {
+        workspace_id: usize,
+        message: String,
+    },
+    TerminalExited {
+        workspace_id: usize,
+    },
     /// Directory size calculated by recursively summing file sizes.
     DirSizeCalculated {
+        workspace_id: usize,
         pane: PaneId,
         path: PathBuf,
         bytes: u64,
@@ -343,12 +386,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                     let backend = LocalBackend;
                     let job_result = match backend.scan_directory(&req.path) {
                         Ok(entries) => JobResult::DirectoryScanned {
+                            workspace_id: req.workspace_id,
                             pane: req.pane,
                             path: req.path,
                             entries,
                             elapsed_ms: started_at.elapsed().as_millis(),
                         },
                         Err(err) => JobResult::JobFailed {
+                            workspace_id: req.workspace_id,
                             pane: req.pane,
                             path: req.path,
                             file_op: None,
@@ -372,8 +417,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             .name("zeta-file-op".into())
             .spawn(move || {
                 for req in file_op_rx {
-                    let outcome =
-                        run_file_operation(req.operation, req.refresh, req.collision, &result_tx);
+                    let workspace_id = req.workspace_id;
+                    let outcome = run_file_operation(
+                        workspace_id,
+                        req.operation,
+                        req.refresh,
+                        req.collision,
+                        &result_tx,
+                    );
                     let job_result = match outcome {
                         Ok(r) | Err(r) => r,
                     };
@@ -477,6 +528,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                     };
                     if result_tx_preview
                         .send(JobResult::PreviewLoaded {
+                            workspace_id: req.workspace_id,
                             path: req.path,
                             view,
                         })
@@ -499,10 +551,12 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                 for req in editor_rx {
                     let result = match std::fs::read(&req.path) {
                         Ok(bytes) => JobResult::EditorLoaded {
+                            workspace_id: req.workspace_id,
                             path: req.path,
                             contents: String::from_utf8_lossy(&bytes).into_owned(),
                         },
                         Err(error) => JobResult::EditorLoadFailed {
+                            workspace_id: req.workspace_id,
                             path: req.path,
                             message: error.to_string(),
                         },
@@ -525,10 +579,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                 for req in git_rx {
                     let result = match crate::git::fetch_status(&req.path) {
                         Some(status) => JobResult::GitStatusLoaded {
+                            workspace_id: req.workspace_id,
                             pane: req.pane,
                             status,
                         },
-                        None => JobResult::GitStatusAbsent { pane: req.pane },
+                        None => JobResult::GitStatusAbsent {
+                            workspace_id: req.workspace_id,
+                            pane: req.pane,
+                        },
                     };
                     if result_tx.send(result).is_err() {
                         break;
@@ -549,6 +607,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                     let entries = walk_for_files(&req.root, req.max_depth);
                     if result_tx
                         .send(JobResult::FindResults {
+                            workspace_id: req.workspace_id,
                             pane: req.pane,
                             root: req.root,
                             entries,
@@ -641,6 +700,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                     .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
                             });
                             let _ = result_tx.send(JobResult::ArchiveListed {
+                                workspace_id: req.workspace_id,
                                 pane: req.pane,
                                 archive_path: archive_path.clone(),
                                 inner_path: req.inner_path,
@@ -661,6 +721,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                         Ok(f) => f,
                         Err(err) => {
                             let _ = result_tx.send(JobResult::JobFailed {
+                                workspace_id: req.workspace_id,
                                 pane: req.pane,
                                 path: archive_path,
                                 file_op: None,
@@ -740,6 +801,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
                     });
                     let _ = result_tx.send(JobResult::ArchiveListed {
+                        workspace_id: req.workspace_id,
                         pane: req.pane,
                         archive_path,
                         inner_path: req.inner_path,
@@ -791,12 +853,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                                 let started_at = Instant::now();
                                 let job_result = match backend.scan_directory(&req.path) {
                                     Ok(entries) => JobResult::DirectoryScanned {
+                                        workspace_id: req.workspace_id,
                                         pane: req.pane,
                                         path: req.path.clone(),
                                         entries,
                                         elapsed_ms: started_at.elapsed().as_millis(),
                                     },
                                     Err(e) => JobResult::JobFailed {
+                                        workspace_id: req.workspace_id,
                                         pane: req.pane,
                                         path: req.path,
                                         file_op: None,
@@ -813,10 +877,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                             let pane = req.refresh.first().map(|r| r.pane).unwrap_or(PaneId::Left);
 
                             // Get source and destination backends
-                            let src_backend =
-                                req.src_session.as_ref().and_then(|id| sessions.get(id));
-                            let dst_backend =
-                                req.dst_session.as_ref().and_then(|id| sessions.get(id));
+                            let src_backend = req.src_session.as_ref().and_then(|id| sessions.get(id));
+                            let dst_backend = req.dst_session.as_ref().and_then(|id| sessions.get(id));
                             // Use src_backend as fallback for remote→remote in same session
                             let dst_backend = dst_backend.or(src_backend);
 
@@ -833,12 +895,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
 
                             let job_result = match result {
                                 Ok(msg) => JobResult::FileOperationCompleted {
+                                    workspace_id: req.workspace_id,
                                     identity: identity.clone(),
                                     message: msg,
                                     refreshed: vec![],
                                     elapsed_ms: started_at.elapsed().as_millis(),
                                 },
                                 Err((path, msg)) => JobResult::JobFailed {
+                                    workspace_id: req.workspace_id,
                                     pane,
                                     path,
                                     file_op: Some(identity),
@@ -877,6 +941,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                     let bytes = sum_dir_size(&req.path);
                     if result_tx
                         .send(JobResult::DirSizeCalculated {
+                            workspace_id: req.workspace_id,
                             pane: req.pane,
                             path: req.path,
                             bytes,
@@ -1284,6 +1349,7 @@ fn execute_sftp_file_op(
 
 #[allow(clippy::result_large_err)]
 fn run_file_operation(
+    workspace_id: usize,
     operation: FileOperation,
     refresh: Vec<RefreshTarget>,
     collision: CollisionPolicy,
@@ -1301,7 +1367,7 @@ fn run_file_operation(
         FileOperation::Copy {
             source,
             destination,
-        } => run_copy_with_progress(source, destination, collision, result_tx),
+        } => run_copy_with_progress(workspace_id, source, destination, collision, result_tx),
         FileOperation::CreateDirectory { path } => create_directory(path, collision),
         FileOperation::CreateFile { path } => create_file(path, collision),
         FileOperation::Delete { path } => delete_path(path),
@@ -1309,7 +1375,7 @@ fn run_file_operation(
         FileOperation::Move {
             source,
             destination,
-        } => run_move_with_progress(source, destination, collision, result_tx),
+        } => run_move_with_progress(workspace_id, source, destination, collision, result_tx),
         FileOperation::Rename {
             source,
             destination,
@@ -1318,12 +1384,13 @@ fn run_file_operation(
             archive,
             inner_path,
             destination,
-        } => run_extract_archive(archive, inner_path, destination, result_tx),
+        } => run_extract_archive(workspace_id, archive, inner_path, destination, result_tx),
     };
 
     if let Err(error) = op_result {
         return match error {
             FileSystemError::PathExists { path } => Err(JobResult::FileOperationCollision {
+                workspace_id,
                 identity,
                 operation,
                 refresh,
@@ -1331,6 +1398,7 @@ fn run_file_operation(
                 elapsed_ms: started_at.elapsed().as_millis(),
             }),
             other => Err(JobResult::JobFailed {
+                workspace_id,
                 pane: failure_pane,
                 path: identity.source.clone(),
                 file_op: Some(identity),
@@ -1351,6 +1419,7 @@ fn run_file_operation(
             }),
             Err(error) => {
                 return Err(JobResult::JobFailed {
+                    workspace_id,
                     pane: target.pane,
                     path: target.path,
                     file_op: Some(identity),
@@ -1362,6 +1431,7 @@ fn run_file_operation(
     }
 
     Ok(JobResult::FileOperationCompleted {
+        workspace_id,
         identity,
         message: operation_label,
         refreshed,
@@ -1370,6 +1440,7 @@ fn run_file_operation(
 }
 
 fn run_copy_with_progress(
+    workspace_id: usize,
     source: &Path,
     destination: &Path,
     collision: CollisionPolicy,
@@ -1378,6 +1449,7 @@ fn run_copy_with_progress(
     copy_path_with_progress(source, destination, collision, &mut |progress| {
         let _ = send_progress_update(
             result_tx,
+            workspace_id,
             "copy",
             progress.completed,
             progress.total,
@@ -1387,6 +1459,7 @@ fn run_copy_with_progress(
 }
 
 fn run_move_with_progress(
+    workspace_id: usize,
     source: &Path,
     destination: &Path,
     collision: CollisionPolicy,
@@ -1394,16 +1467,24 @@ fn run_move_with_progress(
 ) -> Result<(), FileSystemError> {
     match rename_path(source, destination, collision) {
         Ok(()) => {
-            let _ = send_progress_update(result_tx, "move", 1, 1, destination.to_path_buf());
+            let _ = send_progress_update(
+                result_tx,
+                workspace_id,
+                "move",
+                1,
+                1,
+                destination.to_path_buf(),
+            );
             Ok(())
         }
         Err(error) if is_cross_device_error(&error) => {
             let total = count_path_entries(source)?.saturating_add(1);
-            let _ = send_progress_update(result_tx, "move", 0, total, source.to_path_buf());
+            let _ = send_progress_update(result_tx, workspace_id, "move", 0, total, source.to_path_buf());
 
             copy_path_with_progress(source, destination, collision, &mut |progress| {
                 let _ = send_progress_update(
                     result_tx,
+                    workspace_id,
                     "move",
                     progress.completed,
                     total,
@@ -1412,8 +1493,14 @@ fn run_move_with_progress(
             })?;
 
             delete_path(source)?;
-            let _ =
-                send_progress_update(result_tx, "move", total, total, destination.to_path_buf());
+            let _ = send_progress_update(
+                result_tx,
+                workspace_id,
+                "move",
+                total,
+                total,
+                destination.to_path_buf(),
+            );
             Ok(())
         }
         Err(error) => Err(error),
@@ -1422,6 +1509,7 @@ fn run_move_with_progress(
 
 fn send_progress_update(
     result_tx: &Sender<JobResult>,
+    workspace_id: usize,
     operation: &'static str,
     completed: u64,
     total: u64,
@@ -1429,6 +1517,7 @@ fn send_progress_update(
 ) -> Result<(), ()> {
     result_tx
         .send(JobResult::FileOperationProgress {
+            workspace_id,
             status: FileOperationStatus {
                 operation,
                 completed,
@@ -1470,6 +1559,7 @@ fn describe_operation(operation: &FileOperation) -> String {
 }
 
 fn run_extract_archive(
+    workspace_id: usize,
     archive: &Path,
     inner_path: &Path,
     destination: &Path,
@@ -1555,7 +1645,7 @@ fn run_extract_archive(
                     }
                 })?;
             }
-            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+            let _ = send_progress_update(result_tx, workspace_id, "extract", 1, 1, out_path);
         }
 
         Ok(())
@@ -1631,7 +1721,7 @@ fn run_extract_archive(
                     }
                 })?;
             }
-            let _ = send_progress_update(result_tx, "extract", 1, 1, out_path);
+            let _ = send_progress_update(result_tx, workspace_id, "extract", 1, 1, out_path);
         }
         Ok(())
     } else {
@@ -1647,76 +1737,83 @@ fn run_extract_archive(
 ///
 /// Uses `conpty` on Windows and `portable-pty` on Unix via [`crate::pty::PtySession`].
 pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Sender<JobResult>) {
+    use std::collections::HashMap;
     use std::io::{Read, Write};
 
-    let mut session: Option<crate::pty::PtySession> = None;
-    let mut writer: Option<Box<dyn Write + Send>> = None;
+    let mut sessions: HashMap<usize, crate::pty::PtySession> = HashMap::new();
+    let mut writers: HashMap<usize, Box<dyn Write + Send>> = HashMap::new();
 
     for req in terminal_rx {
         match req {
-            TerminalRequest::Spawn { cwd, cols, rows } => {
+            TerminalRequest::Spawn {
+                workspace_id,
+                cwd,
+                cols,
+                rows,
+            } => {
                 let safe_cols = if cols == 0 { 80 } else { cols };
                 let safe_rows = if rows == 0 { 24 } else { rows };
 
                 match crate::pty::PtySession::spawn(&cwd, safe_cols, safe_rows) {
-                    Ok(mut pty) => {
-                        match (pty.take_reader(), pty.take_writer()) {
-                            (Ok(mut r), Ok(w)) => {
-                                // Start a dedicated thread to read from PTY
-                                let result_tx_inner = result_tx.clone();
-                                thread::Builder::new()
-                                    .name("zeta-terminal-reader".into())
-                                    .spawn(move || {
-                                        let mut buffer = [0u8; 8192];
-                                        while let Ok(n) = r.read(&mut buffer) {
-                                            if n == 0 {
-                                                break;
-                                            }
-                                            // Non-blocking send to prevent reader from hanging if UI is slow
-                                            let _ = result_tx_inner.try_send(
-                                                JobResult::TerminalOutput(buffer[..n].to_vec()),
-                                            );
+                    Ok(mut pty) => match (pty.take_reader(), pty.take_writer()) {
+                        (Ok(mut r), Ok(w)) => {
+                            let result_tx_inner = result_tx.clone();
+                            thread::Builder::new()
+                                .name(format!("zeta-terminal-reader-{workspace_id}"))
+                                .spawn(move || {
+                                    let mut buffer = [0u8; 8192];
+                                    while let Ok(n) = r.read(&mut buffer) {
+                                        if n == 0 {
+                                            break;
                                         }
+                                        let _ = result_tx_inner.try_send(JobResult::TerminalOutput {
+                                            workspace_id,
+                                            bytes: buffer[..n].to_vec(),
+                                        });
+                                    }
+                                })
+                                .expect("failed to spawn terminal reader thread");
+
+                            if let Ok(waiter) = pty.exit_waiter() {
+                                let result_tx_exit = result_tx.clone();
+                                thread::Builder::new()
+                                    .name(format!("zeta-terminal-watcher-{workspace_id}"))
+                                    .spawn(move || {
+                                        waiter();
+                                        let _ = result_tx_exit.send(JobResult::TerminalExited {
+                                            workspace_id,
+                                        });
                                     })
-                                    .expect("failed to spawn terminal reader thread");
-
-                                // Start a dedicated thread to watch for process exit
-                                if let Ok(waiter) = pty.exit_waiter() {
-                                    let result_tx_exit = result_tx.clone();
-                                    thread::Builder::new()
-                                        .name("zeta-terminal-watcher".into())
-                                        .spawn(move || {
-                                            waiter();
-                                            let _ = result_tx_exit.send(JobResult::TerminalExited);
-                                        })
-                                        .expect("failed to spawn terminal watcher thread");
-                                }
-
-                                let _ = result_tx.send(JobResult::TerminalDiagnostic(
-                                    "Terminal ready".to_string(),
-                                ));
-
-                                writer = Some(w);
-                                session = Some(pty);
+                                    .expect("failed to spawn terminal watcher thread");
                             }
-                            (r_res, w_res) => {
-                                let msg = format!(
-                                    "PTY I/O setup failed: reader={:?}, writer={:?}",
-                                    r_res.err(),
-                                    w_res.err(),
-                                );
-                                let _ = result_tx.send(JobResult::JobFailed {
-                                    pane: PaneId::Left,
-                                    path: PathBuf::new(),
-                                    file_op: None,
-                                    message: msg,
-                                    elapsed_ms: 0,
-                                });
-                            }
+
+                            let _ = result_tx.send(JobResult::TerminalDiagnostic {
+                                workspace_id,
+                                message: String::from("Terminal ready"),
+                            });
+
+                            writers.insert(workspace_id, w);
+                            sessions.insert(workspace_id, pty);
                         }
-                    }
+                        (r_res, w_res) => {
+                            let msg = format!(
+                                "PTY I/O setup failed: reader={:?}, writer={:?}",
+                                r_res.err(),
+                                w_res.err(),
+                            );
+                            let _ = result_tx.send(JobResult::JobFailed {
+                                workspace_id,
+                                pane: PaneId::Left,
+                                path: PathBuf::new(),
+                                file_op: None,
+                                message: msg,
+                                elapsed_ms: 0,
+                            });
+                        }
+                    },
                     Err(e) => {
                         let _ = result_tx.send(JobResult::JobFailed {
+                            workspace_id,
                             pane: PaneId::Left,
                             path: PathBuf::new(),
                             file_op: None,
@@ -1726,17 +1823,21 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                     }
                 }
             }
-            TerminalRequest::Write(bytes) => {
-                if let Some(w) = &mut writer {
-                    let _ = w.write_all(&bytes);
-                    let _ = w.flush();
+            TerminalRequest::Write { workspace_id, bytes } => {
+                if let Some(writer) = writers.get_mut(&workspace_id) {
+                    let _ = writer.write_all(&bytes);
+                    let _ = writer.flush();
                 }
             }
-            TerminalRequest::Resize { cols, rows } => {
-                if let Some(s) = &mut session {
+            TerminalRequest::Resize {
+                workspace_id,
+                cols,
+                rows,
+            } => {
+                if let Some(session) = sessions.get_mut(&workspace_id) {
                     let safe_cols = if cols == 0 { 80 } else { cols };
                     let safe_rows = if rows == 0 { 24 } else { rows };
-                    let _ = s.resize(safe_cols, safe_rows);
+                    let _ = session.resize(safe_cols, safe_rows);
                 }
             }
         }
@@ -1850,6 +1951,7 @@ mod tests {
         let (result_tx, _result_rx) = bounded(1);
 
         let result = run_file_operation(
+            0,
             FileOperation::CreateFile { path: path.clone() },
             vec![],
             CollisionPolicy::Fail,
@@ -1860,6 +1962,7 @@ mod tests {
         assert_eq!(
             result,
             JobResult::FileOperationCompleted {
+                workspace_id: 0,
                 identity: FileOperationIdentity {
                     kind: FileOperationKind::CreateFile,
                     source: path.clone(),
@@ -1881,6 +1984,7 @@ mod tests {
         let (result_tx, _result_rx) = bounded(1);
 
         let collision = run_file_operation(
+            0,
             FileOperation::CreateFile {
                 path: collision_path.clone(),
             },
@@ -1890,6 +1994,7 @@ mod tests {
         )
         .expect_err("existing destination should collide");
         let failure = run_file_operation(
+            0,
             FileOperation::Delete {
                 path: missing_path.clone(),
             },
@@ -1938,6 +2043,7 @@ mod tests {
         workers
             .git_tx
             .send(GitStatusRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 path: tmp,
             })
@@ -1949,9 +2055,13 @@ mod tests {
             matches!(
                 result,
                 JobResult::GitStatusLoaded {
+                    workspace_id: 0,
                     pane: PaneId::Left,
                     ..
-                } | JobResult::GitStatusAbsent { pane: PaneId::Left }
+                } | JobResult::GitStatusAbsent {
+                    workspace_id: 0,
+                    pane: PaneId::Left,
+                }
             ),
             "unexpected result: {result:?}"
         );
@@ -1964,6 +2074,7 @@ mod tests {
         workers
             .scan_tx
             .send(ScanRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 path: tmp,
             })
@@ -1993,6 +2104,7 @@ mod tests {
         workers
             .find_tx
             .send(FindRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 root: tmp,
                 max_depth: 2,
@@ -2038,6 +2150,7 @@ mod tests {
         workers
             .archive_tx
             .send(ArchiveListRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 archive_path: archive_path.clone(),
                 inner_path: std::path::PathBuf::new(),
@@ -2086,6 +2199,7 @@ mod tests {
         workers
             .file_op_tx
             .send(FileOpRequest {
+                workspace_id: 0,
                 backend: BackendRef::Local,
                 operation: FileOperation::ExtractArchive {
                     archive: archive_path.clone(),
@@ -2162,6 +2276,7 @@ mod tests {
         workers
             .scan_tx
             .send(ScanRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 path: tmp.clone(),
             })
@@ -2169,6 +2284,7 @@ mod tests {
         workers
             .scan_tx
             .send(ScanRequest {
+                workspace_id: 0,
                 pane: PaneId::Right,
                 path: tmp.clone(),
             })
@@ -2176,6 +2292,7 @@ mod tests {
         workers
             .find_tx
             .send(FindRequest {
+                workspace_id: 0,
                 pane: PaneId::Left,
                 root: tmp,
                 max_depth: 1,

@@ -50,6 +50,7 @@ pub enum Action {
     EditorReplaceAll,
     FocusNextPane,
     CycleFocus,
+    SwitchToWorkspace(usize),
     FocusPreviewPanel,
     OpenShell,
     ToggleTerminal,
@@ -295,10 +296,29 @@ impl Action {
     /// Low-priority fallback key handler for Pane and Editor contexts.
     /// Palette, settings, preview, collision, prompt, dialog, and menu
     /// are handled by their dedicated `from_*_key_event` helpers.
+    pub fn from_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
+        if key_event.modifiers != KeyModifiers::ALT {
+            return None;
+        }
+
+        match key_event.code {
+            KeyCode::Char('1') => Some(Self::SwitchToWorkspace(0)),
+            KeyCode::Char('2') => Some(Self::SwitchToWorkspace(1)),
+            KeyCode::Char('3') => Some(Self::SwitchToWorkspace(2)),
+            KeyCode::Char('4') => Some(Self::SwitchToWorkspace(3)),
+            _ => None,
+        }
+    }
+
+
     pub fn from_key_event_with_settings(
         key_event: KeyEvent,
         keymap: &RuntimeKeymap,
     ) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -624,6 +644,10 @@ impl Action {
         key_event: KeyEvent,
         keymap: &crate::config::RuntimeKeymap,
     ) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -658,6 +682,10 @@ impl Action {
     }
 
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -731,6 +759,10 @@ impl Action {
     }
 
     pub fn from_menu_key_event(key_event: KeyEvent) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -1010,6 +1042,29 @@ mod tests {
             Some(Action::Quit)
         );
     }
+
+    #[test]
+    fn alt_number_shortcuts_switch_workspaces() {
+        let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT), &keymap),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT), &keymap),
+            Some(Action::SwitchToWorkspace(3))
+        );
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT)),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::ALT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+    }
+
 
     #[test]
     fn alt_menu_shortcuts_are_available() {
