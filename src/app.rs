@@ -573,6 +573,14 @@ fn route_mouse_event(
         // Scroll wheel
         // -------------------------------------------------------------------
         MouseEventKind::ScrollUp => {
+            // Dialog scroll takes priority — route anywhere on screen when dialog is open.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Dialog)) {
+                return Some(Action::ScrollDialogUp);
+            }
+            // All other open modals absorb scroll — don't leak through to panes.
+            if matches!(focus, FocusLayer::Modal(_)) {
+                return None;
+            }
             if focus == FocusLayer::Preview
                 || cache
                     .file_preview_panel
@@ -601,6 +609,14 @@ fn route_mouse_event(
             None
         }
         MouseEventKind::ScrollDown => {
+            // Dialog scroll takes priority — route anywhere on screen when dialog is open.
+            if matches!(focus, FocusLayer::Modal(ModalKind::Dialog)) {
+                return Some(Action::ScrollDialogDown);
+            }
+            // All other open modals absorb scroll — don't leak through to panes.
+            if matches!(focus, FocusLayer::Modal(_)) {
+                return None;
+            }
             if focus == FocusLayer::Preview
                 || cache
                     .file_preview_panel
@@ -1017,6 +1033,53 @@ mod tests {
             false,
         );
         assert_eq!(action, Some(Action::EditorMoveUp));
+    }
+    #[test]
+    fn route_mouse_scroll_on_dialog_scrolls_dialog() {
+        // Scroll anywhere (including over a pane rect) must route to the dialog,
+        // not fall through to MoveSelectionUp/Down.
+        let up = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Dialog),
+            false,
+        );
+        assert_eq!(up, Some(Action::ScrollDialogUp));
+
+        let down = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Dialog),
+            false,
+        );
+        assert_eq!(down, Some(Action::ScrollDialogDown));
+    }
+
+    #[test]
+    fn route_mouse_scroll_on_other_modal_is_absorbed() {
+        // Scroll while a non-dialog modal is open must not reach the pane.
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Modal(ModalKind::Prompt),
+            false,
+        );
+        assert_eq!(action, None);
     }
 
     #[test]
