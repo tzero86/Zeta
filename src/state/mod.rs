@@ -64,6 +64,7 @@ pub struct WorkspaceState {
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
+    pending_collision: Option<CollisionState>,
     pub diff_mode: bool,
     pub diff_map: std::collections::HashMap<String, crate::diff::DiffStatus>,
     /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
@@ -83,6 +84,7 @@ impl WorkspaceState {
             editor_fullscreen: false,
             git: [None, None],
             pending_reveal: None,
+            pending_collision: None,
             diff_mode: false,
             diff_map: std::collections::HashMap::new(),
             pending_batch: None,
@@ -145,6 +147,11 @@ impl AppState {
         }
         self.sync_editor_menu_mode();
         self.status_message = format!("workspace {} active", idx + 1);
+        if self.overlay.modal.is_none() {
+            if let Some(collision) = self.active_workspace_mut().pending_collision.take() {
+                self.overlay.set_collision(collision);
+            }
+        }
 
         if !should_initialize {
             return Vec::new();
@@ -1319,6 +1326,8 @@ impl AppState {
         };
 
         let previous_workspace = self.active_workspace_idx;
+        let target_is_active =
+            target_workspace.is_none_or(|workspace_id| workspace_id == previous_workspace);
         if let Some(workspace_id) = target_workspace {
             self.active_workspace_idx = workspace_id;
         }
@@ -1370,7 +1379,10 @@ impl AppState {
                 refreshed,
                 elapsed_ms,
             } => {
-                self.overlay.close_all();
+                if target_is_active {
+                    self.overlay.close_all();
+                }
+                self.pending_collision = None;
                 self.file_operation_status = None;
                 for pane in refreshed {
                     self.panes.pane_mut(pane.pane).cwd = pane.path;
@@ -1396,11 +1408,16 @@ impl AppState {
             } => {
                 self.file_operation_status = None;
                 self.note_batch_settled(&identity, true);
-                self.overlay.set_collision(CollisionState {
+                let collision = CollisionState {
                     operation,
                     refresh,
                     path: path.clone(),
-                });
+                };
+                if target_is_active {
+                    self.overlay.set_collision(collision);
+                } else {
+                    self.pending_collision = Some(collision);
+                }
                 if self.pending_batch.is_some() {
                     self.status_message = format!(
                         "destination exists after {elapsed_ms} ms: {}",
@@ -3400,6 +3417,65 @@ mod tests {
             state.collision().map(|collision| collision.path.clone()),
             Some(PathBuf::from("/tmp/target/note.txt"))
         );
+    }
+
+    #[test]
+    fn inactive_workspace_collision_does_not_replace_active_overlay() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Copy,
+            "Copy",
+            PathBuf::from("/tmp/target"),
+            Some(PathBuf::from("./note.txt")),
+            String::from("/tmp/target/note.txt"),
+        ));
+
+        state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 1,
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            }),
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            },
+            refresh: vec![],
+            path: PathBuf::from("/tmp/other-target/other.txt"),
+            elapsed_ms: 5,
+        });
+
+        assert!(state.overlay.prompt().is_some());
+        assert!(!state.is_collision_open());
+        assert!(state.workspace(1).pending_collision.is_some());
+    }
+
+    #[test]
+    fn switching_to_workspace_surfaces_deferred_collision() {
+        let mut state = test_state();
+        state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 1,
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            }),
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            },
+            refresh: vec![],
+            path: PathBuf::from("/tmp/other-target/other.txt"),
+            elapsed_ms: 5,
+        });
+
+        let _ = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert!(state.is_collision_open());
+        assert_eq!(
+            state.collision().map(|collision| collision.path.clone()),
+            Some(PathBuf::from("/tmp/other-target/other.txt"))
+        );
+        assert!(state.workspace(1).pending_collision.is_none());
     }
 
     #[test]
