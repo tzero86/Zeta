@@ -21,6 +21,8 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 ### File management
 - Dual-pane browser with side-by-side and stacked layouts
+- Four isolated in-app workspaces with independent pane, preview, editor, terminal, and transient runtime state
+- Session restore for all four workspaces plus the active workspace index
 - Create, copy, move, rename, and delete files and directories
 - Collision resolution dialog (skip, overwrite, rename)
 - Background workers — file operations, directory scans, and previews never block each other
@@ -65,9 +67,10 @@ Norton Commander workflow, modern TUI, written in Rust.
 ### Navigation & UX
 - Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
 - Command palette (`Ctrl+P`)
+- Direct workspace switching with `Alt+1..Alt+4`; active workspace shown as `ws:N/4` in the status bar
 - In-app settings panel for theme, icon mode, layout, and preview preferences (`Ctrl+O`)
 - Full mouse support: click to focus panes, scroll to navigate, click menu items, hover highlights
-- Three built-in themes: Oxide (default), Fjord, Sandbar
+- Zeta is the default theme; Fjord, Sandbar, Oxide, Matrix, Norton, Dracula, Neon, and Monochrome remain available
 - Unicode icons by default, ASCII fallback, custom icon font mode
 
 ---
@@ -76,6 +79,7 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 | Key | Action |
 |---|---|
+| `Alt+1..Alt+4` | Switch directly to workspace 1..4 |
 | `F4` | Open selected file in editor |
 | `F3` | Toggle file preview panel |
 | `F5` | Copy |
@@ -89,7 +93,7 @@ Norton Commander workflow, modern TUI, written in Rust.
 | `Ctrl+Q` | Quit |
 | `Alt+F/N/V/H` | Open menu |
 | `Alt+←/→` | Navigate directory history |
-| `F3` (Alt) | Focus preview panel |
+| `Alt+F3` | Focus preview panel |
 
 ---
 
@@ -111,28 +115,31 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 ```
 App (event loop)
-├── AppState (single source of truth)
+├── AppState (global shell state)
+│   ├── workspaces: [WorkspaceState; 4]
+│   ├── active_workspace_idx
+│   ├── OverlayState    — menus, prompts, dialogs, palette
+│   └── shared config/theme/runtime shell state
+├── WorkspaceState
 │   ├── PaneSetState    — dual-pane navigation and selection
 │   ├── EditorState     — editor buffer + search + preview state
 │   ├── PreviewState    — preview panel content and scroll
-│   ├── OverlayState    — menus, prompts, dialogs, palette
-│   └── git: [RepoStatus; 2]  — per-pane git status cache
-├── WorkerChannels (four dedicated background threads)
-│   ├── ScanWorker      — directory listing
-│   ├── FileOpWorker    — copy / move / delete / rename
-│   ├── PreviewWorker   — file content + syntax highlighting
-│   └── GitWorker       — git status + branch detection
+│   ├── TerminalState   — per-workspace terminal session state
+│   └── local transient state — git cache, progress, pending batch/collision, scan timing
+├── WorkerChannels (bounded background workers)
+│   ├── Scan / FileOp / Preview / Git / Finder / Archive / DirSize / Watch / Terminal
+│   └── workspace-scoped requests/results carry workspace identity where needed
 └── FocusLayer          — compiler-enforced input routing
     (Pane | Editor | Preview | MarkdownPreview | Modal(…))
 ```
 
 Key design decisions:
-- One UI thread + four bounded worker threads. No async runtime.
+- One UI thread plus bounded worker threads. No async runtime.
+- `WorkspaceState` keeps full task context isolated inside one process; switching workspaces is instant.
 - `FocusLayer` enum makes illegal input-routing states unrepresentable.
 - Editor uses `ropey::Rope` (B-tree) for O(log n) insert/delete on large files.
 - Highlight cache keyed by `edit_version` — syntect runs once per edit, not per frame.
-- Git status is a fire-and-forget background job triggered alongside every scan.
-
+- Git status is a fire-and-forget background job triggered alongside every scan and routed back to the launching workspace.
 Full ADR: [`docs/adr-0001-architecture.md`](docs/adr-0001-architecture.md)
 
 ---
@@ -184,8 +191,8 @@ Config is loaded from (in order of preference):
 3. `~/.config/zeta/config.toml` (Linux/macOS)
 
 ```toml
-# Theme: "matrix" (default) | "norton" | "fjord" | "sandbar" | "oxide"
-theme = "matrix"
+# Theme: "zeta" (default) | "fjord" | "sandbar" | "oxide" | "matrix" | "norton" | "dracula" | "neon" | "monochrome"
+theme = "zeta"
 
 # Icon mode: "unicode" (default) | "ascii" | "custom"
 # For "custom", install assets/fonts/zeta-icons.ttf in your terminal first.

@@ -24,8 +24,24 @@ pub struct WorkspaceSessionState {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SessionState {
+    #[serde(default)]
     pub active_workspace: Option<usize>,
+    #[serde(default)]
     pub workspaces: Vec<WorkspaceSessionState>,
+    #[serde(default, skip_serializing)]
+    pub left_cwd: Option<PathBuf>,
+    #[serde(default, skip_serializing)]
+    pub right_cwd: Option<PathBuf>,
+    #[serde(default, skip_serializing)]
+    pub left_sort: Option<SortMode>,
+    #[serde(default, skip_serializing)]
+    pub right_sort: Option<SortMode>,
+    #[serde(default, skip_serializing)]
+    pub left_hidden: bool,
+    #[serde(default, skip_serializing)]
+    pub right_hidden: bool,
+    #[serde(default, skip_serializing)]
+    pub layout: Option<PaneLayout>,
 }
 
 impl SessionState {
@@ -40,6 +56,34 @@ impl SessionState {
             .ok()
             .and_then(|s| toml::from_str(&s).ok())
             .unwrap_or_default()
+    }
+
+    pub fn workspace(&self, idx: usize) -> Option<WorkspaceSessionState> {
+        if let Some(workspace) = self.workspaces.get(idx) {
+            return Some(workspace.clone());
+        }
+
+        if idx != 0
+            && self.left_cwd.is_none()
+            && self.right_cwd.is_none()
+            && self.left_sort.is_none()
+            && self.right_sort.is_none()
+            && self.layout.is_none()
+            && !self.left_hidden
+            && !self.right_hidden
+        {
+            return None;
+        }
+
+        (idx == 0).then(|| WorkspaceSessionState {
+            left_cwd: self.left_cwd.clone(),
+            right_cwd: self.right_cwd.clone(),
+            left_sort: self.left_sort,
+            right_sort: self.right_sort,
+            left_hidden: self.left_hidden,
+            right_hidden: self.right_hidden,
+            layout: self.layout,
+        })
     }
 
     /// Persist to disk. Non-fatal — caller should log or ignore errors.
@@ -78,6 +122,7 @@ mod tests {
                 WorkspaceSessionState::default(),
                 WorkspaceSessionState::default(),
             ],
+            ..Default::default()
         };
 
         let text = toml::to_string(&session).expect("session should serialize");
@@ -96,5 +141,35 @@ mod tests {
             round_trip.workspaces[0].layout,
             Some(PaneLayout::SideBySide)
         );
+    }
+
+    #[test]
+    fn legacy_session_fields_migrate_into_first_workspace() {
+        let legacy = r#"
+left_cwd = "/repo-a"
+right_cwd = "/repo-b"
+left_hidden = true
+right_hidden = false
+layout = "SideBySide"
+"#;
+
+        let session: SessionState =
+            toml::from_str(legacy).expect("legacy session should deserialize");
+        let workspace = session
+            .workspace(0)
+            .expect("legacy workspace should map to index 0");
+
+        assert_eq!(
+            workspace.left_cwd,
+            Some(std::path::PathBuf::from("/repo-a"))
+        );
+        assert_eq!(
+            workspace.right_cwd,
+            Some(std::path::PathBuf::from("/repo-b"))
+        );
+        assert!(workspace.left_hidden);
+        assert!(!workspace.right_hidden);
+        assert_eq!(workspace.layout, Some(PaneLayout::SideBySide));
+        assert!(session.workspace(1).is_none());
     }
 }

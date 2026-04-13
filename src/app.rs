@@ -110,6 +110,7 @@ impl App {
                     }
                 })
                 .collect(),
+            ..Default::default()
         };
         let session_path = crate::session::SessionState::session_path(std::path::Path::new(
             self.state.config_path(),
@@ -630,11 +631,6 @@ fn route_key_event(
     use crossterm::event::{KeyCode, KeyModifiers};
 
     let alt_f3 = key_event.code == KeyCode::F(3) && key_event.modifiers == KeyModifiers::ALT;
-
-    if let Some(action) = Action::from_workspace_key_event(key_event) {
-        return Some(action);
-    }
-
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),
         FocusLayer::Modal(ModalKind::Collision) => Action::from_collision_key_event(key_event),
@@ -1242,6 +1238,19 @@ mod tests {
             FocusLayer::Modal(ModalKind::Palette),
             false,
         );
+        assert_eq!(action, None);
+    }
+
+    #[test]
+    fn prompt_layer_absorbs_workspace_shortcuts() {
+        let keymap = RuntimeKeymap::default();
+        let action = route_key_event(
+            KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT),
+            &keymap,
+            FocusLayer::Modal(ModalKind::Prompt),
+            false,
+        );
+
         assert_eq!(action, None);
     }
 

@@ -139,6 +139,7 @@ impl AppState {
         }
 
         let should_initialize = self.workspace(idx).last_scan_time_ms.is_none();
+        self.overlay.close_all();
         self.active_workspace_idx = idx;
         if self.active_workspace().panes.focus == PaneFocus::Preview
             && !self.can_focus_preview_panel()
@@ -147,10 +148,8 @@ impl AppState {
         }
         self.sync_editor_menu_mode();
         self.status_message = format!("workspace {} active", idx + 1);
-        if self.overlay.modal.is_none() {
-            if let Some(collision) = self.active_workspace_mut().pending_collision.take() {
-                self.overlay.set_collision(collision);
-            }
+        if let Some(collision) = self.active_workspace_mut().pending_collision.take() {
+            self.overlay.set_collision(collision);
         }
 
         if !should_initialize {
@@ -198,30 +197,37 @@ impl AppState {
             )
         });
         let workspaces = std::array::from_fn(|idx| {
-            let saved = session.workspaces.get(idx);
+            let saved = session.workspace(idx);
             let left_cwd = saved
+                .as_ref()
                 .and_then(|workspace| workspace.left_cwd.clone())
                 .filter(|path| path.is_dir())
                 .unwrap_or_else(|| cwd.clone());
             let right_cwd = saved
+                .as_ref()
                 .and_then(|workspace| workspace.right_cwd.clone())
                 .filter(|path| path.is_dir())
                 .unwrap_or_else(|| secondary.clone());
             let layout = saved
+                .as_ref()
                 .and_then(|workspace| workspace.layout)
                 .unwrap_or_default();
 
             let mut left_pane = PaneState::empty("Left", left_cwd);
-            if let Some(sort) = saved.and_then(|workspace| workspace.left_sort) {
+            if let Some(sort) = saved.as_ref().and_then(|workspace| workspace.left_sort) {
                 left_pane.sort_mode = sort;
             }
-            left_pane.show_hidden = saved.is_some_and(|workspace| workspace.left_hidden);
+            left_pane.show_hidden = saved
+                .as_ref()
+                .is_some_and(|workspace| workspace.left_hidden);
 
             let mut right_pane = PaneState::empty("Right", right_cwd);
-            if let Some(sort) = saved.and_then(|workspace| workspace.right_sort) {
+            if let Some(sort) = saved.as_ref().and_then(|workspace| workspace.right_sort) {
                 right_pane.sort_mode = sort;
             }
-            right_pane.show_hidden = saved.is_some_and(|workspace| workspace.right_hidden);
+            right_pane.show_hidden = saved
+                .as_ref()
+                .is_some_and(|workspace| workspace.right_hidden);
 
             WorkspaceState::new(
                 PaneSetState::new(left_pane, right_pane).with_layout(layout),
@@ -2495,6 +2501,23 @@ mod tests {
 
         assert_eq!(state.workspace(1).panes.left.cwd, PathBuf::from("/tmp/ws1"));
         assert_eq!(state.workspace(0).panes.left.cwd, PathBuf::from("/tmp/ws0"));
+    }
+
+    #[test]
+    fn switch_to_workspace_closes_shared_overlay() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Copy,
+            "Copy",
+            PathBuf::from("/tmp/target"),
+            Some(PathBuf::from("./note.txt")),
+            String::from("/tmp/target/note.txt"),
+        ));
+
+        let _ = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert!(state.overlay.modal.is_none());
+        assert_eq!(state.active_workspace_index(), 1);
     }
 
     #[test]

@@ -118,6 +118,30 @@ pub fn all_entries() -> Vec<PaletteEntry> {
             action: Action::ClearMarks,
         },
         PaletteEntry {
+            category: "Navigation",
+            label: "Switch to workspace 1",
+            hint: "Alt+1",
+            action: Action::SwitchToWorkspace(0),
+        },
+        PaletteEntry {
+            category: "Navigation",
+            label: "Switch to workspace 2",
+            hint: "Alt+2",
+            action: Action::SwitchToWorkspace(1),
+        },
+        PaletteEntry {
+            category: "Navigation",
+            label: "Switch to workspace 3",
+            hint: "Alt+3",
+            action: Action::SwitchToWorkspace(2),
+        },
+        PaletteEntry {
+            category: "Navigation",
+            label: "Switch to workspace 4",
+            hint: "Alt+4",
+            action: Action::SwitchToWorkspace(3),
+        },
+        PaletteEntry {
             category: "File Ops",
             label: "Copy file",
             hint: "F5",
@@ -384,6 +408,7 @@ pub fn filter_entries<'a>(entries: &'a [PaletteEntry], query: &str) -> Vec<&'a P
 #[cfg(test)]
 mod tests {
     use super::{all_entries, filter_entries, match_kind, MatchKind};
+    use crate::action::Action;
 
     #[test]
     fn filter_empty_query_returns_all() {
@@ -422,5 +447,21 @@ mod tests {
             match_kind("Open / enter selection", "enter"),
             MatchKind::Substring
         );
+    }
+
+    #[test]
+    fn palette_includes_workspace_switch_entries() {
+        let entries = all_entries();
+
+        assert!(entries.iter().any(|entry| {
+            entry.label == "Switch to workspace 1"
+                && entry.hint == "Alt+1"
+                && entry.action == Action::SwitchToWorkspace(0)
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry.label == "Switch to workspace 4"
+                && entry.hint == "Alt+4"
+                && entry.action == Action::SwitchToWorkspace(3)
+        }));
     }
 }
