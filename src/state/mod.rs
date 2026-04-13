@@ -786,41 +786,60 @@ impl AppState {
                                 }
                             };
                             let count = prompt.source_paths.len();
-                            let refresh = self.refresh_targets_for_prompt(kind, &dest_dir);
                             for source in &prompt.source_paths {
-                                let operation = match kind {
-                                    PromptKind::Copy => {
-                                        let dest = source
-                                            .file_name()
-                                            .map(|n| dest_dir.join(n))
-                                            .unwrap_or_else(|| dest_dir.clone());
-                                        Some(FileOperation::Copy {
-                                            source: source.clone(),
-                                            destination: dest,
-                                        })
-                                    }
-                                    PromptKind::Move => {
-                                        let dest = source
-                                            .file_name()
-                                            .map(|n| dest_dir.join(n))
-                                            .unwrap_or_else(|| dest_dir.clone());
-                                        Some(FileOperation::Move {
-                                            source: source.clone(),
-                                            destination: dest,
-                                        })
-                                    }
-                                    PromptKind::Trash => Some(FileOperation::Trash {
-                                        path: source.clone(),
-                                    }),
-                                    PromptKind::Delete => Some(FileOperation::Delete {
-                                        path: source.clone(),
-                                    }),
-                                    _ => None,
-                                };
+                                let (operation, refresh_path) =
+                                    match kind {
+                                        PromptKind::Copy => {
+                                            let file_target = source
+                                                .file_name()
+                                                .map(|n| dest_dir.join(n))
+                                                .unwrap_or_else(|| dest_dir.clone());
+                                            let copy_target =
+                                                if Self::archive_member_source(source).is_some() {
+                                                    dest_dir.clone()
+                                                } else {
+                                                    file_target.clone()
+                                                };
+                                            (
+                                                Some(self.copy_operation_for_source(
+                                                    source,
+                                                    &copy_target,
+                                                )),
+                                                file_target,
+                                            )
+                                        }
+                                        PromptKind::Move => {
+                                            let target_path = source
+                                                .file_name()
+                                                .map(|n| dest_dir.join(n))
+                                                .unwrap_or_else(|| dest_dir.clone());
+                                            (
+                                                Some(FileOperation::Move {
+                                                    source: source.clone(),
+                                                    destination: target_path.clone(),
+                                                }),
+                                                target_path,
+                                            )
+                                        }
+                                        PromptKind::Trash => (
+                                            Some(FileOperation::Trash {
+                                                path: source.clone(),
+                                            }),
+                                            self.panes.active_pane().cwd.clone(),
+                                        ),
+                                        PromptKind::Delete => (
+                                            Some(FileOperation::Delete {
+                                                path: source.clone(),
+                                            }),
+                                            self.panes.active_pane().cwd.clone(),
+                                        ),
+                                        _ => (None, self.panes.active_pane().cwd.clone()),
+                                    };
                                 if let Some(op) = operation {
                                     commands.push(Command::RunFileOperation {
                                         operation: op,
-                                        refresh: refresh.clone(),
+                                        refresh: self
+                                            .refresh_targets_for_prompt(kind, &refresh_path),
                                         collision: CollisionPolicy::Fail,
                                     });
                                 }
@@ -839,66 +858,10 @@ impl AppState {
                             let target_path = resolve_prompt_target(&prompt, &value);
                             let refresh = self.refresh_targets_for_prompt(kind, &target_path);
                             let operation = match kind {
-                                PromptKind::Copy => {
-                                    // If the source is inside a recognized archive, create an ExtractArchive op
-                                    prompt.source_path.as_ref().map(|s| {
-                                        // Try to find an ancestor path that is an archive file
-                                        let mut candidate = s.clone();
-                                        let mut found: Option<(
-                                            std::path::PathBuf,
-                                            std::path::PathBuf,
-                                        )> = None;
-                                        loop {
-                                            if candidate.exists() && candidate.is_file() {
-                                                if let Some(name) =
-                                                    candidate.file_name().and_then(|n| n.to_str())
-                                                {
-                                                    let lower = name.to_lowercase();
-                                                    if lower.ends_with(".zip")
-                                                        || lower.ends_with(".tar")
-                                                        || lower.ends_with(".tar.gz")
-                                                        || lower.ends_with(".tgz")
-                                                        || lower.ends_with(".tar.bz2")
-                                                        || lower.ends_with(".tbz2")
-                                                        || lower.ends_with(".tar.xz")
-                                                        || lower.ends_with(".txz")
-                                                    {
-                                                        // compute inner path relative to archive file
-                                                        if let Ok(inner) =
-                                                            s.strip_prefix(&candidate)
-                                                        {
-                                                            found = Some((
-                                                                candidate.clone(),
-                                                                inner.to_path_buf(),
-                                                            ));
-                                                        } else {
-                                                            found = Some((
-                                                                candidate.clone(),
-                                                                std::path::PathBuf::new(),
-                                                            ));
-                                                        }
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if !candidate.pop() {
-                                                break;
-                                            }
-                                        }
-                                        if let Some((archive_path, inner_path)) = found {
-                                            FileOperation::ExtractArchive {
-                                                archive: archive_path,
-                                                inner_path,
-                                                destination: target_path.clone(),
-                                            }
-                                        } else {
-                                            FileOperation::Copy {
-                                                source: s.clone(),
-                                                destination: target_path.clone(),
-                                            }
-                                        }
-                                    })
-                                }
+                                PromptKind::Copy => prompt
+                                    .source_path
+                                    .as_ref()
+                                    .map(|s| self.copy_operation_for_source(s, &target_path)),
 
                                 PromptKind::Trash => prompt
                                     .source_path
@@ -1794,6 +1757,51 @@ impl AppState {
     // Private Helpers
     // =========================================================================
 
+    fn copy_operation_for_source(&self, source: &Path, target_path: &Path) -> FileOperation {
+        if let Some((archive_path, inner_path)) = Self::archive_member_source(source) {
+            FileOperation::ExtractArchive {
+                archive: archive_path,
+                inner_path,
+                destination: target_path.to_path_buf(),
+            }
+        } else {
+            FileOperation::Copy {
+                source: source.to_path_buf(),
+                destination: target_path.to_path_buf(),
+            }
+        }
+    }
+
+    fn archive_member_source(source: &Path) -> Option<(PathBuf, PathBuf)> {
+        let mut candidate = source.to_path_buf();
+        loop {
+            if candidate.exists() && candidate.is_file() {
+                if let Some(name) = candidate.file_name().and_then(|n| n.to_str()) {
+                    let lower = name.to_lowercase();
+                    if lower.ends_with(".zip")
+                        || lower.ends_with(".tar")
+                        || lower.ends_with(".tar.gz")
+                        || lower.ends_with(".tgz")
+                        || lower.ends_with(".tar.bz2")
+                        || lower.ends_with(".tbz2")
+                        || lower.ends_with(".tar.xz")
+                        || lower.ends_with(".txz")
+                    {
+                        let inner = source
+                            .strip_prefix(&candidate)
+                            .map(Path::to_path_buf)
+                            .unwrap_or_default();
+                        return Some((candidate, inner));
+                    }
+                }
+            }
+            if !candidate.pop() {
+                break;
+            }
+        }
+        None
+    }
+
     fn refresh_targets_for_prompt(
         &self,
         kind: PromptKind,
@@ -1805,10 +1813,16 @@ impl AppState {
         }];
 
         let target_dir = match kind {
-            PromptKind::Copy | PromptKind::Move => target_path
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| self.panes.inactive_pane().cwd.clone()),
+            PromptKind::Copy | PromptKind::Move => {
+                if target_path == self.panes.inactive_pane().cwd || target_path.is_dir() {
+                    target_path.to_path_buf()
+                } else {
+                    target_path
+                        .parent()
+                        .map(Path::to_path_buf)
+                        .unwrap_or_else(|| self.panes.inactive_pane().cwd.clone())
+                }
+            }
             _ => self.panes.active_pane().cwd.clone(),
         };
 

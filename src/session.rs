@@ -40,6 +40,11 @@ impl SessionState {
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let content =
             toml::to_string_pretty(self).map_err(|e| std::io::Error::other(e.to_string()))?;
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
         std::fs::write(path, content)
     }
 }
