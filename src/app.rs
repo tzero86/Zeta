@@ -94,15 +94,22 @@ impl App {
             self.process_next_event()?;
         }
 
-        // Persist session so next launch restores pane directories and settings.
         let session = crate::session::SessionState {
-            left_cwd: Some(self.state.panes.left.cwd.clone()),
-            right_cwd: Some(self.state.panes.right.cwd.clone()),
-            left_sort: Some(self.state.panes.left.sort_mode),
-            right_sort: Some(self.state.panes.right.sort_mode),
-            left_hidden: self.state.panes.left.show_hidden,
-            right_hidden: self.state.panes.right.show_hidden,
-            layout: Some(self.state.panes.pane_layout),
+            active_workspace: Some(self.state.active_workspace_index()),
+            workspaces: (0..self.state.workspace_count())
+                .map(|workspace_id| {
+                    let workspace = self.state.workspace(workspace_id);
+                    crate::session::WorkspaceSessionState {
+                        left_cwd: Some(workspace.panes.left.cwd.clone()),
+                        right_cwd: Some(workspace.panes.right.cwd.clone()),
+                        left_sort: Some(workspace.panes.left.sort_mode),
+                        right_sort: Some(workspace.panes.right.sort_mode),
+                        left_hidden: workspace.panes.left.show_hidden,
+                        right_hidden: workspace.panes.right.show_hidden,
+                        layout: Some(workspace.panes.pane_layout),
+                    }
+                })
+                .collect(),
         };
         let session_path = crate::session::SessionState::session_path(std::path::Path::new(
             self.state.config_path(),

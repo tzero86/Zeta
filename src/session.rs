@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use crate::pane::SortMode;
 use crate::state::PaneLayout;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-pub struct SessionState {
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct WorkspaceSessionState {
     pub left_cwd: Option<PathBuf>,
     pub right_cwd: Option<PathBuf>,
     pub left_sort: Option<SortMode>,
@@ -20,6 +20,12 @@ pub struct SessionState {
     pub left_hidden: bool,
     pub right_hidden: bool,
     pub layout: Option<PaneLayout>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct SessionState {
+    pub active_workspace: Option<usize>,
+    pub workspaces: Vec<WorkspaceSessionState>,
 }
 
 impl SessionState {
@@ -46,5 +52,46 @@ impl SessionState {
             }
         }
         std::fs::write(path, content)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SessionState, WorkspaceSessionState};
+    use crate::state::PaneLayout;
+
+    #[test]
+    fn session_round_trips_multiple_workspaces_and_active_index() {
+        let session = SessionState {
+            active_workspace: Some(2),
+            workspaces: vec![
+                WorkspaceSessionState {
+                    left_cwd: Some(std::path::PathBuf::from("/repo-a")),
+                    right_cwd: Some(std::path::PathBuf::from("/repo-b")),
+                    left_sort: None,
+                    right_sort: None,
+                    left_hidden: false,
+                    right_hidden: true,
+                    layout: Some(PaneLayout::SideBySide),
+                },
+                WorkspaceSessionState::default(),
+                WorkspaceSessionState::default(),
+                WorkspaceSessionState::default(),
+            ],
+        };
+
+        let text = toml::to_string(&session).expect("session should serialize");
+        let round_trip: SessionState = toml::from_str(&text).expect("session should deserialize");
+
+        assert_eq!(round_trip.active_workspace, Some(2));
+        assert_eq!(
+            round_trip.workspaces[0].left_cwd,
+            Some(std::path::PathBuf::from("/repo-a"))
+        );
+        assert_eq!(
+            round_trip.workspaces[0].right_cwd,
+            Some(std::path::PathBuf::from("/repo-b"))
+        );
+        assert_eq!(round_trip.workspaces[0].layout, Some(PaneLayout::SideBySide));
     }
 }

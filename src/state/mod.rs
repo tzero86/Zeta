@@ -89,13 +89,6 @@ impl WorkspaceState {
         }
     }
 
-    fn clone_bootstrap_context(&self) -> Self {
-        Self::new(
-            self.panes.clone(),
-            self.preview.clone(),
-            self.status_message.clone(),
-        )
-    }
 }
 
 #[derive(Debug)]
@@ -191,46 +184,52 @@ impl AppState {
         let session = crate::session::SessionState::load(
             &crate::session::SessionState::session_path(&loaded_config.path),
         );
-        let left_cwd = session.left_cwd.filter(|p| p.is_dir()).unwrap_or(cwd);
-        let right_cwd = session
-            .right_cwd
-            .filter(|p| p.is_dir())
-            .unwrap_or(secondary);
-        let layout = session.layout.unwrap_or_default();
+        let default_status = resolved_theme.warning.clone().unwrap_or_else(|| {
+            format!(
+                "loading panes | config {} ({})",
+                loaded_config.path.display(),
+                loaded_config.source.label()
+            )
+        });
+        let workspaces = std::array::from_fn(|idx| {
+            let saved = session.workspaces.get(idx);
+            let left_cwd = saved
+                .and_then(|workspace| workspace.left_cwd.clone())
+                .filter(|path| path.is_dir())
+                .unwrap_or_else(|| cwd.clone());
+            let right_cwd = saved
+                .and_then(|workspace| workspace.right_cwd.clone())
+                .filter(|path| path.is_dir())
+                .unwrap_or_else(|| secondary.clone());
+            let layout = saved
+                .and_then(|workspace| workspace.layout)
+                .unwrap_or_default();
 
-        let mut left_pane = PaneState::empty("Left", left_cwd.clone());
-        if let Some(sort) = session.left_sort {
-            left_pane.sort_mode = sort;
-        }
-        left_pane.show_hidden = session.left_hidden;
-        let mut right_pane = PaneState::empty("Right", right_cwd.clone());
-        if let Some(sort) = session.right_sort {
-            right_pane.sort_mode = sort;
-        }
-        right_pane.show_hidden = session.right_hidden;
+            let mut left_pane = PaneState::empty("Left", left_cwd);
+            if let Some(sort) = saved.and_then(|workspace| workspace.left_sort) {
+                left_pane.sort_mode = sort;
+            }
+            left_pane.show_hidden = saved.is_some_and(|workspace| workspace.left_hidden);
 
-        let workspace0 = WorkspaceState::new(
-            PaneSetState::new(left_pane, right_pane).with_layout(layout),
-            PreviewState::new(
-                loaded_config.config.preview_panel_open,
-                loaded_config.config.preview_on_selection,
-            ),
-            resolved_theme.warning.clone().unwrap_or_else(|| {
-                format!(
-                    "loading panes | config {} ({})",
-                    loaded_config.path.display(),
-                    loaded_config.source.label()
-                )
-            }),
-        );
-        let workspace1 = workspace0.clone_bootstrap_context();
-        let workspace2 = workspace0.clone_bootstrap_context();
-        let workspace3 = workspace0.clone_bootstrap_context();
-        let workspaces = [workspace0, workspace1, workspace2, workspace3];
+            let mut right_pane = PaneState::empty("Right", right_cwd);
+            if let Some(sort) = saved.and_then(|workspace| workspace.right_sort) {
+                right_pane.sort_mode = sort;
+            }
+            right_pane.show_hidden = saved.is_some_and(|workspace| workspace.right_hidden);
+
+            WorkspaceState::new(
+                PaneSetState::new(left_pane, right_pane).with_layout(layout),
+                PreviewState::new(
+                    loaded_config.config.preview_panel_open,
+                    loaded_config.config.preview_on_selection,
+                ),
+                default_status.clone(),
+            )
+        });
 
         Ok(Self {
             workspaces,
-            active_workspace_idx: 0,
+            active_workspace_idx: session.active_workspace.unwrap_or(0).min(3),
             overlay: OverlayState::default(),
             config_path: loaded_config.path.display().to_string(),
             config: loaded_config.config.clone(),
@@ -1926,9 +1925,11 @@ impl AppState {
                 .map(|g| format!(" ⎇ {}", g.branch))
                 .unwrap_or_default()
         };
+        let workspace = format!("ws:{}/{}", self.active_workspace_index() + 1, self.workspace_count());
         format!(
-            "{} | {}{} | {} | up:{}ms {}{}{} | d:{}",
+            "{} | {} | {}{} | {} | up:{}ms {}{}{} | d:{}",
             self.config.theme.status_bar_label,
+            workspace,
             self.status_message,
             branch,
             self.theme.preset,
@@ -2517,14 +2518,25 @@ mod tests {
             rename_state: None,
         };
         let workspace0 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace1 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace2 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace3 = WorkspaceState::new(
             PaneSetState::new(pane_with_file("./note.txt"), right),
             PreviewState::new(false, true),
             String::from("ready"),
         );
-        let workspace1 = workspace0.clone_bootstrap_context();
-        let workspace2 = workspace0.clone_bootstrap_context();
-        let workspace3 = workspace0.clone_bootstrap_context();
-
         AppState {
             workspaces: [workspace0, workspace1, workspace2, workspace3],
             active_workspace_idx: 0,
@@ -3118,6 +3130,16 @@ mod tests {
         let status = state.status_line();
 
         assert!(status.contains("copy:2/5 note.txt"));
+    }
+
+    #[test]
+    fn status_line_includes_workspace_indicator() {
+        let mut state = test_state();
+        let _ = state.apply(Action::SwitchToWorkspace(2)).unwrap();
+
+        let status = state.status_line();
+
+        assert!(status.contains("ws:3/4"));
     }
 
     #[test]
