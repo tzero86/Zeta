@@ -1,155 +1,112 @@
 # Improvements Roadmap
 
 - Status: Active
-- Date: 2026-04-13
-- Branch at time of writing: `optimize/binary-size-and-perf` (PR #1)
+- Date: 2026-04-14
+- Branch at time of writing: `main` (post-PR #5 workspaces, post settings-panel expansion)
 
 Each item is scoped, grounded in a specific gap in the current codebase, and ordered by impact-to-effort ratio.
 Items within a tier are independent and can be worked in any order or in parallel.
 
 ---
 
-## Tier 1 — High impact, low effort (ship first)
+## Shipped — original T1–T3 items
 
-### T1-1: Open with default application
+All items from the previous roadmap version are complete.
 
-**Gap**: No `OpenInDefaultApp` action exists. Binary files, PDFs, and images have no useful affordance — preview shows noise, the editor opens raw bytes.
+| Item | Notes |
+|---|---|
+| Open with default application | `OpenInDefaultApp`, `open` crate, F3 in pane |
+| Range selection (Shift+arrow) | `mark_anchor` in `PaneState`; `ExtendSelectionUp/Down` |
+| Session persistence | `src/session.rs`; save on exit; restore cwd, sort, hidden flag, layout |
+| Syntax highlighting in editor | `highlight_cache` + `editor_highlighted_render_state`; falls back to plain in word-wrap mode |
+| System clipboard | `arboard`; `CopyPathToClipboard` (Ctrl+Shift+C); `EditorPaste` (Ctrl+V) |
+| Batch file operations | Mark set drained into per-entry jobs; `pending_batch` tracks settlement |
+| Directory size calculation | `DirSizeCalculated` job; `dir_sizes` cache in `PaneState` |
+| Column / details view | `details_view` toggle (Ctrl+D); size + modified columns |
+| Config hot-reload | Watcher emits `ConfigChanged`; app recompiles keymap and reloads palette live |
+| Editor tab stops + word wrap | `tab_width` / `word_wrap` in `AppConfig.editor`; settings panel wires both |
+| Inline rename | `InlineRenameState`; `FocusLayer::PaneInlineRename`; F2 to enter |
 
-**Scope**:
-- Add `Action::OpenInDefaultApp` to `src/action.rs`.
-- Wire it to `F3` (or `Enter` when the entry is not a directory and not a text file) in `from_pane_key_event` in `src/action.rs`.
-- Handle it in `AppState::apply` in `src/state/mod.rs`: spawn `std::process::Command` (or the `open` crate) with the path. Keep it non-blocking — spawn detached.
-- Add a menu item under File menu in `src/state/menu.rs`.
-
-**Dependency**: add `open = "5"` to `Cargo.toml`. Thin OS-API wrapper, no runtime, ~10 KB binary impact.
-
----
-
-### T1-2: Range selection (Shift+arrow / Shift+click)
-
-**Gap**: Marking is toggle-only. No contiguous range selection. Every file manager since 1990 has this.
-
-**Scope**:
-- Add `anchor: Option<usize>` to `PaneState` in `src/pane.rs`.
-- Add `Action::ExtendSelectionUp` / `Action::ExtendSelectionDown` to `src/action.rs`.
-- Wire `Shift+Up` / `Shift+Down` in `from_pane_key_event`.
-- On activation: set `anchor` to current selection if not set; mark all entries between `anchor` and new selection; clear anchor on any non-shift move.
-- `Shift+Click` (`PaneClick` with shift modifier): same anchor logic.
-- No new data structures needed — `BTreeSet<PathBuf>` already handles the mark set.
+Also shipped beyond the original scope: multi-workspace support with session persistence per workspace, SSH/SFTP remote filesystem browsing, configurable hotkeys in the settings panel, markdown preview in the editor, file finder, bookmarks.
 
 ---
 
-### T1-3: Session persistence
+## Tier 1 — High impact, low effort
 
-**Gap**: Restart loses both panes' cwd, sort mode, scroll offset, pane layout, and hidden-files toggle. Only bookmarks survive.
+### T1-1: Wire editor undo / redo
+
+**Gap**: `EditorBuffer` has a complete delta-based `UndoStack` with `undo()` and `redo()` methods (see `src/editor.rs` line ~222). No `EditorUndo` or `EditorRedo` action exists. Ctrl+Z does nothing in the editor.
 
 **Scope**:
-- Add `src/session.rs` with a `SessionState` struct: `left_cwd`, `right_cwd`, `left_sort`, `right_sort`, `left_hidden`, `right_hidden`, `layout: PaneLayout`.
-- Derive `serde::Serialize` / `Deserialize`. Write to `session.toml` alongside `config.toml` on clean exit (in `main.rs` after the event loop).
-- Read and apply on startup before the first `ScanPane` commands are enqueued, in `AppState::bootstrap` in `src/state/mod.rs`.
-- Treat a missing or malformed session file as a no-op (first run).
+- Add `Action::EditorUndo` and `Action::EditorRedo` to `src/action.rs`.
+- Wire `Ctrl+Z` → `EditorUndo` and `Ctrl+Y` / `Ctrl+Shift+Z` → `EditorRedo` in `from_editor_key_event`.
+- Handle both in `EditorState::apply` in `src/state/editor_state.rs`: call `editor.undo()` / `editor.redo()`.
+- No new crate dependency; no data structure changes.
 
 ---
 
-### T1-4: Syntax highlighting in the editor
+### T1-2: Editor text selection and clipboard copy
 
-**Gap**: `highlight_text()` is used for file preview but the editor render path only holds `Vec<String>` (plain text). The highlight infrastructure is already in `src/highlight.rs`.
-
-**Scope**:
-- Change `EditorRenderState::visible_lines` in `src/editor.rs` from `Vec<String>` to `Vec<HighlightedLine>` (already defined in `src/highlight.rs`).
-- In `EditorBuffer::render_state()`, call `highlight_text()` on the visible slice rather than returning raw strings.
-- Update `src/ui/editor.rs` to render `HighlightedLine` spans instead of plain text — same pattern as `src/ui/preview.rs`.
-- No new crate dependency; highlight worker and token types are already in the binary.
-
----
-
-### T1-5: System clipboard integration
-
-**Gap**: No `CopyPathToClipboard` in the pane; no OS clipboard paste in the editor. The editor has internal cut/copy but no system clipboard connection.
+**Gap**: `EditorPaste` (Ctrl+V) is wired. `CopyPathToClipboard` copies the focused pane entry's path. But there is no selection model in `EditorBuffer`, so `Ctrl+C` in the editor has no text to copy. The roadmap note "Ctrl+C with selection, once selection is added" was never resolved.
 
 **Scope**:
-- Add `arboard` to `Cargo.toml`. Thin OS-API wrapper.
-- Add `Action::CopyPathToClipboard` to `src/action.rs`. Wire to `Ctrl+Shift+C` in pane context.
-- Handle in `AppState::apply`: `arboard::Clipboard::new()?.set_text(path.to_string_lossy())`.
-- In the editor, wire `Ctrl+V` to read from `arboard::Clipboard` and insert at cursor. Wire `Ctrl+C` (with selection, once selection is added) to write to clipboard.
-- Clipboard errors are non-fatal — show a status bar message, do not crash.
+- Add `sel_anchor: Option<usize>` (byte offset) to `EditorBuffer` in `src/editor.rs`.
+- Add `Action::EditorSelectAll`, `Action::EditorCopy`, `Action::EditorCut` to `src/action.rs`.
+- Wire `Ctrl+A` → `EditorSelectAll`, `Ctrl+C` → `EditorCopy`, `Ctrl+X` → `EditorCut` in `from_editor_key_event`. Selection extension via Shift+arrow is a follow-on; start with select-all.
+- `EditorCopy`: write selected text to `arboard::Clipboard`. `EditorCut`: same then delete selection. `EditorSelectAll`: set `sel_anchor = Some(0)`, cursor to end.
+- Render the selection highlight in `src/ui/editor.rs` — a background span over the selected byte range on each visible line.
+- The existing `insert_str_at_cursor` and `delete` primitives cover the cut case without new buffer methods.
 
 ---
 
 ## Tier 2 — High impact, medium effort
 
-### T2-1: Batch operations on marked files
+### T2-1: SSH known-hosts trust prompt
 
-**Gap**: `FileOperation` operates on a single `PathBuf`. When files are marked, copy/move/delete acts on the current selection only, not the full mark set. The mark set (`BTreeSet<PathBuf>`) is tracked but never drained into multiple jobs.
+**Gap**: `Command::ConnectSSH` hits `ssh2::KnownHosts::check()`. On `CheckResult::NotFound` the connection is rejected with an error string and the user has no way to accept the host. Connecting to any new server always fails.
 
 **Scope**:
-- In `AppState::apply` in `src/state/mod.rs`, for `OpenCopyPrompt` / `OpenMovePrompt` / `OpenDeletePrompt`: if `active_pane().marked` is non-empty, use the mark set as the source list; otherwise use the single selected entry (current behavior).
-- For copy/move: enqueue one `RunFileOperation` per marked entry into the command queue. Progress reporting already aggregates by job ID — verify it sums across the batch correctly.
-- For delete: same — one job per marked entry, or extend `FileOperation::Delete` to accept `Vec<PathBuf>` if the overhead of N round-trips is measurable.
-- After any batch job completes, clear marks on the source pane.
-- Add integration tests in `tests/` for batch copy and batch delete with a temp directory tree.
+- Add a `ModalState::SshTrustPrompt { host: String, fingerprint: String, pane: PaneId, pending: ConnectSSHArgs }` variant to `src/state/overlay.rs`.
+- When the jobs layer returns `JobResult::SshUnknownHost { host, fingerprint, pane, pending }`, open the trust prompt instead of failing.
+- User can Accept (writes the host to `~/.ssh/known_hosts` via `ssh2::KnownHosts::writefile`) or Reject (closes modal, shows error).
+- Add `Action::SshTrustAccept` and `Action::SshTrustReject`; wire Enter/Esc in the modal.
+- Until this is done SSH is only usable for hosts already in `known_hosts`.
 
 ---
 
-### T2-2: Directory size background calculation
+### T2-2: Word wrap + syntax highlighting
 
-**Gap**: `SortMode::Size` is useless for directory trees — all dirs show as 0 bytes. `EntryInfo.size` is `Option<u64>` and is `None` for directories.
-
-**Scope**:
-- Add `DirSizeRequest { pane: PaneId, path: PathBuf }` and `DirSizeResult { pane: PaneId, path: PathBuf, bytes: u64 }` to `src/jobs.rs`.
-- Add a `dir_size_worker` that receives `DirSizeRequest`, walks the tree with `walkdir` (already a transitive dep, verify) or `std::fs::read_dir` recursively, sums sizes, and sends back `DirSizeResult`.
-- In `PaneState`, add `dir_sizes: HashMap<PathBuf, u64>` in `src/pane.rs`.
-- When a scan result arrives and the sort mode is `Size` or `SizeDesc`, enqueue `DirSizeRequest` for each directory entry in the result.
-- When a `DirSizeResult` arrives, update `dir_sizes` and trigger a re-render.
-- The size worker must be cancelable — send a new generation token with each request and drop stale results (same pattern as the preview worker).
-
----
-
-### T2-3: Column / details view toggle
-
-**Gap**: The pane renders name + icon only. `EntryInfo` carries `size`, `modified`, and `kind` but they are not displayed.
+**Gap**: `use_plain_wrapped = cheap_mode || render_state.word_wrap` in `src/ui/editor.rs`. When word wrap is on, the highlighted render path is bypassed; the editor renders unstyled text.
 
 **Scope**:
-- Add `details_view: bool` to `PaneState` in `src/pane.rs`.
-- Add `Action::ToggleDetailsView` to `src/action.rs`. Wire to a key (e.g., `Ctrl+D` or `F1`).
-- In `src/ui/` pane rendering: when `details_view` is true, render a fixed-width column layout — `[icon] name … size  date`. Measure available width from `Rect` and truncate the name column to fill the remainder. Size column: right-align, human-readable (B/KB/MB/GB). Date column: `YYYY-MM-DD HH:MM`.
-- When `details_view` is false, render as today (name + icon only).
+- `EditorBuffer::visible_highlighted_window` already computes the highlight cache over the full file. Extend it (or add a sibling) to accept `word_wrap: bool` and `viewport_cols: usize`; after collecting the highlighted `HighlightedLine` slice, split any line whose rendered char width exceeds `viewport_cols` into continuation rows, preserving span boundaries.
+- Update `render_editor` in `src/ui/editor.rs` to call the highlighted path even when `word_wrap` is true, passing `viewport_cols` from the content area width.
+- The cursor row mapping in `EditorRenderState` must account for wrapped rows — `cursor_wrap_row` already tracks this for the plain path; apply the same offset logic to the highlighted path.
+- Remove the `use_plain_wrapped` early-exit; `cheap_mode` can keep bypassing highlights (it's for low-resource terminals).
 
 ---
 
 ## Tier 3 — Lower priority / larger scope
 
-### T3-1: Config hot-reload
+### T3-1: Editor search highlight
 
-**Gap**: The `notify` watcher worker already exists for directory change detection but does not watch the config file.
+**Gap**: Search (`Ctrl+F`) finds the next match and moves the cursor, but does not highlight all matches in the visible viewport. The match at the cursor is not visually distinct from surrounding text.
 
 **Scope**:
-- In `src/jobs.rs`, after the watcher is set up, also watch the config file path.
-- On a `DebouncedEvent` for the config path, emit an `AppEvent::ConfigChanged` from the watcher channel.
-- In `src/app.rs`, handle `AppEvent::ConfigChanged`: re-read config with `Config::load()`, diff the relevant fields (theme, keymap), and dispatch `SetTheme` / keymap update actions.
+- Add `search_matches: Vec<(usize, usize)>` (byte ranges) to `EditorRenderState` — computed from the current search query over the visible slice.
+- In `src/ui/editor.rs`, overlay match ranges onto rendered spans: split `HighlightedLine` spans at match boundaries and apply a `search_match_bg` color from `ThemePalette`.
+- The active match (cursor position) gets a distinct `search_match_active_bg`.
+- No new crate dependency; uses the existing `search_query` field already in `EditorBuffer`.
 
 ---
 
-### T3-2: Editor tab stops and word wrap
+### T3-2: Copy marked paths to clipboard
 
-**Gap**: `\t` is passed through raw; display width is terminal-dependent. No word wrap for long lines.
-
-**Scope**:
-- Add `tab_width: u8` (default 4) to `EditorConfig` in `src/config.rs`.
-- In the editor render path, expand `\t` to `tab_width` spaces before computing column offsets.
-- Add `word_wrap: bool` to `EditorConfig`. When enabled, split rendered lines at the viewport width and adjust cursor-to-rendered-row mapping accordingly. Wrap is display-only — the underlying rope is unchanged.
-
----
-
-### T3-3: Inline rename
-
-**Gap**: Rename opens a full prompt dialog. Norton Commander-style inline rename edits the filename in the pane row.
+**Gap**: `CopyPathToClipboard` copies only the single focused entry. When multiple files are marked, there is no way to get their paths into the clipboard (e.g., for use in a terminal).
 
 **Scope**:
-- Add a new `FocusLayer` variant or a `PaneState` sub-mode for inline rename: `rename_state: Option<InlineRenameState>` where `InlineRenameState` holds the current edit buffer and the path being renamed.
-- Render the selected pane row with the edit buffer in place of the filename, with a cursor.
-- On `Enter`: submit the rename. On `Esc`: cancel. Route character input to the inline buffer when the mode is active.
-- This is the most rendering-invasive of the tier-3 items.
+- Extend `Action::CopyPathToClipboard` handling in `src/state/mod.rs`: if `active_pane().marked` is non-empty, join all marked paths newline-separated and write that string to the clipboard; otherwise copy the focused entry (current behavior).
+- No new action, no new crate dependency.
 
 ---
 
@@ -159,4 +116,4 @@ Items within a tier are independent and can be worked in any order or in paralle
 - Each branch must pass `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace` before PR.
 - Add unit tests with each change; add integration tests for any filesystem-touching feature.
 - Do not bundle multiple tier items in one PR unless they share a non-trivial prerequisite.
-- T1 items are fully independent. T2-1 (batch ops) should land before T2-2 and T2-3 since it changes how marks are consumed.
+- T1-1 (undo/redo) and T1-2 (selection) are independent but T1-2 is easier to review after T1-1 since both touch `from_editor_key_event`.
