@@ -228,23 +228,24 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         );
                     } else {
                         let inner_width = md_area.width.saturating_sub(2);
-                        let lines = editor
+                        if editor
                             .md_preview_cached(inner_width, syntect_theme)
-                            .cloned()
-                            .unwrap_or_else(|| {
-                                let parsed = parse_markdown_lines_with_palette(
-                                    &source,
-                                    palette,
-                                    inner_width,
-                                );
-                                editor.set_md_preview_cache(
-                                    inner_width,
-                                    syntect_theme,
-                                    parsed.clone(),
-                                );
-                                parsed
-                            });
-                        render_md_with_lines(frame, md_area, lines, palette, md_scroll, md_focused);
+                            .is_none()
+                        {
+                            let parsed =
+                                parse_markdown_lines_with_palette(&source, palette, inner_width);
+                            editor.set_md_preview_cache(inner_width, syntect_theme, parsed);
+                        }
+                        render_md_with_lines(
+                            frame,
+                            md_area,
+                            editor
+                                .md_preview_cached(inner_width, syntect_theme)
+                                .unwrap(),
+                            palette,
+                            md_scroll,
+                            md_focused,
+                        );
                     }
                 }
             }

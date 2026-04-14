@@ -1780,6 +1780,22 @@ fn describe_operation(operation: &FileOperation) -> String {
     }
 }
 
+/// Resolve `rel` relative to `base`, rejecting any component that would escape `base`.
+/// Strips leading separators, silently skips `.` components, and returns `None` if
+/// any `..` or absolute-root component is encountered.
+fn safe_archive_join(base: &Path, rel: &str) -> Option<PathBuf> {
+    let rel = rel.trim_start_matches(['/', '\\']);
+    let mut out = base.to_path_buf();
+    for component in Path::new(rel).components() {
+        match component {
+            std::path::Component::Normal(c) => out.push(c),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 fn run_extract_archive(
     workspace_id: usize,
     archive: &Path,
@@ -1835,7 +1851,19 @@ fn run_extract_archive(
                 continue;
             }
 
-            let out_path = destination.join(rel);
+            let out_path = match safe_archive_join(destination, rel) {
+                Some(p) => p,
+                None => {
+                    return Err(FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: destination.display().to_string(),
+                        source: std::io::Error::other(format!(
+                            "archive entry escapes destination: {:?}",
+                            rel
+                        )),
+                    })
+                }
+            };
             if entry.name().ends_with('/') {
                 std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
                     from: archive.display().to_string(),
@@ -1911,7 +1939,19 @@ fn run_extract_archive(
             if rel.is_empty() {
                 continue;
             }
-            let out_path = destination.join(rel);
+            let out_path = match safe_archive_join(destination, rel) {
+                Some(p) => p,
+                None => {
+                    return Err(FileSystemError::CopyPath {
+                        from: archive.display().to_string(),
+                        to: destination.display().to_string(),
+                        source: std::io::Error::other(format!(
+                            "archive entry escapes destination: {:?}",
+                            rel
+                        )),
+                    })
+                }
+            };
             if entry.header().entry_type().is_dir() {
                 std::fs::create_dir_all(&out_path).map_err(|source| FileSystemError::CopyPath {
                     from: archive.display().to_string(),
@@ -1989,11 +2029,15 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                         if n == 0 {
                                             break;
                                         }
-                                        let _ =
-                                            result_tx_inner.try_send(JobResult::TerminalOutput {
+                                        if result_tx_inner
+                                            .send(JobResult::TerminalOutput {
                                                 workspace_id,
                                                 bytes: buffer[..n].to_vec(),
-                                            });
+                                            })
+                                            .is_err()
+                                        {
+                                            break;
+                                        }
                                     }
                                 })
                                 .expect("failed to spawn terminal reader thread");
