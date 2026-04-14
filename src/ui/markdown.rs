@@ -30,6 +30,20 @@ pub fn render_markdown_preview(
     scroll: usize,
     is_focused: bool,
 ) {
+    let inner_width = area.width.saturating_sub(2);
+    let lines = parse_markdown_lines_with_palette(source, palette, inner_width);
+    render_md_with_lines(frame, area, lines, palette, scroll, is_focused);
+}
+
+/// Render pre-parsed `Line` objects into `area` with the standard markdown border.
+pub fn render_md_with_lines(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    lines: Vec<Line<'static>>,
+    palette: ThemePalette,
+    scroll: usize,
+    is_focused: bool,
+) {
     let border_style = if is_focused {
         Style::default()
             .fg(palette.border_focus)
@@ -45,7 +59,6 @@ pub fn render_markdown_preview(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines = parse_markdown_lines_with_palette(source, palette, inner.width);
     let paragraph = Paragraph::new(lines)
         .style(Style::default().bg(palette.tools_bg))
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
@@ -130,6 +143,37 @@ pub fn parse_markdown_lines_with_palette(
             continue; // i already advanced past the block
         }
 
+        // ── Setext headings (=== / --- underline) ───────────────────────
+        if i + 1 < source_lines.len() && !raw_line.trim().is_empty() && !is_hr(raw_line) {
+            let next = source_lines[i + 1].trim();
+            if next.len() >= 2 && next.chars().all(|c| c == '=') {
+                // h1 equivalent
+                output.push(Line::from(vec![Span::styled(
+                    raw_line.trim().to_string(),
+                    Style::default()
+                        .fg(palette.border_focus)
+                        .add_modifier(Modifier::BOLD),
+                )]));
+                output.push(Line::from(vec![Span::styled(
+                    "─".repeat(hr_width),
+                    Style::default().fg(palette.text_muted),
+                )]));
+                i += 2;
+                continue;
+            }
+            if next.len() >= 2 && next.chars().all(|c| c == '-') {
+                // h2 equivalent
+                output.push(Line::from(vec![Span::styled(
+                    raw_line.trim().to_string(),
+                    Style::default()
+                        .fg(palette.logo_accent)
+                        .add_modifier(Modifier::BOLD),
+                )]));
+                i += 2;
+                continue;
+            }
+        }
+
         // ── Headings ──────────────────────────────────────────────────────
         if let Some(level) = heading_level(raw_line) {
             let text = raw_line.trim_start_matches('#').trim().to_string();
@@ -162,13 +206,11 @@ pub fn parse_markdown_lines_with_palette(
             continue;
         }
 
-        // ── Blockquote ────────────────────────────────────────────────────
-        if let Some(rest) = raw_line
-            .strip_prefix("> ")
-            .or_else(|| raw_line.strip_prefix(">"))
-        {
+        // ── Blockquote ─────────────────────────────────────────────────────
+        if let Some((depth, rest)) = strip_blockquote(raw_line) {
+            let prefix = "▍ ".repeat(depth);
             let mut spans = vec![Span::styled(
-                "▍ ".to_string(),
+                prefix,
                 Style::default().fg(palette.text_muted),
             )];
             spans.extend(parse_inline(rest, palette));
@@ -194,12 +236,17 @@ pub fn parse_markdown_lines_with_palette(
             continue;
         }
 
-        // ── Unordered list ────────────────────────────────────────────────
+        // ── Unordered list ────────────────────────────────────────────
         if let Some(rest) = strip_bullet(raw_line) {
             let indent = leading_spaces(raw_line);
+            let marker = match indent / 2 {
+                0 => "• ",
+                1 => "◦ ",
+                _ => "▸ ",
+            };
             let mut spans = vec![
                 Span::raw(" ".repeat(indent)),
-                Span::styled("• ".to_string(), Style::default().fg(palette.logo_accent)),
+                Span::styled(marker.to_string(), Style::default().fg(palette.logo_accent)),
             ];
             spans.extend(parse_inline(rest, palette));
             output.push(Line::from(spans));
@@ -249,6 +296,30 @@ fn parse_inline(text: &str, palette: ThemePalette) -> Vec<Span<'static>> {
     let mut current = String::new();
 
     while i < chars.len() {
+        // ── Bold+Italic: ***
+        if i + 2 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' && chars[i + 2] == '*' {
+            if !current.is_empty() {
+                spans.push(plain_span(&current, palette));
+                current.clear();
+            }
+            i += 3;
+            let mut inner = String::new();
+            while i + 2 < chars.len()
+                && !(chars[i] == '*' && chars[i + 1] == '*' && chars[i + 2] == '*')
+            {
+                inner.push(chars[i]);
+                i += 1;
+            }
+            i += 3; // skip closing ***
+            spans.push(Span::styled(
+                inner,
+                Style::default()
+                    .fg(palette.text_primary)
+                    .add_modifier(Modifier::BOLD | Modifier::ITALIC),
+            ));
+            continue;
+        }
+
         // ── Bold: ** or __
         if i + 1 < chars.len()
             && ((chars[i] == '*' && chars[i + 1] == '*')
@@ -344,6 +415,20 @@ fn parse_inline(text: &str, palette: ThemePalette) -> Vec<Span<'static>> {
                     .add_modifier(Modifier::REVERSED),
             ));
             continue;
+        }
+
+        // ── Image: ![alt](url) — render only the alt text
+        if chars[i] == '!' && i + 1 < chars.len() && chars[i + 1] == '[' {
+            if let Some((alt, consumed)) = try_parse_link(&chars, i + 1) {
+                if !current.is_empty() {
+                    spans.push(plain_span(&current, palette));
+                    current.clear();
+                }
+                let label = format!("[img: {}]", alt);
+                spans.push(Span::styled(label, Style::default().fg(palette.text_muted)));
+                i += 1 + consumed; // 1 for '!', consumed covers '[alt](url)'
+                continue;
+            }
         }
 
         // ── Link: [text](url) — render only the link text
@@ -557,6 +642,22 @@ fn is_hr(line: &str) -> bool {
         && t.chars()
             .all(|c| c == '-' || c == '=' || c == '*' || c == ' ')
         && t.len() >= 3
+}
+
+/// Strip leading `>` blockquote markers, returning (depth, remaining text).
+/// Handles nested quotes: `>> text` yields (2, "text").
+fn strip_blockquote(line: &str) -> Option<(usize, &str)> {
+    let mut rest = line;
+    let mut depth = 0usize;
+    while let Some(r) = rest.strip_prefix("> ").or_else(|| rest.strip_prefix(">")) {
+        depth += 1;
+        rest = r;
+    }
+    if depth > 0 {
+        Some((depth, rest))
+    } else {
+        None
+    }
 }
 
 /// Detect a task-list item (`- [ ] ...` or `- [x] ...`) and return
@@ -870,5 +971,87 @@ mod tests {
         let header_row: String = lines[1].spans.iter().map(|s| s.content.as_ref()).collect();
         // "A" cell should be padded to the same width as "Name" → " A    " (with spaces)
         assert!(header_row.contains("Name"), "header must contain 'Name'");
+    }
+
+    // ── New: bold+italic, nested bullets, images, setext, nested blockquotes ────
+
+    #[test]
+    fn bold_italic_combined_applies_both_modifiers() {
+        let lines = parse_markdown_lines("this is ***bold italic*** text");
+        let span = lines[0]
+            .spans
+            .iter()
+            .find(|s| s.content.contains("bold italic"));
+        assert!(span.is_some(), "bold italic span must exist");
+        let s = span.unwrap();
+        assert!(s.style.add_modifier.contains(Modifier::BOLD));
+        assert!(s.style.add_modifier.contains(Modifier::ITALIC));
+    }
+
+    #[test]
+    fn nested_bullet_uses_open_circle() {
+        let lines = parse_markdown_lines("  - nested");
+        assert!(
+            lines[0]
+                .spans
+                .iter()
+                .any(|s| s.content.contains('\u{25e6}')),
+            "2-space indent bullet should use '\u{25e6}'"
+        );
+    }
+
+    #[test]
+    fn image_renders_alt_not_url() {
+        let lines = parse_markdown_lines("![my diagram](https://example.com/img.png)");
+        let combined: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(combined.contains("my diagram"), "alt text must appear");
+        assert!(!combined.contains("https://"), "image URL must not appear");
+    }
+
+    #[test]
+    fn setext_h1_produces_bold_and_rule() {
+        let src = "My Title\n========";
+        let lines = parse_markdown_lines(src);
+        assert_eq!(
+            lines.len(),
+            2,
+            "setext h1 should produce heading + rule, got {}",
+            lines.len()
+        );
+        assert!(lines[0]
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD)));
+        assert!(lines[1]
+            .spans
+            .iter()
+            .any(|s| s.content.contains('\u{2500}')));
+    }
+
+    #[test]
+    fn setext_h2_produces_bold_no_rule() {
+        let src = "My Section\n----------";
+        let lines = parse_markdown_lines(src);
+        assert_eq!(
+            lines.len(),
+            1,
+            "setext h2 should produce only the heading line"
+        );
+        assert!(lines[0]
+            .spans
+            .iter()
+            .any(|s| s.style.add_modifier.contains(Modifier::BOLD)));
+    }
+
+    #[test]
+    fn nested_blockquote_uses_double_bar() {
+        let lines = parse_markdown_lines(">> deeply quoted");
+        let combined: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        // Two levels → "▍ ▍ " prefix
+        assert_eq!(
+            combined.matches('\u{258d}').count(),
+            2,
+            "double blockquote should have 2 bar chars"
+        );
     }
 }

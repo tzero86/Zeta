@@ -2,6 +2,7 @@ use std::fs as std_fs;
 use std::path::{Path, PathBuf};
 
 use ratatui::style::{Color, Modifier};
+use ratatui::text::Line;
 use ropey::Rope;
 use thiserror::Error;
 
@@ -103,6 +104,9 @@ pub struct EditorBuffer {
     /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
     /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
     wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
+    /// Parsed markdown preview lines, keyed by `(edit_version, panel_width)`.
+    /// `None` until first render. Recomputed only when text or panel width changes.
+    md_preview_cache: Option<(usize, u16, Vec<Line<'static>>)>,
     sel_anchor: Option<usize>,
 }
 
@@ -702,6 +706,25 @@ impl EditorBuffer {
             let end = (start + height).min(all_lines.len());
             all_lines[start..end].to_vec()
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Markdown preview cache
+    // ---------------------------------------------------------------------------
+
+    /// Return the cached parsed markdown lines if the cache is valid for the
+    /// current `edit_version` and `panel_width`. Returns `None` on miss.
+    pub fn md_preview_cached(&self, panel_width: u16) -> Option<&Vec<Line<'static>>> {
+        self.md_preview_cache
+            .as_ref()
+            .filter(|(v, w, _)| *v == self.edit_version && *w == panel_width)
+            .map(|(_, _, lines)| lines)
+    }
+
+    /// Store parsed markdown lines in the cache, keyed by the current
+    /// `edit_version` and `panel_width`.
+    pub fn set_md_preview_cache(&mut self, panel_width: u16, lines: Vec<Line<'static>>) {
+        self.md_preview_cache = Some((self.edit_version, panel_width, lines));
     }
 
     /// Compute the visible line window for rendering `viewport_rows` rows.
