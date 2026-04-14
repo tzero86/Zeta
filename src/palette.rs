@@ -120,25 +120,25 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         PaletteEntry {
             category: "Workspaces",
             label: "Switch to workspace 1",
-            hint: "Ctrl+1",
+            hint: "Alt+1",
             action: Action::SwitchToWorkspace(0),
         },
         PaletteEntry {
             category: "Workspaces",
             label: "Switch to workspace 2",
-            hint: "Ctrl+2",
+            hint: "Alt+2",
             action: Action::SwitchToWorkspace(1),
         },
         PaletteEntry {
             category: "Workspaces",
             label: "Switch to workspace 3",
-            hint: "Ctrl+3",
+            hint: "Alt+3",
             action: Action::SwitchToWorkspace(2),
         },
         PaletteEntry {
             category: "Workspaces",
             label: "Switch to workspace 4",
-            hint: "Ctrl+4",
+            hint: "Alt+4",
             action: Action::SwitchToWorkspace(3),
         },
         PaletteEntry {
@@ -191,8 +191,14 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "System",
-            label: "Open shell in current directory",
+            label: "Toggle terminal",
             hint: "F2",
+            action: Action::ToggleTerminal,
+        },
+        PaletteEntry {
+            category: "System",
+            label: "Open shell in current directory",
+            hint: "",
             action: Action::OpenShell,
         },
         PaletteEntry {
@@ -330,7 +336,7 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         PaletteEntry {
             category: "System",
             label: "Quit",
-            hint: "Ctrl+Q",
+            hint: "q",
             action: Action::Quit,
         },
     ]
@@ -472,13 +478,13 @@ mod tests {
         assert!(entries.iter().any(|entry| {
             entry.category == "Workspaces"
                 && entry.label == "Switch to workspace 1"
-                && entry.hint == "Ctrl+1"
+                && entry.hint == "Alt+1"
                 && entry.action == Action::SwitchToWorkspace(0)
         }));
         assert!(entries.iter().any(|entry| {
             entry.category == "Workspaces"
                 && entry.label == "Switch to workspace 4"
-                && entry.hint == "Ctrl+4"
+                && entry.hint == "Alt+4"
                 && entry.action == Action::SwitchToWorkspace(3)
         }));
     }

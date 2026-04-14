@@ -68,7 +68,7 @@ impl DialogState {
                     "  [1] [2] [3] [4]	Top bar workspace pills; the highlighted box is active",
                 ),
                 String::from(
-                    "  Ctrl+1..Ctrl+4	Primary workspace shortcuts (Shift+1..Shift+4 and Alt+1..Alt+4 fallback)",
+                    "  Alt+1..Alt+4\tSwitch workspaces (Shift+1..4 also works)",
                 ),
                 String::from("  ws:N/4	Status bar also shows the active workspace"),
                 String::from("  Ctrl+O	Open settings, including theme chooser"),
@@ -89,9 +89,7 @@ impl DialogState {
                 String::from("  Backspace/Tab\tParent '..' / switch pane"),
                 String::from("  Up/Down/j/k\tMove selection"),
                 String::from("  PgUp/PgDn/scroll\tScroll lists and previews"),
-                String::from(
-                    "  Ctrl+1..Ctrl+4	Switch workspaces reliably (Shift+1..Shift+4 and Alt+1..Alt+4 fallback)",
-                ),
+                String::from("  Alt+1..Alt+4\tSwitch workspaces (Shift+1..4 also works)"),
                 String::from("  Click\tSelect row with mouse"),
                 String::new(),
                 String::from("## Files"),
@@ -113,10 +111,11 @@ impl DialogState {
                 String::from("  Alt+F/N/V/H	File / Navigate / View / Help menus"),
                 String::from("  Navigate menu	Starts with Switch to Workspace 1..4 commands"),
                 String::from(
-                    "  Ctrl+P palette	Workspace commands appear in the Workspaces section",
+                    "  Shift+P palette\tWorkspace commands appear in the Workspaces section",
                 ),
-                String::from("  Ctrl+O / F1 / Ctrl+Q	Settings, help, quit"),
-                String::from("  Esc / Enter	Close windows and cancel dialogs"),
+                String::from("  Ctrl+O / F1\tSettings / Help    q / F10  Quit"),
+                String::from("  F2 / F9 / F10\tTerminal / Diff mode / Quit"),
+                String::from("  Esc / Enter\tClose windows and cancel dialogs"),
             ],
             scroll: 0,
         }
