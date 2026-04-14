@@ -3,38 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Zeta — terminal file manager</title>
+  <title>Zeta &#x2014; terminal file manager</title>
   <meta name="description" content="Dual-pane, keyboard-first file manager for the terminal.">
   <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    :root {
+      --bg:         #0d1117;
+      --surface:    #161b22;
+      --border:     #30363d;
+      --text:       #e6edf3;
+      --muted:      #7d8590;
+      --accent:     #3fb950;
+      --font: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
     }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
 
     body {
-      background: #0d1117;
-      color: #e6edf3;
-      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      line-height: 1.6;
     }
 
+    /* ── Hero ── */
     .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      position: relative;
+    }
+
+    .hero-content {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
+      max-width: 640px;
+      width: 100%;
     }
 
     h1 {
-      font-size: 3rem;
+      font-size: clamp(2.5rem, 8vw, 4.5rem);
       font-weight: 700;
       letter-spacing: -0.02em;
       line-height: 1;
-      color: #e6edf3;
     }
+
+    .bracket { color: var(--muted); }
+    .z       { color: var(--accent); }
 
     @keyframes blink {
       0%, 100% { opacity: 1; }
@@ -42,39 +62,42 @@
     }
 
     .cursor {
-      color: #3fb950;
+      color: var(--accent);
       animation: blink 0.8s step-end infinite;
     }
 
     .tagline {
-      margin-top: 0.5rem;
-      color: #7d8590;
-      font-size: 0.95rem;
+      margin-top: 0.75rem;
+      color: var(--muted);
+      font-size: 1rem;
     }
 
     .install {
-      margin-top: 1.5rem;
+      margin-top: 2rem;
       display: flex;
       align-items: center;
       gap: 1rem;
-      background: #161b22;
-      border: 1px solid #30363d;
+      background: var(--surface);
+      border: 1px solid var(--border);
       padding: 0.75rem 1rem;
+      width: 100%;
+      overflow-x: auto;
     }
 
     .install code {
       font-family: inherit;
       font-size: 0.875rem;
-      color: #e6edf3;
+      color: var(--text);
       white-space: nowrap;
+      flex: 1;
     }
 
     .copy-btn {
       font-family: inherit;
       font-size: 0.75rem;
-      background: #0d1117;
-      color: #7d8590;
-      border: 1px solid #30363d;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
       border-radius: 3px;
       padding: 0.25rem 0.6rem;
       cursor: pointer;
@@ -83,39 +106,314 @@
       transition: color 0.15s, border-color 0.15s;
     }
 
-    .copy-btn:hover {
-      color: #3fb950;
-      border-color: #3fb950;
-    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
 
     .repo-link {
-      margin-top: 2rem;
+      display: inline-block;
+      margin-top: 1.25rem;
       font-size: 0.875rem;
-      color: #7d8590;
+      color: var(--muted);
       text-decoration: none;
       transition: color 0.15s;
     }
 
-    .repo-link:hover {
-      color: #e6edf3;
+    .repo-link:hover { color: var(--text); }
+
+    .scroll-hint {
+      position: absolute;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.75rem;
+      color: var(--muted);
+      opacity: 0.5;
+      letter-spacing: 0.08em;
+      animation: nudge 2s ease-in-out infinite;
     }
+
+    @keyframes nudge {
+      0%, 100% { transform: translateX(-50%) translateY(0); }
+      50%       { transform: translateX(-50%) translateY(4px); }
+    }
+
+    /* ── Section shared ── */
+    section.features, section.workflow {
+      padding: 6rem 2rem;
+      border-top: 1px solid var(--border);
+    }
+
+    section.workflow { background: var(--surface); }
+
+    .section-inner {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: lowercase;
+      margin-bottom: 2.5rem;
+    }
+
+    /* ── Feature grid ── */
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .feature-card {
+      background: var(--bg);
+      padding: 2rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .feature-card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .feature-card p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    .feature-icon {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Workflow list ── */
+    .workflow-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      border: 1px solid var(--border);
+    }
+
+    .workflow-item {
+      display: flex;
+      align-items: baseline;
+      gap: 1.5rem;
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .workflow-item:last-child { border-bottom: none; }
+
+    .workflow-key {
+      font-size: 0.75rem;
+      color: var(--accent);
+      white-space: nowrap;
+      flex-shrink: 0;
+      min-width: 7rem;
+    }
+
+    .workflow-desc {
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 4rem 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.25rem;
+      text-align: center;
+    }
+
+    footer .install-again {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.75rem 1.25rem;
+      font-family: inherit;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    footer .footer-link {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    footer .footer-link:hover { color: var(--text); }
+
+    footer .made-with {
+      font-size: 0.75rem;
+      color: var(--border);
+    }
+
+    /* ── Scroll animations ── */
+    .animate {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.55s ease, transform 0.55s ease;
+    }
+
+    .animate.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .feature-card:nth-child(2) { transition-delay: 0.07s; }
+    .feature-card:nth-child(3) { transition-delay: 0.14s; }
+    .feature-card:nth-child(4) { transition-delay: 0.21s; }
+    .feature-card:nth-child(5) { transition-delay: 0.28s; }
+    .feature-card:nth-child(6) { transition-delay: 0.35s; }
+
+    .workflow-item:nth-child(2) { transition-delay: 0.07s; }
+    .workflow-item:nth-child(3) { transition-delay: 0.14s; }
+    .workflow-item:nth-child(4) { transition-delay: 0.21s; }
+    .workflow-item:nth-child(5) { transition-delay: 0.28s; }
+    .workflow-item:nth-child(6) { transition-delay: 0.35s; }
+    .workflow-item:nth-child(7) { transition-delay: 0.42s; }
   </style>
 </head>
 <body>
-  <main class="hero">
-    <h1>Zeta<span class="cursor">&#x2588;</span></h1>
-    <p class="tagline">Dual-pane, keyboard-first file manager for the terminal.</p>
-    <div class="install">
-      <code>cargo install --git https://github.com/tzero86/Zeta</code>
-      <button class="copy-btn" onclick="
-        navigator.clipboard.writeText('cargo install --git https://github.com/tzero86/Zeta').then(function() {
-          var btn = this;
-          btn.textContent = 'copied';
-          setTimeout(function() { btn.textContent = 'copy'; }, 2000);
-        }.bind(this));
-      ">copy</button>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-content">
+      <h1><span class="bracket">[</span><span class="z">Z</span><span class="bracket">]</span>eta<span class="cursor">&#x2588;</span></h1>
+      <p class="tagline">Dual-pane, keyboard-first file manager for the terminal.</p>
+      <div class="install">
+        <code>cargo install --git https://github.com/tzero86/Zeta</code>
+        <button class="copy-btn" id="copy-btn">copy</button>
+      </div>
+      <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
     </div>
-    <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
-  </main>
+    <div class="scroll-hint">scroll &#x2193;</div>
+  </section>
+
+  <!-- Features -->
+  <section class="features">
+    <div class="section-inner">
+      <p class="section-label animate">// features</p>
+      <div class="feature-grid">
+
+        <div class="feature-card animate">
+          <div class="feature-icon">[ | ]</div>
+          <h3>Dual Pane</h3>
+          <p>Two independent panels side by side. Navigate, compare, and operate across directories without a second terminal window.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">&lt; / &gt;</div>
+          <h3>Embedded Editor</h3>
+          <p>Syntax highlighting, incremental search, undo/redo, and text selection. Edit files without spawning an external process.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">$_</div>
+          <h3>Integrated Terminal</h3>
+          <p>A full PTY terminal embedded in the layout. Toggle it with F2 and keep your filesystem context without context-switching.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">~@host</div>
+          <h3>SSH &amp; SFTP</h3>
+          <p>Browse and operate on remote filesystems over SSH. Host key verification and known-hosts persistence built in.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">+/&#x2212;</div>
+          <h3>Diff Mode</h3>
+          <p>Highlight unique and changed entries between panes at a glance. Sync to the other pane with a single keystroke.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">[1][2][3][4]</div>
+          <h3>4 Workspaces</h3>
+          <p>Four isolated desktops each with independent pane state, editor, preview, and terminal. Switch with Alt+1&#x2013;4.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Workflow -->
+  <section class="workflow">
+    <div class="section-inner">
+      <p class="section-label animate">// keyboard first</p>
+      <div class="workflow-list">
+        <div class="workflow-item animate">
+          <span class="workflow-key">Alt+1..4</span>
+          <span class="workflow-desc">Switch between workspaces instantly</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">F2</span>
+          <span class="workflow-desc">Toggle the embedded terminal panel</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">F4</span>
+          <span class="workflow-desc">Open selected file in the embedded editor</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">F5 / F6</span>
+          <span class="workflow-desc">Copy / Rename &#x2014; with progress for large trees</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">F8</span>
+          <span class="workflow-desc">Delete with confirmation dialog</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">F9 / F10</span>
+          <span class="workflow-desc">Diff mode / Quit</span>
+        </div>
+        <div class="workflow-item animate">
+          <span class="workflow-key">Shift+P</span>
+          <span class="workflow-desc">Command palette &#x2014; search every action by name</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <code class="install-again">cargo install --git https://github.com/tzero86/Zeta</code>
+    <a class="footer-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
+    <p class="made-with">built with Rust &#xB7; ratatui &#xB7; crossterm</p>
+  </footer>
+
+  <script>
+    // Copy button
+    document.getElementById('copy-btn').addEventListener('click', function () {
+      var btn = this;
+      navigator.clipboard.writeText('cargo install --git https://github.com/tzero86/Zeta').then(function () {
+        btn.textContent = 'copied';
+        setTimeout(function () { btn.textContent = 'copy'; }, 2000);
+      });
+    });
+
+    // Scroll-triggered animations
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.animate').forEach(function (el) {
+      observer.observe(el);
+    });
+  </script>
+
 </body>
 </html>
