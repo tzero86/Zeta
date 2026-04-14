@@ -70,12 +70,17 @@ impl PlatformPty {
     fn spawn(cwd: &Path, cols: u16, rows: u16) -> io::Result<Self> {
         use std::process::Command;
 
-        // Prefer pwsh (PowerShell 7+), fall back to COMSPEC (cmd.exe).
-        // Windows PowerShell 5.1 (powershell.exe) has crypto-provider
-        // failures inside ConPTY sessions (error 8009001d).
         let shell = which_shell();
         let mut cmd = Command::new(&shell);
         cmd.current_dir(cwd);
+
+        // conpty's execProc calls `command.get_envs()` which only returns
+        // explicitly-set vars and passes them as a non-NULL lpEnvironment to
+        // CreateProcess. A non-NULL block replaces the parent env entirely, so
+        // we must seed the Command with the full parent environment first.
+        for (k, v) in std::env::vars_os() {
+            cmd.env(k, v);
+        }
         cmd.env("TERM", "xterm-256color");
         cmd.env("ZETA_TERMINAL", "1");
 
