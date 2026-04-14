@@ -889,13 +889,8 @@ fn route_mouse_event(
     }
 }
 
-/// Map an x-coordinate in the menu bar to an `OpenMenu` action.
-/// Layout (0-indexed from bar_x):
-///   0-7   " [Z]eta "  (logo — ignored)
-///   8-13  " File "
-///   14-23 " Navigate "
-///   24-29 " View "
-///   30-35 " Help "
+/// Map an x-coordinate in the menu bar to either an `OpenMenu` action or a
+/// workspace switch action.
 fn route_menu_bar_click(col: u16, bar_x: u16, editor_menu_mode: bool) -> Option<Action> {
     let mut cursor = bar_x + 8;
     for tab in crate::state::menu_tabs(editor_menu_mode) {
@@ -906,6 +901,17 @@ fn route_menu_bar_click(col: u16, bar_x: u16, editor_menu_mode: bool) -> Option<
         }
         cursor += tab.label.len() as u16;
     }
+
+    cursor += 1; // spacer before workspace pills
+    for workspace_idx in 0..4usize {
+        let start = cursor;
+        let end = cursor + 2; // `[N]`
+        if col >= start && col <= end {
+            return Some(Action::SwitchToWorkspace(workspace_idx));
+        }
+        cursor += 4; // `[N]` plus trailing spacer
+    }
+
     None
 }
 
@@ -1105,6 +1111,38 @@ mod tests {
             false,
         );
         assert_eq!(action, Some(Action::OpenMenu(crate::action::MenuId::File)));
+    }
+
+    #[test]
+    fn route_mouse_left_click_on_workspace_pill_2_switches_workspace() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 49,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
+        );
+        assert_eq!(action, Some(Action::SwitchToWorkspace(1)));
+    }
+
+    #[test]
+    fn route_mouse_left_click_on_workspace_pill_4_switches_workspace() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 57,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            false,
+        );
+        assert_eq!(action, Some(Action::SwitchToWorkspace(3)));
     }
 
     #[test]
