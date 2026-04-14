@@ -308,22 +308,22 @@ impl Action {
 
     fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('!'), modifiers)
+            (KeyCode::Char('1' | '!'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(0))
             }
-            (KeyCode::Char('@'), modifiers)
+            (KeyCode::Char('2' | '@'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(1))
             }
-            (KeyCode::Char('#'), modifiers)
+            (KeyCode::Char('3' | '#'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(2))
             }
-            (KeyCode::Char('$'), modifiers)
+            (KeyCode::Char('4' | '$'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(3))
@@ -1103,6 +1103,17 @@ mod tests {
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::SHIFT)),
             Some(Action::SwitchToWorkspace(2))
         );
 
