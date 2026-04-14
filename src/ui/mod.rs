@@ -229,7 +229,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                     } else {
                         let inner_width = md_area.width.saturating_sub(2);
                         let lines = editor
-                            .md_preview_cached(inner_width)
+                            .md_preview_cached(inner_width, syntect_theme)
                             .cloned()
                             .unwrap_or_else(|| {
                                 let parsed = parse_markdown_lines_with_palette(
@@ -237,7 +237,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                                     palette,
                                     inner_width,
                                 );
-                                editor.set_md_preview_cache(inner_width, parsed.clone());
+                                editor.set_md_preview_cache(
+                                    inner_width,
+                                    syntect_theme,
+                                    parsed.clone(),
+                                );
                                 parsed
                             });
                         render_md_with_lines(frame, md_area, lines, palette, md_scroll, md_focused);

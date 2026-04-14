@@ -104,9 +104,9 @@ pub struct EditorBuffer {
     /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
     /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
     wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
-    /// Parsed markdown preview lines, keyed by `(edit_version, panel_width)`.
-    /// `None` until first render. Recomputed only when text or panel width changes.
-    md_preview_cache: Option<(usize, u16, Vec<Line<'static>>)>,
+    /// Parsed markdown preview lines, keyed by `(edit_version, panel_width, theme)`.
+    /// `None` until first render. Recomputed only when text, panel width, or theme changes.
+    md_preview_cache: Option<(usize, u16, String, Vec<Line<'static>>)>,
     sel_anchor: Option<usize>,
 }
 
@@ -713,18 +713,23 @@ impl EditorBuffer {
     // ---------------------------------------------------------------------------
 
     /// Return the cached parsed markdown lines if the cache is valid for the
-    /// current `edit_version` and `panel_width`. Returns `None` on miss.
-    pub fn md_preview_cached(&self, panel_width: u16) -> Option<&Vec<Line<'static>>> {
+    /// current `edit_version`, `panel_width`, and `theme`. Returns `None` on miss.
+    pub fn md_preview_cached(&self, panel_width: u16, theme: &str) -> Option<&Vec<Line<'static>>> {
         self.md_preview_cache
             .as_ref()
-            .filter(|(v, w, _)| *v == self.edit_version && *w == panel_width)
-            .map(|(_, _, lines)| lines)
+            .filter(|(v, w, t, _)| *v == self.edit_version && *w == panel_width && t == theme)
+            .map(|(_, _, _, lines)| lines)
     }
 
     /// Store parsed markdown lines in the cache, keyed by the current
-    /// `edit_version` and `panel_width`.
-    pub fn set_md_preview_cache(&mut self, panel_width: u16, lines: Vec<Line<'static>>) {
-        self.md_preview_cache = Some((self.edit_version, panel_width, lines));
+    /// `edit_version`, `panel_width`, and `theme`.
+    pub fn set_md_preview_cache(
+        &mut self,
+        panel_width: u16,
+        theme: &str,
+        lines: Vec<Line<'static>>,
+    ) {
+        self.md_preview_cache = Some((self.edit_version, panel_width, theme.to_string(), lines));
     }
 
     /// Compute the visible line window for rendering `viewport_rows` rows.

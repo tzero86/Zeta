@@ -122,12 +122,30 @@ pub fn parse_markdown_lines_with_palette(
         // Consume all consecutive table rows in one pass so column widths
         // can be computed across the whole block before any line is emitted.
         if is_table_row(raw_line) {
-            let start = i;
-            while i < source_lines.len() && is_table_row(source_lines[i]) {
-                i += 1;
+            // GFM requires a separator row (|---|) to distinguish tables from
+            // prose lines that happen to start with a pipe. Scan ahead before
+            // committing to table mode.
+            let has_separator = {
+                let mut j = i + 1;
+                let mut found = false;
+                while j < source_lines.len() && is_table_row(source_lines[j]) {
+                    if is_separator_row(&parse_table_row(source_lines[j])) {
+                        found = true;
+                        break;
+                    }
+                    j += 1;
+                }
+                found
+            };
+            if has_separator {
+                let start = i;
+                while i < source_lines.len() && is_table_row(source_lines[i]) {
+                    i += 1;
+                }
+                output.extend(render_table(&source_lines[start..i], palette));
+                continue;
             }
-            output.extend(render_table(&source_lines[start..i], palette));
-            continue; // i already advanced past the block
+            // No separator found — fall through to normal line handling below.
         }
 
         // ── Setext headings (=== / --- underline) ───────────────────────
@@ -1039,6 +1057,22 @@ mod tests {
             combined.matches('\u{258d}').count(),
             2,
             "double blockquote should have 2 bar chars"
+        );
+    }
+
+    #[test]
+    fn pipe_line_without_separator_is_not_a_table() {
+        // A line starting with | but no separator row must not render as a table.
+        let lines = parse_markdown_lines("| grep foo | wc -l");
+        // Should be a plain paragraph span, not a box-drawing border.
+        let combined: String = lines[0].spans.iter().map(|s| s.content.as_ref()).collect();
+        assert!(
+            !combined.contains('\u{250c}'),
+            "pipe line without separator must not produce table borders"
+        );
+        assert!(
+            !combined.contains('\u{2502}'),
+            "pipe line without separator must not produce table cell borders"
         );
     }
 }
