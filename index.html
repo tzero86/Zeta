@@ -283,6 +283,76 @@
     .workflow-item:nth-child(6) { transition-delay: 0.35s; }
     .workflow-item:nth-child(7) { transition-delay: 0.42s; }
 
+    /* ── Prerequisites ── */
+    section.prereqs {
+      padding: 5rem 2rem;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+
+    .prereq-list {
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .prereq-item {
+      display: grid;
+      grid-template-columns: 8rem 1fr auto;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .prereq-item:last-child { border-bottom: none; }
+
+    .prereq-name {
+      font-size: 0.875rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .prereq-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .prereq-desc code {
+      font-family: inherit;
+      font-size: 0.8rem;
+      color: var(--text);
+      background: var(--bg);
+      padding: 0.1rem 0.3rem;
+    }
+
+    .prereq-link {
+      font-size: 0.8rem;
+      color: var(--muted);
+      text-decoration: none;
+      white-space: nowrap;
+      transition: color 0.15s;
+    }
+
+    .prereq-link:hover { color: var(--accent); }
+
+    .prereq-note {
+      margin-top: 1.25rem;
+      font-size: 0.8rem;
+      color: var(--border);
+    }
+
+    .prereq-item:nth-child(2) { transition-delay: 0.07s; }
+
+    @media (max-width: 600px) {
+      .prereq-item {
+        grid-template-columns: 1fr;
+        gap: 0.4rem;
+      }
+    }
+
+
     /* ── Origin ── */
     section.origin {
       padding: 6rem 2rem;
@@ -332,6 +402,26 @@
   </section>
 
   <!-- Features -->
+  <!-- Prerequisites -->
+  <section class="prereqs">
+    <div class="section-inner">
+      <p class="section-label animate">// prerequisites</p>
+      <div class="prereq-list">
+        <div class="prereq-item animate">
+          <span class="prereq-name">rustup</span>
+          <span class="prereq-desc">Rust toolchain manager. Installs the stable compiler and cargo.</span>
+          <a class="prereq-link" href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs &#x2197;</a>
+        </div>
+        <div class="prereq-item animate">
+          <span class="prereq-name">git</span>
+          <span class="prereq-desc">Required for <code>cargo install --git</code>. Most systems already have it.</span>
+          <a class="prereq-link" href="https://git-scm.com" target="_blank" rel="noopener">git-scm.com &#x2197;</a>
+        </div>
+      </div>
+      <p class="prereq-note animate">Tested on Linux and macOS. Windows support is experimental.</p>
+    </div>
+  </section>
+
   <section class="features">
     <div class="section-inner">
       <p class="section-label animate">// features</p>
