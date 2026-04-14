@@ -36,6 +36,17 @@ Requires [rustup](https://rustup.rs) (stable toolchain) and git.
 cargo install --git https://github.com/tzero86/Zeta
 ```
 
+#### Native build dependencies
+
+Some crates link against system libraries. Install these before running `cargo install` if you hit linker errors:
+
+| Platform | Install |
+|---|---|
+| Debian / Ubuntu | `sudo apt install build-essential pkg-config libssl-dev libbz2-dev liblzma-dev` |
+| Fedora / RHEL | `sudo dnf install gcc pkg-config openssl-devel bzip2-devel xz-devel` |
+| Windows | [Visual Studio Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe) — "Desktop development with C++" workload |
+
+`ssh2` requires OpenSSL; `bzip2` and `xz2` require their respective compression libraries. The `conpty` crate (Windows terminal) requires Windows 10 version 1809 or later.
 ---
 
 ## Features

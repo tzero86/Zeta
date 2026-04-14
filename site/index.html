@@ -666,8 +666,18 @@
           <span class="prereq-desc">Required for <code>cargo install --git</code>. Most systems already have it.</span>
           <a class="prereq-link" href="https://git-scm.com" target="_blank" rel="noopener">git-scm.com &#x2197;</a>
         </div>
+        <div class="prereq-item animate">
+          <span class="prereq-name">C toolchain</span>
+          <span class="prereq-desc">Required to compile native crates (<code>ssh2</code>, <code>bzip2</code>, <code>xz2</code>). Linux: <code>build-essential pkg-config libssl-dev libbz2-dev liblzma-dev</code>. Windows: Visual Studio Build Tools with &ldquo;Desktop development with C++&rdquo;.</span>
+          <a class="prereq-link" href="https://aka.ms/vs/17/release/vs_BuildTools.exe" target="_blank" rel="noopener">VS Build Tools &#x2197;</a>
+        </div>
+        <div class="prereq-item animate">
+          <span class="prereq-name">Windows 10 1809+</span>
+          <span class="prereq-desc">The embedded terminal uses the ConPTY API introduced in Windows 10 version 1809. Earlier Windows versions are not supported.</span>
+          <span class="prereq-name" style="color:var(--muted);font-weight:400;font-size:0.8rem">Windows only</span>
+        </div>
       </div>
-      <p class="prereq-note animate">Tested on Linux. Windows binaries are provided but PTY/terminal features may behave differently.</p>
+      <p class="prereq-note animate">Precompiled binaries skip native build steps entirely &mdash; grab one from the <a href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">releases page</a> to avoid the C toolchain requirement.</p>
     </div>
   </section>
 
