@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Zeta &#x2014; terminal file manager</title>
-  <meta name="description" content="Dual-pane, keyboard-first file manager for the terminal.">
+  <meta name="description" content="A keyboard-first, dual-pane file manager and embedded editor for the terminal. Rust core, clean TUI, Norton Commander workflow.">
   <style>
     :root {
       --bg:         #0d1117;
@@ -22,6 +22,8 @@
 
     body {
       background: var(--bg);
+      background-image: radial-gradient(rgba(63, 185, 80, 0.06) 1px, transparent 1px);
+      background-size: 28px 28px;
       color: var(--text);
       font-family: var(--font);
       line-height: 1.6;
@@ -136,6 +138,21 @@
       color: var(--accent);
     }
 
+    .wip-note {
+      margin-top: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .wip-note a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .wip-note a:hover { color: var(--accent); }
+
     .scroll-hint {
       position: absolute;
       bottom: 2rem;
@@ -201,6 +218,14 @@
       font-size: 0.85rem;
       color: var(--muted);
       line-height: 1.7;
+    }
+
+    .feature-card p code {
+      font-family: inherit;
+      font-size: 0.8rem;
+      color: var(--text);
+      background: var(--surface);
+      padding: 0.1rem 0.3rem;
     }
 
     .feature-icon {
@@ -275,6 +300,18 @@
       color: var(--border);
     }
 
+    footer .issues-link {
+      font-size: 0.75rem;
+    }
+
+    footer .issues-link a {
+      color: var(--border);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    footer .issues-link a:hover { color: var(--muted); }
+
     /* ── Scroll animations ── */
     .animate {
       opacity: 0;
@@ -292,6 +329,8 @@
     .feature-card:nth-child(4) { transition-delay: 0.21s; }
     .feature-card:nth-child(5) { transition-delay: 0.28s; }
     .feature-card:nth-child(6) { transition-delay: 0.35s; }
+    .feature-card:nth-child(7) { transition-delay: 0.42s; }
+    .feature-card:nth-child(8) { transition-delay: 0.49s; }
 
     .workflow-item:nth-child(2) { transition-delay: 0.07s; }
     .workflow-item:nth-child(3) { transition-delay: 0.14s; }
@@ -408,12 +447,13 @@
   <section class="hero">
     <div class="hero-content">
       <h1><span class="bracket">[</span><span class="z">Z</span><span class="bracket">]</span>eta<span class="cursor">&#x2588;</span></h1>
-      <p class="tagline">Dual-pane, keyboard-first file manager for the terminal.</p>
+      <p class="tagline">A keyboard-first, dual-pane file manager and embedded editor for the terminal.<br>Rust core. Clean TUI. Norton Commander workflow, brought to the present.</p>
       <div class="install">
         <code>cargo install --git https://github.com/tzero86/Zeta</code>
         <button class="copy-btn" id="copy-btn">copy</button>
       </div>
       <p class="binary-note">Or download a precompiled binary for <a href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">Linux or Windows</a> from the releases page.</p>
+      <p class="wip-note">Work in progress &#x2014; <a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">issues and feedback welcome</a> on GitHub.</p>
       <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
     </div>
     <div class="scroll-hint">scroll &#x2193;</div>
@@ -479,6 +519,18 @@
           <div class="feature-icon">[1][2][3][4]</div>
           <h3>4 Workspaces</h3>
           <p>Four isolated desktops each with independent pane state, editor, preview, and terminal. Switch with Alt+1&#x2013;4.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">[.md]</div>
+          <h3>Markdown Preview</h3>
+          <p>Live rendered preview while editing <code>.md</code> files. Headings, code blocks, lists, blockquotes &#x2014; updated on every keystroke, zero latency.</p>
+        </div>
+
+        <div class="feature-card animate">
+          <div class="feature-icon">[ * ]</div>
+          <h3>Customizable</h3>
+          <p>Nine built-in themes (Zeta, Norton, Dracula, and more), configurable keymaps, icon modes, and a simple toml config file. Tune it to your workflow.</p>
         </div>
 
       </div>
@@ -550,7 +602,8 @@
   <footer>
     <code class="install-again">cargo install --git https://github.com/tzero86/Zeta</code>
     <a class="footer-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
-    <p class="made-with">built with Rust &#xB7; ratatui &#xB7; crossterm</p>
+    <p class="made-with">Made with love and a ton of curiosity &#xB7; Rust &#xB7; ratatui &#xB7; crossterm</p>
+    <p class="issues-link"><a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">&#x2192; report an issue on GitHub</a></p>
   </footer>
 
   <script>
