@@ -268,7 +268,7 @@ impl AppState {
         self.config = new_config;
     }
 
-    pub fn initial_commands(&self) -> Vec<Command> {
+    pub fn initial_commands(&mut self) -> Vec<Command> {
         let mut commands = vec![
             Command::ScanPane {
                 pane: PaneId::Left,
@@ -280,9 +280,8 @@ impl AppState {
             },
         ];
         if self.config.terminal_open_by_default {
-            commands.push(Command::SpawnTerminal {
-                cwd: self.panes.active_pane().cwd.clone(),
-            });
+            let cwd = self.panes.active_pane().cwd.clone();
+            commands.extend(self.terminal.toggle(cwd));
         }
         commands
     }
@@ -1710,9 +1709,14 @@ impl AppState {
             } => {
                 self.status_message = format!("[Terminal] {}", message);
             }
-            JobResult::TerminalExited { workspace_id: _ } => {
-                self.terminal.close();
-                self.status_message = String::from("terminal session ended");
+            JobResult::TerminalExited {
+                workspace_id: _,
+                spawn_id,
+            } => {
+                if spawn_id == self.terminal.spawn_id {
+                    self.terminal.close();
+                    self.status_message = String::from("terminal session ended");
+                }
             }
             JobResult::DirSizeCalculated {
                 workspace_id: _,
@@ -2929,7 +2933,7 @@ mod tests {
 
     #[test]
     fn bootstrap_initial_commands_queue_both_pane_scans() {
-        let state = test_state();
+        let mut state = test_state();
 
         assert_eq!(
             state.initial_commands(),

@@ -158,6 +158,7 @@ pub enum TerminalRequest {
         cwd: PathBuf,
         cols: u16,
         rows: u16,
+        spawn_id: u64,
     },
     Write {
         workspace_id: usize,
@@ -263,6 +264,7 @@ pub enum JobResult {
     },
     TerminalExited {
         workspace_id: usize,
+        spawn_id: u64,
     },
     /// Directory size calculated by recursively summing file sizes.
     DirSizeCalculated {
@@ -1970,6 +1972,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                 cwd,
                 cols,
                 rows,
+                spawn_id,
             } => {
                 let safe_cols = if cols == 0 { 80 } else { cols };
                 let safe_rows = if rows == 0 { 24 } else { rows };
@@ -2001,8 +2004,10 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                     .name(format!("zeta-terminal-watcher-{workspace_id}"))
                                     .spawn(move || {
                                         waiter();
-                                        let _ = result_tx_exit
-                                            .send(JobResult::TerminalExited { workspace_id });
+                                        let _ = result_tx_exit.send(JobResult::TerminalExited {
+                                            workspace_id,
+                                            spawn_id,
+                                        });
                                     })
                                     .expect("failed to spawn terminal watcher thread");
                             }

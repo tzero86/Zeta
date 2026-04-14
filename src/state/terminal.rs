@@ -12,6 +12,7 @@ pub struct TerminalState {
     pub rows: u16,
     pub cols: u16,
     pub bytes_received: u64,
+    pub spawn_id: u64,
 }
 
 impl Default for TerminalState {
@@ -24,6 +25,7 @@ impl Default for TerminalState {
             rows: 24,
             cols: 80,
             bytes_received: 0,
+            spawn_id: 0,
         }
     }
 }
@@ -69,7 +71,11 @@ impl TerminalState {
                 if let Ok(mut parser) = self.parser.lock() {
                     *parser = vt100::Parser::new(self.rows, self.cols, 0);
                 }
-                vec![Command::SpawnTerminal { cwd }]
+                self.spawn_id += 1;
+                vec![Command::SpawnTerminal {
+                    cwd,
+                    spawn_id: self.spawn_id,
+                }]
             } else {
                 vec![]
             }

@@ -235,6 +235,7 @@ pub enum Command {
     },
     SpawnTerminal {
         cwd: PathBuf,
+        spawn_id: u64,
     },
     WriteTerminal(Vec<u8>),
     ResizeTerminal {

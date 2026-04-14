@@ -610,7 +610,7 @@ impl App {
                     path: std::path::PathBuf::from(home),
                 })?;
             }
-            Command::SpawnTerminal { cwd } => {
+            Command::SpawnTerminal { cwd, spawn_id } => {
                 self.workers
                     .terminal_tx
                     .send(crate::jobs::TerminalRequest::Spawn {
@@ -618,6 +618,7 @@ impl App {
                         cwd,
                         cols: self.state.terminal.cols,
                         rows: self.state.terminal.rows,
+                        spawn_id,
                     })
                     .context("failed to queue terminal spawn job")?;
             }
