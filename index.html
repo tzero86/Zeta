@@ -119,6 +119,23 @@
 
     .repo-link:hover { color: var(--text); }
 
+    .binary-note {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .binary-note a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .binary-note a:hover {
+      color: var(--accent);
+    }
+
     .scroll-hint {
       position: absolute;
       bottom: 2rem;
@@ -396,6 +413,7 @@
         <code>cargo install --git https://github.com/tzero86/Zeta</code>
         <button class="copy-btn" id="copy-btn">copy</button>
       </div>
+      <p class="binary-note">Or download a precompiled binary for <a href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">Linux or Windows</a> from the releases page.</p>
       <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
     </div>
     <div class="scroll-hint">scroll &#x2193;</div>
@@ -418,7 +436,7 @@
           <a class="prereq-link" href="https://git-scm.com" target="_blank" rel="noopener">git-scm.com &#x2197;</a>
         </div>
       </div>
-      <p class="prereq-note animate">Tested on Linux and macOS. Windows support is experimental.</p>
+      <p class="prereq-note animate">Tested on Linux and macOS. Windows binaries are provided but PTY/terminal features may behave differently.</p>
     </div>
   </section>
 
