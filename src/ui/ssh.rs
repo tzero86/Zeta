@@ -109,3 +109,84 @@ pub fn render_ssh_connect_dialog(
         .style(overlay_footer_style(*palette));
     frame.render_widget(footer, chunks[4]);
 }
+
+/// Render the SSH host-trust prompt.
+///
+/// Shows the host, port, and MD5 fingerprint so the user can verify the server's
+/// identity before connecting. Enter/Y accepts; Esc/N rejects.
+pub fn render_ssh_trust_prompt(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    host: &str,
+    port: u16,
+    fingerprint: &str,
+    palette: &ThemePalette,
+) {
+    use ratatui::layout::Direction;
+    use ratatui::widgets::Clear;
+
+    let width = 64.min(area.width.saturating_sub(4));
+    let height = 10.min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    crate::ui::overlay::render_modal_backdrop(frame, area, dialog_area, *palette);
+    frame.render_widget(Clear, dialog_area);
+
+    let block = Block::default()
+        .title(Span::styled(
+            " Unknown SSH Host ",
+            overlay_title_style(*palette),
+        ))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.surface_bg));
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            ratatui::layout::Constraint::Length(1), // blank
+            ratatui::layout::Constraint::Length(1), // host:port
+            ratatui::layout::Constraint::Length(1), // fingerprint
+            ratatui::layout::Constraint::Length(1), // blank
+            ratatui::layout::Constraint::Min(1),    // body
+            ratatui::layout::Constraint::Length(1), // footer
+        ])
+        .split(inner);
+
+    let host_text = format!("  Host:        {}:{}", host, port);
+    frame.render_widget(
+        Paragraph::new(host_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        ),
+        chunks[1],
+    );
+    let fp_text = format!("  Fingerprint: {}", fingerprint);
+    frame.render_widget(
+        Paragraph::new(fp_text).style(
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        ),
+        chunks[2],
+    );
+
+    let body = "  The host key is not in ~/.ssh/known_hosts.\n  Verify the fingerprint with the server administrator.";
+    frame.render_widget(
+        Paragraph::new(body).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        ),
+        chunks[4],
+    );
+
+    let footer = Paragraph::new("Enter/Y=trust and connect  Esc/N=cancel")
+        .style(overlay_footer_style(*palette));
+    frame.render_widget(footer, chunks[5]);
+}

@@ -41,16 +41,36 @@ pub struct SftpFileOpRequest {
 
 pub enum SftpRequest {
     Connect {
+        workspace_id: usize,
+        pane: PaneId,
         address: String,
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
-        reply: crossbeam_channel::Sender<Result<SessionId, String>>,
+        /// When true the connection proceeds even when the host is not in known_hosts.
+        /// This flag is set after the user accepts the trust prompt.
+        trust_unknown_host: bool,
     },
     Disconnect {
         session_id: SessionId,
     },
     Scan(SftpScanRequest),
     FileOp(SftpFileOpRequest),
+}
+
+/// Result of a host-key verification check.
+#[derive(Debug)]
+enum HostCheckResult {
+    Match,
+    UnknownHost { fingerprint: String },
+    Mismatch,
+    Failure(String),
+}
+
+/// Internal outcome type for `connect_sftp`.
+enum SftpConnectOutcome {
+    Connected(SessionId, crate::fs::sftp::SftpBackend),
+    UnknownHost { fingerprint: String },
+    Failed(String),
 }
 
 #[derive(Clone, Debug)]
@@ -253,6 +273,22 @@ pub enum JobResult {
     },
     /// The user's config file changed on disk; the app should re-read it.
     ConfigChanged,
+    /// SSH connection succeeded; the pane should switch to remote mode.
+    SshConnected {
+        workspace_id: usize,
+        pane: PaneId,
+        session_id: SessionId,
+        address: String,
+    },
+    /// SSH connection reached an unknown host; the UI should show a trust prompt.
+    SshHostUnknown {
+        workspace_id: usize,
+        pane: PaneId,
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        fingerprint: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -828,20 +864,49 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
                 for req in sftp_rx {
                     match req {
                         SftpRequest::Connect {
+                            workspace_id,
+                            pane,
                             address,
                             auth_method,
                             credential,
-                            reply,
+                            trust_unknown_host,
                         } => {
-                            let result: Result<(SessionId, crate::fs::sftp::SftpBackend), String> =
-                                connect_sftp(&address, auth_method, &credential, None);
-                            match result {
-                                Ok((session_id, backend)) => {
+                            let address_display = address.clone();
+                            match connect_sftp(
+                                &address,
+                                auth_method,
+                                &credential,
+                                None,
+                                trust_unknown_host,
+                            ) {
+                                SftpConnectOutcome::Connected(session_id, backend) => {
                                     sessions.insert(session_id.clone(), backend);
-                                    let _ = reply.send(Ok(session_id));
+                                    let _ = result_tx.send(JobResult::SshConnected {
+                                        workspace_id,
+                                        pane,
+                                        session_id,
+                                        address: address_display,
+                                    });
                                 }
-                                Err(e) => {
-                                    let _ = reply.send(Err(e));
+                                SftpConnectOutcome::UnknownHost { fingerprint } => {
+                                    let _ = result_tx.send(JobResult::SshHostUnknown {
+                                        workspace_id,
+                                        pane,
+                                        address,
+                                        auth_method,
+                                        credential,
+                                        fingerprint,
+                                    });
+                                }
+                                SftpConnectOutcome::Failed(msg) => {
+                                    let _ = result_tx.send(JobResult::JobFailed {
+                                        workspace_id,
+                                        pane,
+                                        path: std::path::PathBuf::new(),
+                                        file_op: None,
+                                        message: msg,
+                                        elapsed_ms: 0,
+                                    });
                                 }
                             }
                         }
@@ -1149,52 +1214,64 @@ fn load_preview_from_bytes(
     crate::preview::ViewBuffer::from_plain(&truncated)
 }
 
-/// Verify SSH host key against known_hosts for security
+/// Format raw host key bytes as a colon-separated MD5 fingerprint for display.
+fn format_fingerprint(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join(":")
+}
+
+/// Verify SSH host key against known_hosts.
+///
+/// Returns a structured `HostCheckResult` instead of `Result<(), String>` so the
+/// caller can decide whether to prompt the user or fail immediately.
 fn verify_host_key(
     host: &str,
     port: u16,
     session: &ssh2::Session,
     known_hosts_file: Option<&std::path::Path>,
-) -> Result<(), String> {
-    let mut known_hosts = session
-        .known_hosts()
-        .map_err(|e| format!("Connection failed: Failed to initialize known_hosts: {}", e))?;
+) -> HostCheckResult {
+    let mut known_hosts = match session.known_hosts() {
+        Ok(kh) => kh,
+        Err(e) => {
+            return HostCheckResult::Failure(format!("Failed to initialize known_hosts: {}", e))
+        }
+    };
 
-    // Attempt to read known_hosts file
     let default_path = std::env::var("HOME")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::path::PathBuf::from("~"))
         .join(".ssh")
         .join("known_hosts");
-
     let known_hosts_path = known_hosts_file.unwrap_or(&default_path);
 
     if known_hosts_path.exists() {
-        known_hosts
-            .read_file(known_hosts_path, ssh2::KnownHostFileKind::OpenSSH)
-            .map_err(|e| format!("Connection failed: Failed to read known_hosts file: {}", e))?;
-    } else {
-        return Err(
-            "Connection failed: ~/.ssh/known_hosts file not found. Host key verification required."
-                .to_string(),
-        );
+        if let Err(e) = known_hosts.read_file(known_hosts_path, ssh2::KnownHostFileKind::OpenSSH) {
+            return HostCheckResult::Failure(format!("Failed to read known_hosts: {}", e));
+        }
     }
+    // When known_hosts doesn't exist we still run the check; it will return NotFound.
 
-    let (key, _key_type) = session
-        .host_key()
-        .ok_or("Connection failed: Server did not provide a host key")?;
+    let (key, _key_type) = match session.host_key() {
+        Some(kv) => kv,
+        None => return HostCheckResult::Failure("Server provided no host key".to_string()),
+    };
 
     match known_hosts.check_port(host, port, key) {
-        ssh2::CheckResult::Match => Ok(()),
-        ssh2::CheckResult::NotFound => Err(format!(
-            "Connection failed: Host key for {}:{} not found in known_hosts",
-            host, port
-        )),
-        ssh2::CheckResult::Mismatch => {
-            Err("WARNING: Host key changed! Please investigate manually.".to_string())
+        ssh2::CheckResult::Match => HostCheckResult::Match,
+        ssh2::CheckResult::NotFound => {
+            // Build a human-readable fingerprint from the MD5 hash of the key.
+            let fingerprint = session
+                .host_key_hash(ssh2::HashType::Md5)
+                .map(format_fingerprint)
+                .unwrap_or_else(|| String::from("(fingerprint unavailable)"));
+            HostCheckResult::UnknownHost { fingerprint }
         }
+        ssh2::CheckResult::Mismatch => HostCheckResult::Mismatch,
         ssh2::CheckResult::Failure => {
-            Err("Connection failed: Host key verification failed".to_string())
+            HostCheckResult::Failure("Host key verification failed".to_string())
         }
     }
 }
@@ -1216,34 +1293,65 @@ fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
     Ok((user.to_string(), host.to_string(), port))
 }
 
-/// Connect to SSH host and create SftpBackend
+/// Connect to SSH host and create SftpBackend.
+///
+/// When `trust_unknown_host` is true the connection proceeds even when the host
+/// is not present in `~/.ssh/known_hosts`. The host key is NOT written to
+/// known_hosts in this release; a future enhancement should persist the key.
 fn connect_sftp(
     address: &str,
     auth_method: crate::state::ssh::SshAuthMethod,
     credential: &str,
     known_hosts_file: Option<&std::path::Path>,
-) -> Result<(SessionId, crate::fs::sftp::SftpBackend), String> {
+    trust_unknown_host: bool,
+) -> SftpConnectOutcome {
     use std::net::TcpStream;
 
-    let (user, host, port) = parse_ssh_address(address)?;
+    let (user, host, port) = match parse_ssh_address(address) {
+        Ok(v) => v,
+        Err(e) => return SftpConnectOutcome::Failed(e),
+    };
 
     // Create session ID for tracking
     let session_id = format!("{}@{}:{}", user, host, port);
 
     // Connect to SSH server
-    let tcp = TcpStream::connect((host.as_str(), port))
-        .map_err(|e| format!("Connection failed: {}", e))?;
+    let tcp = match TcpStream::connect((host.as_str(), port)) {
+        Ok(t) => t,
+        Err(e) => return SftpConnectOutcome::Failed(format!("Connection failed: {}", e)),
+    };
 
-    let mut session =
-        ssh2::Session::new().map_err(|e| format!("Failed to create session: {}", e))?;
+    let mut session = match ssh2::Session::new() {
+        Ok(s) => s,
+        Err(e) => return SftpConnectOutcome::Failed(format!("Failed to create session: {}", e)),
+    };
 
     session.set_tcp_stream(tcp);
-    session
-        .handshake()
-        .map_err(|e| format!("Handshake failed: {}", e))?;
+    if let Err(e) = session.handshake() {
+        return SftpConnectOutcome::Failed(format!("Handshake failed: {}", e));
+    }
 
-    // Verify host key (security best practice)
-    verify_host_key(&host, port, &session, known_hosts_file)?;
+    // Verify host key; allow bypass when user has explicitly trusted this session.
+    match verify_host_key(&host, port, &session, known_hosts_file) {
+        HostCheckResult::Match => {}
+        HostCheckResult::UnknownHost { fingerprint } if trust_unknown_host => {
+            // User accepted the trust prompt — proceed without saving to known_hosts.
+            // TODO: persist the host key to known_hosts for future connections.
+            let _ = fingerprint; // acknowledged, not persisted
+        }
+        HostCheckResult::UnknownHost { fingerprint } => {
+            return SftpConnectOutcome::UnknownHost { fingerprint };
+        }
+        HostCheckResult::Mismatch => {
+            return SftpConnectOutcome::Failed(
+                "WARNING: Host key changed! Possible MITM attack. Investigate manually."
+                    .to_string(),
+            );
+        }
+        HostCheckResult::Failure(msg) => {
+            return SftpConnectOutcome::Failed(format!("Host verification failed: {}", msg));
+        }
+    }
 
     // Attempt SSH Agent authentication first
     let mut authenticated = false;
@@ -1266,17 +1374,22 @@ fn connect_sftp(
     if !authenticated {
         match auth_method {
             crate::state::ssh::SshAuthMethod::Password => {
-                session
-                    .userauth_password(&user, credential)
-                    .map_err(|e| format!("Authentication failed: {}", e))?;
+                if let Err(e) = session.userauth_password(&user, credential) {
+                    return SftpConnectOutcome::Failed(format!("Authentication failed: {}", e));
+                }
             }
             crate::state::ssh::SshAuthMethod::KeyFile => {
-                session
-                    .userauth_pubkey_file(&user, None, std::path::Path::new(credential), None)
-                    .map_err(|e| format!("Key authentication failed: {}", e))?;
+                if let Err(e) = session.userauth_pubkey_file(
+                    &user,
+                    None,
+                    std::path::Path::new(credential),
+                    None,
+                ) {
+                    return SftpConnectOutcome::Failed(format!("Key authentication failed: {}", e));
+                }
             }
             crate::state::ssh::SshAuthMethod::Agent => {
-                return Err(
+                return SftpConnectOutcome::Failed(
                     "Agent authentication failed and no other credential provided".to_string(),
                 );
             }
@@ -1284,10 +1397,12 @@ fn connect_sftp(
     }
 
     // Create SFTP backend
-    let backend = crate::fs::sftp::SftpBackend::new(session, std::path::PathBuf::from("/"))
-        .map_err(|e| format!("Failed to initialize SFTP: {}", e))?;
+    let backend = match crate::fs::sftp::SftpBackend::new(session, std::path::PathBuf::from("/")) {
+        Ok(b) => b,
+        Err(e) => return SftpConnectOutcome::Failed(format!("Failed to initialize SFTP: {}", e)),
+    };
 
-    Ok((session_id, backend))
+    SftpConnectOutcome::Connected(session_id, backend)
 }
 
 /// Execute a file operation with SFTP backends (cross-backend support)

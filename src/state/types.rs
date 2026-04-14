@@ -58,6 +58,7 @@ pub enum ModalKind {
     Bookmarks,
     FileFinder,
     SshConnect,
+    SshTrustPrompt,
 }
 
 #[cfg(test)]

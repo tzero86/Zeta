@@ -268,6 +268,28 @@ impl App {
                     }
                 }
                 other => {
+                    // When SSH connects, queue an SFTP home scan BEFORE delegating to state,
+                    // so the pane-mode change and scan happen atomically from the UI's perspective.
+                    if let jobs::JobResult::SshConnected {
+                        workspace_id,
+                        pane,
+                        ref session_id,
+                        ..
+                    } = &other
+                    {
+                        let ws = *workspace_id;
+                        let p = *pane;
+                        let sid = session_id.clone();
+                        self.workers
+                            .sftp_tx
+                            .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                                workspace_id: ws,
+                                pane: p,
+                                path: std::path::PathBuf::from("/"),
+                                session_id: sid,
+                            }))
+                            .context("failed to queue SFTP home scan")?;
+                    }
                     let scanned_target =
                         if let JobResult::DirectoryScanned {
                             workspace_id, pane, ..
@@ -559,14 +581,26 @@ impl App {
                 execute!(stdout, EnterAlternateScreen).ok();
                 enable_raw_mode().ok();
             }
+
             Command::ConnectSSH {
                 address,
-                auth_method: _,
-                credential: _,
-                pane: _,
+                auth_method,
+                credential,
+                pane,
+                trust_unknown_host,
             } => {
-                self.state
-                    .set_error_status(format!("SSH connect to {} - not yet implemented", address));
+                let workspace_id = self.state.active_workspace_index();
+                self.workers
+                    .sftp_tx
+                    .send(jobs::SftpRequest::Connect {
+                        workspace_id,
+                        pane,
+                        address,
+                        auth_method,
+                        credential,
+                        trust_unknown_host,
+                    })
+                    .context("failed to queue SSH connect job")?;
             }
             Command::DisconnectSSH { pane } => {
                 self.state.panes.pane_mut(pane).mode = crate::pane::PaneMode::Real;
@@ -652,6 +686,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
+        FocusLayer::Modal(ModalKind::SshTrustPrompt) => Action::from_ssh_trust_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::PaneInlineRename => Action::from_inline_rename_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),

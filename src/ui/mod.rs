@@ -36,7 +36,7 @@ use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
 use crate::ui::preview::{render_preview_panel, RenderPreviewArgs};
 use crate::ui::settings::render_settings_panel;
-use crate::ui::ssh::render_ssh_connect_dialog;
+use crate::ui::ssh::{render_ssh_connect_dialog, render_ssh_trust_prompt};
 
 use ratatui::widgets::Borders;
 
@@ -318,6 +318,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some(ssh_state) = state.ssh_connect() {
         render_ssh_connect_dialog(frame, areas[1], ssh_state, &palette);
+    }
+
+    if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
+        host,
+        port,
+        fingerprint,
+        ..
+    }) = &state.overlay.modal
+    {
+        render_ssh_trust_prompt(frame, areas[1], host, *port, fingerprint, &palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(

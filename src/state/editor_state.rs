@@ -436,9 +436,7 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
-        state
-            .apply(&crate::action::Action::EditorCut)
-            .unwrap();
+        state.apply(&crate::action::Action::EditorCut).unwrap();
         let buf = state.buffer.as_ref().unwrap();
         // After cut, buffer should be empty and selection cleared.
         assert_eq!(buf.selected_text(), None);

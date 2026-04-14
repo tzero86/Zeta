@@ -205,6 +205,10 @@ pub enum Action {
     EditorSelectAll,
     EditorCopy,
     EditorCut,
+    /// User accepted an unknown SSH host key and wants to proceed.
+    SshTrustAccept,
+    /// User rejected an unknown SSH host key; cancel the connection.
+    SshTrustReject,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -250,6 +254,9 @@ pub enum Command {
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
         pane: PaneId,
+        /// When true the SFTP worker will skip known_hosts verification.
+        /// Set after the user accepts the SSH trust prompt.
+        trust_unknown_host: bool,
     },
     DisconnectSSH {
         pane: PaneId,
@@ -656,7 +663,15 @@ impl Action {
         }
     }
 
-    /// Keys when the preview panel has focus. Consumes ALL input.
+    /// Keys when the SSH host-trust prompt is showing. Consumes ALL input.
+    /// Enter or 'y'/'Y' → accept; Esc or 'n'/'N' → reject.
+    pub fn from_ssh_trust_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => Some(Self::SshTrustAccept),
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => Some(Self::SshTrustReject),
+            _ => None,
+        }
+    }
     pub fn from_preview_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
             KeyCode::Up => Some(Self::ScrollPreviewUp),

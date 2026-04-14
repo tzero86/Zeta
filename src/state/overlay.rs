@@ -15,7 +15,10 @@ use crate::state::types::MenuItem;
 /// Only one variant can be active at a time — the type system enforces this.
 #[derive(Clone, Debug)]
 pub enum ModalState {
-    Menu { id: MenuId, selection: usize },
+    Menu {
+        id: MenuId,
+        selection: usize,
+    },
     Prompt(PromptState),
     Dialog(DialogState),
     Collision(CollisionState),
@@ -24,6 +27,15 @@ pub enum ModalState {
     Bookmarks(BookmarksState),
     FileFinder(FileFinderState),
     SshConnect(crate::state::ssh::SshConnectionState),
+    SshTrustPrompt {
+        host: String,
+        port: u16,
+        fingerprint: String,
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        pane: crate::pane::PaneId,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -153,6 +165,43 @@ impl OverlayState {
             Some(ModalState::SshConnect(s)) => Some(s),
             _ => None,
         }
+    }
+
+    pub fn ssh_trust_prompt(&self) -> Option<&crate::state::ssh::SshAuthMethod> {
+        // Returns a reference to auth_method so callers can check if the prompt is active.
+        // Full data is accessed by matching on the modal directly.
+        match &self.modal {
+            Some(ModalState::SshTrustPrompt { auth_method, .. }) => Some(auth_method),
+            _ => None,
+        }
+    }
+
+    pub fn is_ssh_trust_prompt(&self) -> bool {
+        matches!(self.modal, Some(ModalState::SshTrustPrompt { .. }))
+    }
+
+    /// Open the SSH host-trust prompt with the pending connection parameters.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_ssh_trust_prompt(
+        &mut self,
+        host: String,
+        port: u16,
+        fingerprint: String,
+        address: String,
+        auth_method: crate::state::ssh::SshAuthMethod,
+        credential: String,
+        pane: crate::pane::PaneId,
+    ) {
+        self.close_all();
+        self.modal = Some(ModalState::SshTrustPrompt {
+            host,
+            port,
+            fingerprint,
+            address,
+            auth_method,
+            credential,
+            pane,
+        });
     }
 
     pub fn open_file_finder(&mut self, state: FileFinderState) {

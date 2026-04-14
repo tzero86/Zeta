@@ -1358,6 +1358,7 @@ impl AppState {
                         auth_method,
                         credential,
                         pane,
+                        trust_unknown_host: false,
                     });
                     self.overlay.close_all();
                     self.status_message = format!("connecting to {}", address);
@@ -1416,6 +1417,30 @@ impl AppState {
                 self.overlay.close_all();
                 self.status_message = String::from("SSH connection cancelled");
             }
+            Action::SshTrustAccept => {
+                if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
+                    address,
+                    auth_method,
+                    credential,
+                    pane,
+                    ..
+                }) = self.overlay.modal.clone()
+                {
+                    self.overlay.close_all();
+                    self.status_message = format!("connecting to {} (trusted)…", address);
+                    commands.push(Command::ConnectSSH {
+                        address,
+                        auth_method,
+                        credential,
+                        pane,
+                        trust_unknown_host: true,
+                    });
+                }
+            }
+            Action::SshTrustReject => {
+                self.overlay.close_all();
+                self.status_message = String::from("SSH connection cancelled");
+            }
             _ => {}
         }
 
@@ -1464,6 +1489,8 @@ impl AppState {
             | JobResult::TerminalExited { workspace_id, .. }
             | JobResult::DirSizeCalculated { workspace_id, .. } => Some(*workspace_id),
             JobResult::DirectoryChanged { .. } | JobResult::ConfigChanged => None,
+            JobResult::SshConnected { workspace_id, .. }
+            | JobResult::SshHostUnknown { workspace_id, .. } => Some(*workspace_id),
         };
 
         let previous_workspace = self.active_workspace_idx;
@@ -1721,6 +1748,49 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::ConfigChanged => {}
+            JobResult::SshHostUnknown {
+                workspace_id: _,
+                pane,
+                address,
+                auth_method,
+                credential,
+                fingerprint,
+            } => {
+                // Parse host and port from the full address string for display.
+                let (host, port) = match address.rsplit_once('@') {
+                    Some((_, rest)) => match rest.rsplit_once(':') {
+                        Some((h, p)) => (h.to_string(), p.parse::<u16>().unwrap_or(22)),
+                        None => (rest.to_string(), 22u16),
+                    },
+                    None => (address.clone(), 22u16),
+                };
+                self.overlay.open_ssh_trust_prompt(
+                    host,
+                    port,
+                    fingerprint,
+                    address,
+                    auth_method,
+                    credential,
+                    pane,
+                );
+                self.status_message = String::from("unknown SSH host — verify fingerprint");
+            }
+            JobResult::SshConnected {
+                workspace_id: _,
+                pane,
+                session_id,
+                address,
+            } => {
+                // Set pane to remote mode; app.rs will queue the SFTP scan.
+                let home = std::path::PathBuf::from("/");
+                self.panes.pane_mut(pane).mode = crate::pane::PaneMode::Remote {
+                    address: session_id,
+                    base_path: home.clone(),
+                };
+                self.panes.pane_mut(pane).cwd = home;
+                self.overlay.close_all();
+                self.status_message = format!("connected to {}", address);
+            }
         }
 
         if target_workspace.is_some() {
@@ -1910,6 +1980,9 @@ impl AppState {
         }
         if self.ssh_connect().is_some() {
             return FocusLayer::Modal(ModalKind::SshConnect);
+        }
+        if self.overlay.is_ssh_trust_prompt() {
+            return FocusLayer::Modal(ModalKind::SshTrustPrompt);
         }
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);
