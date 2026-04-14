@@ -282,6 +282,37 @@
     .workflow-item:nth-child(5) { transition-delay: 0.28s; }
     .workflow-item:nth-child(6) { transition-delay: 0.35s; }
     .workflow-item:nth-child(7) { transition-delay: 0.42s; }
+
+    /* ── Origin ── */
+    section.origin {
+      padding: 6rem 2rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .origin-inner {
+      max-width: 640px;
+      margin: 0 auto;
+    }
+
+    .origin-body {
+      border-left: 2px solid var(--accent);
+      padding-left: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .origin-body p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.85;
+    }
+
+    .origin-body p strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
   </style>
 </head>
 <body>
@@ -379,6 +410,30 @@
           <span class="workflow-key">Shift+P</span>
           <span class="workflow-desc">Command palette &#x2014; search every action by name</span>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Origin -->
+  <section class="origin">
+    <div class="origin-inner">
+      <p class="section-label animate">// why it exists</p>
+      <div class="origin-body">
+        <p class="animate">Zeta started as an excuse. Testing a new generation of AI coding tools calls for a
+          <strong>real project</strong> &#x2014; something with actual architecture decisions, non-trivial state, and things
+          that could genuinely go wrong. Toy examples tell you nothing.
+        </p>
+        <p class="animate">The idea came from memory. If you used a PC in the late 80s or early 90s,
+          you probably know <strong>Norton Commander</strong>. Two panes, function keys, everything a keystroke away.
+          That mental model never really leaves you.
+        </p>
+        <p class="animate">So the goal became building something in that spirit &#x2014; keyboard-first, fast,
+          dual-pane &#x2014; but brought forward: embedded editor, integrated terminal, SSH support,
+          multiple workspaces, all on a <strong>Rust core</strong> with a proper TUI.
+        </p>
+        <p class="animate">Zeta is what came out of that. Part experiment, part nostalgia project,
+          part something that turned out to be genuinely useful.
+        </p>
       </div>
     </div>
   </section>
