@@ -171,6 +171,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 },
             },
         );
+    } else {
         // Compute per-row search match ranges for highlight overlay.
         let (search_row_matches, active_row_match) = editor
             .visible_search_matches(&render_state.visible_lines, render_state.cursor_visible_row);
