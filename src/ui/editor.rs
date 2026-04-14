@@ -5,7 +5,7 @@ use ratatui::Frame;
 
 use crate::config::ThemePalette;
 use crate::editor::{EditorBuffer, EditorRenderState};
-use crate::ui::code_view::{render_code_view, CodeViewRenderArgs};
+use crate::ui::code_view::{render_code_view, CodeViewRenderArgs, SearchHighlight};
 
 pub struct RenderEditorArgs<'a> {
     pub editor: &'a mut EditorBuffer,
@@ -39,15 +39,30 @@ pub fn editor_render_state(
     )
 }
 
-pub fn editor_highlighted_render_state<'a>(
-    editor: &'a mut EditorBuffer,
+pub fn editor_highlighted_render_state(
+    editor: &mut EditorBuffer,
     area: Rect,
     syntect_theme: &str,
     palette: ThemePalette,
     tab_width: u8,
-) -> (usize, &'a [crate::highlight::HighlightedLine]) {
+    word_wrap: bool,
+) -> (usize, Vec<crate::highlight::HighlightedLine>) {
     let height = area.height.saturating_sub(2) as usize;
-    editor.visible_highlighted_window(height, syntect_theme, palette.text_primary, tab_width)
+    // Subtract gutter_width (6) so wrapping aligns with what code_view renders.
+    let viewport_cols = area.width.saturating_sub(6) as usize;
+    let lines = editor.visible_highlighted_window(
+        height,
+        syntect_theme,
+        palette.text_primary,
+        tab_width,
+        word_wrap,
+        viewport_cols,
+    );
+    // visible_start is the first logical line shown; use it as the line-number base.
+    let visible_start = editor
+        .render_state(height, viewport_cols, false, tab_width, word_wrap)
+        .visible_start;
+    (visible_start, lines)
 }
 
 pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'_>) {
@@ -107,7 +122,6 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         };
 
     let gutter_width = 6u16;
-    let use_plain_wrapped = cheap_mode || render_state.word_wrap;
     if loading {
         let loading_text = editor
             .path
@@ -120,7 +134,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 .bg(palette.surface_bg),
         );
         frame.render_widget(loading, content_area);
-    } else if use_plain_wrapped {
+    } else if cheap_mode {
         let plain_lines: Vec<crate::highlight::HighlightedLine> = render_state
             .visible_lines
             .iter()
@@ -135,33 +149,41 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 first_line_number: render_state.visible_start + 1,
                 gutter_width,
                 scroll_col: render_state.scroll_col,
-                cursor_row: if cheap_mode {
-                    None
-                } else {
-                    render_state.cursor_visible_row
-                },
+                cursor_row: None,
                 palette,
+                search: None,
             },
         );
-    } else {
+        // Compute per-row search match ranges for highlight overlay.
+        let (search_row_matches, active_row_match) = editor
+            .visible_search_matches(&render_state.visible_lines, render_state.cursor_visible_row);
+        let search_highlight = if editor.search_active && !editor.search_query.is_empty() {
+            Some(SearchHighlight {
+                row_matches: &search_row_matches,
+                active_row_match,
+            })
+        } else {
+            None
+        };
         let (first_line_num, highlighted) = editor_highlighted_render_state(
             editor,
             content_area,
             syntect_theme,
             palette,
             cheap_tab_width,
+            render_state.word_wrap,
         );
-
         render_code_view(
             frame,
             content_area,
             CodeViewRenderArgs {
-                lines: highlighted,
+                lines: &highlighted,
                 first_line_number: first_line_num + 1,
                 gutter_width,
                 scroll_col: render_state.scroll_col,
                 cursor_row: render_state.cursor_visible_row,
                 palette,
+                search: search_highlight,
             },
         );
     }

@@ -200,6 +200,8 @@ pub enum Action {
     CopyPathToClipboard,
     /// Paste text from the system clipboard at the editor cursor.
     EditorPaste,
+    EditorUndo,
+    EditorRedo,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -790,6 +792,17 @@ impl Action {
             KeyCode::F(3) => Some(Self::EditorSearchNext),
             KeyCode::Char('s') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::SaveEditor)
+            }
+            KeyCode::Char('z') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorUndo)
+            }
+            KeyCode::Char('y') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorRedo)
+            }
+            KeyCode::Char('Z')
+                if key_event.modifiers == (KeyModifiers::CONTROL | KeyModifiers::SHIFT) =>
+            {
+                Some(Self::EditorRedo)
             }
             KeyCode::Char('v') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorPaste)

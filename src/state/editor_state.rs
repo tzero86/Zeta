@@ -178,6 +178,16 @@ impl EditorState {
                     }
                 }
             }
+            Action::EditorUndo => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    editor.undo();
+                }
+            }
+            Action::EditorRedo => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    editor.redo();
+                }
+            }
             Action::EditorMoveDown => {
                 if let Some(e) = self.buffer.as_mut() {
                     e.move_down();
@@ -349,5 +359,36 @@ mod tests {
         s.open(buf);
         s.apply(&Action::ToggleMarkdownPreview).unwrap();
         assert!(!s.markdown_preview_visible);
+    }
+    #[test]
+    fn undo_reverses_last_insert() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorInsert('!'))
+            .unwrap();
+        state.apply(&crate::action::Action::EditorUndo).unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        assert_eq!(buf.visible_lines()[0], "hello");
+    }
+
+    #[test]
+    fn redo_reapplies_undone_insert() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorInsert('!'))
+            .unwrap();
+        state.apply(&crate::action::Action::EditorUndo).unwrap();
+        state.apply(&crate::action::Action::EditorRedo).unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        // Cursor starts at position 0, so EditorInsert prepends the char.
+        assert_eq!(buf.visible_lines()[0], "!hello");
     }
 }

@@ -1,5 +1,5 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
@@ -8,6 +8,15 @@ use unicode_width::UnicodeWidthChar;
 use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 
+/// Search match ranges for a single call to `render_code_view`.
+pub struct SearchHighlight<'a> {
+    /// Per visual-row char-column ranges to highlight as search matches.
+    /// The outer slice is indexed by visual row; inner vecs are `(col_start, col_end)`.
+    pub row_matches: &'a [Vec<(usize, usize)>],
+    /// The active match expressed as `(row_idx, col_start, col_end)`, if visible.
+    pub active_row_match: Option<(usize, usize, usize)>,
+}
+
 pub struct CodeViewRenderArgs<'a> {
     pub lines: &'a [HighlightedLine],
     pub first_line_number: usize,
@@ -15,6 +24,8 @@ pub struct CodeViewRenderArgs<'a> {
     pub scroll_col: usize,
     pub cursor_row: Option<usize>,
     pub palette: ThemePalette,
+    /// Optional search highlight data; `None` when search is inactive.
+    pub search: Option<SearchHighlight<'a>>,
 }
 
 pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderArgs<'_>) {
@@ -88,56 +99,166 @@ pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderA
             Style::default().bg(args.palette.surface_bg)
         };
 
-        let mut spans: Vec<Span> = Vec::new();
-        let mut raw_cols = 0usize;
-        let mut visible_cols = 0usize;
-        for (color, modifier, text) in line_tokens {
-            let token_chars: Vec<char> = text.chars().collect();
-            let token_start = raw_cols;
-            let token_width = token_chars
-                .iter()
-                .map(|ch| UnicodeWidthChar::width(*ch).unwrap_or(0))
-                .sum::<usize>();
-            let token_end = raw_cols + token_width;
-            raw_cols = token_end;
+        // Gather search match ranges for this row, if any.
+        let row_match_ranges: &[_] = args
+            .search
+            .as_ref()
+            .and_then(|s| s.row_matches.get(row_idx))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let active_col_range: Option<(usize, usize)> = args.search.as_ref().and_then(|s| {
+            let (ar, cs, ce) = s.active_row_match?;
+            (ar == row_idx).then_some((cs, ce))
+        });
 
-            if token_end <= args.scroll_col {
-                continue;
-            }
-
-            let skip = args.scroll_col.saturating_sub(token_start);
-            let mut visible_chars = String::new();
-            let mut skipped = 0usize;
-            let mut used_width = 0usize;
-            for ch in token_chars.iter().skip_while(|_| {
-                if skipped < skip {
-                    skipped += 1;
-                    true
-                } else {
-                    false
-                }
-            }) {
-                let ch_width = UnicodeWidthChar::width(*ch).unwrap_or(0);
-                if used_width + ch_width > viewport_cols.saturating_sub(visible_cols) {
-                    break;
-                }
-                used_width += ch_width;
-                visible_chars.push(*ch);
-            }
-            if !visible_chars.is_empty() {
-                visible_cols += used_width;
-                spans.push(Span::styled(
-                    visible_chars,
-                    Style::default().fg(*color).add_modifier(*modifier),
-                ));
-            }
-        }
-
-        if visible_cols < viewport_cols {
-            spans.push(Span::raw(" ".repeat(viewport_cols - visible_cols)));
-        }
+        let spans = build_row_spans(
+            line_tokens,
+            args.scroll_col,
+            viewport_cols,
+            row_match_ranges,
+            active_col_range,
+            args.palette.search_match_bg,
+            args.palette.search_match_active_bg,
+        );
 
         let line = Line::from(spans);
         frame.render_widget(Paragraph::new(line).style(row_bg), content_rect);
     }
+}
+
+/// Build the visible `Span` list for a single row, applying scroll offset, viewport
+/// clipping, and (optionally) search match background highlights.
+///
+/// `match_ranges` and `active_col_range` are expressed as char-column offsets within
+/// the row (not display-width offsets), because `find_matches` works in char space.
+fn build_row_spans(
+    tokens: &HighlightedLine,
+    scroll_col: usize,
+    viewport_cols: usize,
+    match_ranges: &[(usize, usize)],
+    active_col_range: Option<(usize, usize)>,
+    match_bg: Color,
+    active_match_bg: Color,
+) -> Vec<Span<'static>> {
+    let mut spans: Vec<Span<'static>> = Vec::new();
+    // `raw_cols`: display-width position (used for scroll / viewport clipping).
+    // `char_col`: char count (used for search range lookup).
+    let mut raw_cols = 0usize;
+    let mut char_col = 0usize;
+    let mut visible_cols = 0usize;
+
+    for (fg_color, modifier, text) in tokens {
+        let token_chars: Vec<char> = text.chars().collect();
+        let token_char_len = token_chars.len();
+        let token_display_width: usize = token_chars
+            .iter()
+            .map(|ch| UnicodeWidthChar::width(*ch).unwrap_or(0))
+            .sum();
+        let token_end_display = raw_cols + token_display_width;
+
+        if token_end_display <= scroll_col {
+            raw_cols = token_end_display;
+            char_col += token_char_len;
+            continue;
+        }
+
+        // Walk the characters of this token individually so we can split at
+        // search-match boundaries while respecting scroll and viewport limits.
+        let skip_display = scroll_col.saturating_sub(raw_cols);
+        let mut skipped_display = 0usize;
+        let mut pending_text = String::new();
+        let mut pending_bg: Option<Color> = None;
+
+        for ch in &token_chars {
+            let ch_width = UnicodeWidthChar::width(*ch).unwrap_or(0);
+
+            // Skip chars still to the left of the scroll window (display-width skip).
+            if skipped_display < skip_display {
+                skipped_display += ch_width;
+                raw_cols += ch_width;
+                char_col += 1;
+                continue;
+            }
+
+            // Viewport right-edge clip.
+            if visible_cols >= viewport_cols {
+                break;
+            }
+
+            // Determine the appropriate background override for this char.
+            let char_bg = char_search_bg(
+                char_col,
+                match_ranges,
+                active_col_range,
+                match_bg,
+                active_match_bg,
+            );
+
+            // When the highlight state changes, flush the pending span.
+            if char_bg != pending_bg && !pending_text.is_empty() {
+                spans.push(styled_span(
+                    std::mem::take(&mut pending_text),
+                    *fg_color,
+                    *modifier,
+                    pending_bg,
+                ));
+            }
+            pending_bg = char_bg;
+            pending_text.push(*ch);
+            visible_cols += ch_width;
+            raw_cols += ch_width;
+            char_col += 1;
+        }
+
+        if !pending_text.is_empty() {
+            spans.push(styled_span(
+                std::mem::take(&mut pending_text),
+                *fg_color,
+                *modifier,
+                pending_bg,
+            ));
+        }
+    }
+
+    if visible_cols < viewport_cols {
+        spans.push(Span::raw(" ".repeat(viewport_cols - visible_cols)));
+    }
+    spans
+}
+
+/// Return the background override for the char at `char_col`, or `None` to use
+/// the row default. Active match takes precedence over non-active match.
+#[inline]
+fn char_search_bg(
+    char_col: usize,
+    ranges: &[(usize, usize)],
+    active: Option<(usize, usize)>,
+    match_bg: Color,
+    active_bg: Color,
+) -> Option<Color> {
+    if let Some((s, e)) = active {
+        if char_col >= s && char_col < e {
+            return Some(active_bg);
+        }
+    }
+    for &(s, e) in ranges {
+        if char_col >= s && char_col < e {
+            return Some(match_bg);
+        }
+    }
+    None
+}
+
+#[inline]
+fn styled_span(
+    text: String,
+    fg: ratatui::style::Color,
+    modifier: ratatui::style::Modifier,
+    bg: Option<ratatui::style::Color>,
+) -> Span<'static> {
+    let mut style = Style::default().fg(fg).add_modifier(modifier);
+    if let Some(bg_color) = bg {
+        style = style.bg(bg_color);
+    }
+    Span::styled(text, style)
 }

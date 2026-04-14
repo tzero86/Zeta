@@ -100,6 +100,9 @@ pub struct EditorBuffer {
     /// Full-file syntax-highlighted lines, keyed by `(edit_version, theme, tab_width)`.
     /// `None` until first render. Recomputed only when text actually changes.
     highlight_cache: Option<(usize, String, u8, Vec<HighlightedLine>)>,
+    /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
+    /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
+    wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
 }
 
 impl EditorBuffer {
@@ -351,16 +354,63 @@ impl EditorBuffer {
     ///
     /// The full-file highlight result is cached by `edit_version` so repeated
     /// calls during scrolling (no text change) cost only a slice — not a full
-    /// syntect re-parse.
+    /// Split a single highlighted line into word-wrapped visual rows at `cols` chars.
+    /// Tabs must be pre-expanded (via `expand_tabs`) before highlighting; each char
+    /// in the tokens maps to one display column for typical code content.
+    fn wrap_highlighted_line(tokens: &HighlightedLine, cols: usize) -> Vec<HighlightedLine> {
+        if cols == 0 || tokens.is_empty() {
+            return vec![tokens.clone()];
+        }
+        let mut rows: Vec<HighlightedLine> = Vec::new();
+        let mut current: HighlightedLine = Vec::new();
+        let mut col = 0usize;
+        for (color, modifier, text) in tokens {
+            let chars: Vec<char> = text.chars().collect();
+            let mut i = 0;
+            while i < chars.len() {
+                let avail = cols - col;
+                let n = avail.min(chars.len() - i);
+                let chunk: String = chars[i..i + n].iter().collect();
+                if !chunk.is_empty() {
+                    current.push((*color, *modifier, chunk.into()));
+                }
+                col += n;
+                i += n;
+                if col >= cols {
+                    rows.push(std::mem::take(&mut current));
+                    col = 0;
+                }
+            }
+        }
+        if !current.is_empty() {
+            rows.push(current);
+        }
+        // Always emit at least one row so empty lines still occupy a visual row.
+        if rows.is_empty() {
+            rows.push(Vec::new());
+        }
+        rows
+    }
+
+    /// Return the highlighted lines visible in the current viewport, caching the
+    /// syntect result so that repeated calls during scrolling (no text change)
+    /// cost only a slice — not a full syntect re-parse.
+    ///
+    /// When `word_wrap` is true and `viewport_cols > 0`, each logical line is
+    /// split into wrapped visual rows; the wrap result is cached separately from
+    /// the base highlight cache so that a resize (cols change) forces a re-wrap
+    /// but not a full re-highlight.
     pub fn visible_highlighted_window(
         &mut self,
         height: usize,
         syntect_theme: &str,
         fallback_color: Color,
         tab_width: u8,
-    ) -> (usize, &[HighlightedLine]) {
+        word_wrap: bool,
+        viewport_cols: usize,
+    ) -> Vec<HighlightedLine> {
         if height == 0 {
-            return (0, &[]);
+            return Vec::new();
         }
 
         let ext = self
@@ -370,14 +420,12 @@ impl EditorBuffer {
             .and_then(|e| e.to_str())
             .map(str::to_owned);
 
-        // Recompute when text, theme, or tab_width changes.
+        // Rebuild the base per-logical-line highlight cache when text/theme/tab_width changes.
         let cache_valid = self.highlight_cache.as_ref().is_some_and(|(v, t, tw, _)| {
             *v == self.edit_version && t == syntect_theme && *tw == tab_width
         });
-
         if !cache_valid {
             let raw = normalize_preview_text(&self.text.to_string());
-            // Expand tabs before highlighting so gutter alignment is correct.
             let text = Self::expand_tabs(&raw, tab_width as usize);
             let all_lines = match highlight_text(&text, ext.as_deref(), syntect_theme) {
                 Some(lines) => lines,
@@ -398,12 +446,55 @@ impl EditorBuffer {
                 tab_width,
                 all_lines,
             ));
+            // Any prior wrap cache is now stale.
+            self.wrap_highlight_cache = None;
         }
 
-        let (start, _, _) = self.visible_line_window_h(height, 0, tab_width, false);
-        let all_lines = &self.highlight_cache.as_ref().unwrap().3;
-        let end = (start + height).min(all_lines.len());
-        (start, &all_lines[start..end])
+        if word_wrap && viewport_cols > 0 {
+            // Rebuild the wrap cache when text or viewport width changes.
+            let wrap_valid =
+                self.wrap_highlight_cache
+                    .as_ref()
+                    .is_some_and(|(v, t, tw, cols, _)| {
+                        *v == self.edit_version
+                            && t == syntect_theme
+                            && *tw == tab_width
+                            && *cols == viewport_cols
+                    });
+            if !wrap_valid {
+                let logical_lines = &self.highlight_cache.as_ref().unwrap().3;
+                let mut wrapped: Vec<HighlightedLine> = Vec::new();
+                for line in logical_lines {
+                    wrapped.extend(Self::wrap_highlighted_line(line, viewport_cols));
+                }
+                self.wrap_highlight_cache = Some((
+                    self.edit_version,
+                    syntect_theme.to_string(),
+                    tab_width,
+                    viewport_cols,
+                    wrapped,
+                ));
+            }
+            // Determine the first visual row to show using the same start logic as
+            // visible_line_window_h (word_wrap=true path).
+            let (logical_start, _, _) =
+                self.visible_line_window_h(height, viewport_cols, tab_width, true);
+            // Map logical_start to a visual row offset in the wrap cache.
+            let all_logical = &self.highlight_cache.as_ref().unwrap().3;
+            let visual_start: usize = all_logical[..logical_start]
+                .iter()
+                .map(|line| Self::wrap_highlighted_line(line, viewport_cols).len())
+                .sum();
+            let all_wrapped = &self.wrap_highlight_cache.as_ref().unwrap().4;
+            let end = (visual_start + height).min(all_wrapped.len());
+            all_wrapped[visual_start..end].to_vec()
+        } else {
+            // Non-wrap: slice the logical-line cache directly.
+            let (start, _, _) = self.visible_line_window_h(height, 0, tab_width, false);
+            let all_lines = &self.highlight_cache.as_ref().unwrap().3;
+            let end = (start + height).min(all_lines.len());
+            all_lines[start..end].to_vec()
+        }
     }
 
     /// Compute the visible line window for rendering `viewport_rows` rows.
@@ -571,6 +662,51 @@ impl EditorBuffer {
             byte_start = abs_byte + next_char_len;
         }
         matches
+    }
+
+    /// For each visible row, return char-column match ranges for the current search query,
+    /// plus the active match as `(row_idx, col_start, col_end)`.
+    ///
+    /// `visible_rows` are the rendered row strings (tabs expanded, newlines stripped) in
+    /// order. `cursor_visual_row` is `render_state.cursor_visible_row`: the visual row
+    /// that contains the cursor (which `search_next`/`search_prev` place at the match).
+    #[allow(clippy::type_complexity)]
+    pub fn visible_search_matches(
+        &self,
+        visible_rows: &[String],
+        cursor_visual_row: Option<usize>,
+    ) -> (Vec<Vec<(usize, usize)>>, Option<(usize, usize, usize)>) {
+        if !self.search_active || self.search_query.is_empty() {
+            return (vec![Vec::new(); visible_rows.len()], None);
+        }
+        let query_lower = self.search_query.to_lowercase();
+        let query_char_count = query_lower.chars().count();
+        let mut row_matches: Vec<Vec<(usize, usize)>> = Vec::with_capacity(visible_rows.len());
+        let mut active_match: Option<(usize, usize, usize)> = None;
+        for (row_idx, row) in visible_rows.iter().enumerate() {
+            let row_chars: Vec<char> = row.to_lowercase().chars().collect();
+            let mut matches_in_row: Vec<(usize, usize)> = Vec::new();
+            let mut i = 0;
+            while i + query_char_count <= row_chars.len() {
+                let slice: String = row_chars[i..i + query_char_count].iter().collect();
+                if slice == query_lower {
+                    matches_in_row.push((i, i + query_char_count));
+                    i += query_char_count;
+                } else {
+                    i += 1;
+                }
+            }
+            // The first match on the cursor row is treated as the active match.
+            // `search_next`/`search_prev` move the cursor to the match start, so
+            // the cursor visual row is always the active-match row.
+            if cursor_visual_row == Some(row_idx) && active_match.is_none() {
+                if let Some(&(s, e)) = matches_in_row.first() {
+                    active_match = Some((row_idx, s, e));
+                }
+            }
+            row_matches.push(matches_in_row);
+        }
+        (row_matches, active_match)
     }
 
     pub fn search_next(&mut self) {

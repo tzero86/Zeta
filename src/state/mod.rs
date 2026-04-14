@@ -150,7 +150,6 @@ impl AppState {
             self.active_workspace_mut().panes.focus = PaneFocus::Left;
         }
         self.sync_editor_menu_mode();
-        self.status_message = format!("workspace {} active", idx + 1);
         if let Some(collision) = self.active_workspace_mut().pending_collision.take() {
             self.overlay.set_collision(collision);
         }
@@ -1314,7 +1313,23 @@ impl AppState {
                 }
             }
             Action::CopyPathToClipboard => {
-                if let Some(path) = self.panes.active_pane().selected_path() {
+                let marked = &self.panes.active_pane().marked;
+                if !marked.is_empty() {
+                    let text = marked
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let count = marked.len();
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                        Ok(()) => {
+                            self.status_message = format!("copied {count} paths to clipboard");
+                        }
+                        Err(e) => {
+                            self.status_message = format!("clipboard error: {e}");
+                        }
+                    }
+                } else if let Some(path) = self.panes.active_pane().selected_path() {
                     match arboard::Clipboard::new()
                         .and_then(|mut cb| cb.set_text(path.display().to_string()))
                     {

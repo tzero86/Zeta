@@ -296,6 +296,10 @@ pub struct ThemePalette {
     pub key_hint_fg: Color,
     /// Syntect theme name used for preview-panel syntax highlighting.
     pub syntect_theme: &'static str,
+    /// Background for all visible search matches.
+    pub search_match_bg: Color,
+    /// Background for the active (cursor) search match.
+    pub search_match_active_bg: Color,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -394,6 +398,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(180, 60, 30),
             key_hint_fg: Color::Rgb(118, 196, 182),
             syntect_theme: "base16-ocean.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -421,6 +427,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(190, 80, 20),
             key_hint_fg: Color::Rgb(83, 148, 117),
             syntect_theme: "Solarized (light)",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -448,6 +456,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(170, 70, 50),
             key_hint_fg: Color::Rgb(102, 174, 197),
             syntect_theme: "base16-mocha.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -476,6 +486,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(0, 255, 64),
             key_hint_fg: Color::Rgb(44, 213, 255),
             syntect_theme: "Dracula",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -504,6 +516,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(255, 0, 255),
             key_hint_fg: Color::Rgb(0, 255, 255),
             syntect_theme: "base16-ocean.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -532,6 +546,8 @@ impl ThemePalette {
             logo_accent: Color::Green,         // Green for git-like status or accent
             key_hint_fg: Color::Rgb(150, 150, 150), // Gray for key hints
             syntect_theme: "base16-ocean.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -559,6 +575,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(255, 121, 198),        // #FF79C6
             key_hint_fg: Color::Rgb(241, 250, 140),        // #F1FA8C
             syntect_theme: "Dracula",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
@@ -587,6 +605,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(255, 220, 60),
             key_hint_fg: Color::Rgb(243, 205, 57),
             syntect_theme: "base16-ocean.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
     fn zeta() -> Self {
@@ -615,6 +635,8 @@ impl ThemePalette {
             logo_accent: Color::Rgb(255, 158, 100),
             key_hint_fg: Color::Rgb(130, 170, 255),
             syntect_theme: "base16-ocean.dark",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 }

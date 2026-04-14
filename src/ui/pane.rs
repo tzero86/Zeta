@@ -501,6 +501,8 @@ mod tests {
             logo_accent: Color::Rgb(200, 201, 202),
             key_hint_fg: Color::Rgb(210, 211, 212),
             syntect_theme: "test",
+            search_match_bg: Color::Rgb(80, 64, 0),
+            search_match_active_bg: Color::Rgb(185, 140, 10),
         }
     }
 
