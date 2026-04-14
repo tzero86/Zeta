@@ -17,6 +17,7 @@ pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
 
 use std::collections::BTreeSet;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -49,38 +50,124 @@ struct PendingBatchOperation {
 }
 
 #[derive(Debug)]
-pub struct AppState {
+pub struct WorkspaceState {
     pub panes: PaneSetState,
-    pub overlay: OverlayState,
     pub preview: PreviewState,
     pub editor: EditorState,
     pub terminal: crate::state::terminal::TerminalState,
-    // Shared config/theme/status — not owned by any single sub-state
-    config_path: String,
-    config: AppConfig,
-    icon_mode: IconMode,
-    theme: ResolvedTheme,
     status_message: String,
-    last_size: Option<(u16, u16)>,
-    redraw_count: u64,
-    startup_time_ms: u128,
     last_scan_time_ms: Option<u128>,
     file_operation_status: Option<FileOperationStatus>,
-    should_quit: bool,
     /// Full-window editor mode hides the pane browser and lets the editor own
     /// the full content area.
     editor_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
-    /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
+    pending_collision: Option<CollisionState>,
     pub diff_mode: bool,
     pub diff_map: std::collections::HashMap<String, crate::diff::DiffStatus>,
     /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
     pending_batch: Option<PendingBatchOperation>,
 }
 
+impl WorkspaceState {
+    fn new(panes: PaneSetState, preview: PreviewState, status_message: String) -> Self {
+        Self {
+            panes,
+            preview,
+            editor: EditorState::default(),
+            terminal: crate::state::terminal::TerminalState::default(),
+            status_message,
+            last_scan_time_ms: None,
+            file_operation_status: None,
+            editor_fullscreen: false,
+            git: [None, None],
+            pending_reveal: None,
+            pending_collision: None,
+            diff_mode: false,
+            diff_map: std::collections::HashMap::new(),
+            pending_batch: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct AppState {
+    workspaces: [WorkspaceState; 4],
+    active_workspace_idx: usize,
+    pub overlay: OverlayState,
+    // Shared config/theme/runtime shell state.
+    config_path: String,
+    config: AppConfig,
+    icon_mode: IconMode,
+    theme: ResolvedTheme,
+    last_size: Option<(u16, u16)>,
+    redraw_count: u64,
+    startup_time_ms: u128,
+    should_quit: bool,
+}
+
 impl AppState {
+    pub fn active_workspace(&self) -> &WorkspaceState {
+        &self.workspaces[self.active_workspace_idx]
+    }
+
+    pub fn active_workspace_mut(&mut self) -> &mut WorkspaceState {
+        &mut self.workspaces[self.active_workspace_idx]
+    }
+
+    pub fn workspace(&self, idx: usize) -> &WorkspaceState {
+        &self.workspaces[idx]
+    }
+
+    pub fn workspace_mut(&mut self, idx: usize) -> &mut WorkspaceState {
+        &mut self.workspaces[idx]
+    }
+
+    pub fn active_workspace_index(&self) -> usize {
+        self.active_workspace_idx
+    }
+
+    pub fn workspace_count(&self) -> usize {
+        self.workspaces.len()
+    }
+
+    fn switch_to_workspace(&mut self, idx: usize) -> Vec<Command> {
+        if idx >= self.workspaces.len() || idx == self.active_workspace_idx {
+            return Vec::new();
+        }
+
+        let should_initialize = self.workspace(idx).last_scan_time_ms.is_none();
+        self.overlay.close_all();
+        self.active_workspace_idx = idx;
+        if self.active_workspace().panes.focus == PaneFocus::Preview
+            && !self.can_focus_preview_panel()
+        {
+            self.active_workspace_mut().panes.focus = PaneFocus::Left;
+        }
+        self.sync_editor_menu_mode();
+        self.status_message = format!("workspace {} active", idx + 1);
+        if let Some(collision) = self.active_workspace_mut().pending_collision.take() {
+            self.overlay.set_collision(collision);
+        }
+
+        if !should_initialize {
+            return Vec::new();
+        }
+
+        vec![
+            Command::ScanPane {
+                pane: PaneId::Left,
+                path: self.panes.left.cwd.clone(),
+            },
+            Command::ScanPane {
+                pane: PaneId::Right,
+                path: self.panes.right.cwd.clone(),
+            },
+        ]
+    }
+
     fn sync_editor_menu_mode(&mut self) {
         let enabled = self.editor_fullscreen && self.editor.is_open();
         self.overlay.set_editor_menu_mode(enabled);
@@ -102,56 +189,68 @@ impl AppState {
         let session = crate::session::SessionState::load(
             &crate::session::SessionState::session_path(&loaded_config.path),
         );
-        let left_cwd = session.left_cwd.filter(|p| p.is_dir()).unwrap_or(cwd);
-        let right_cwd = session
-            .right_cwd
-            .filter(|p| p.is_dir())
-            .unwrap_or(secondary);
-        let layout = session.layout.unwrap_or_default();
+        let default_status = resolved_theme.warning.clone().unwrap_or_else(|| {
+            format!(
+                "loading panes | config {} ({})",
+                loaded_config.path.display(),
+                loaded_config.source.label()
+            )
+        });
+        let workspaces = std::array::from_fn(|idx| {
+            let saved = session.workspace(idx);
+            let left_cwd = saved
+                .as_ref()
+                .and_then(|workspace| workspace.left_cwd.clone())
+                .filter(|path| path.is_dir())
+                .unwrap_or_else(|| cwd.clone());
+            let right_cwd = saved
+                .as_ref()
+                .and_then(|workspace| workspace.right_cwd.clone())
+                .filter(|path| path.is_dir())
+                .unwrap_or_else(|| secondary.clone());
+            let layout = saved
+                .as_ref()
+                .and_then(|workspace| workspace.layout)
+                .unwrap_or_default();
 
-        let mut left_pane = PaneState::empty("Left", left_cwd.clone());
-        if let Some(sort) = session.left_sort {
-            left_pane.sort_mode = sort;
-        }
-        left_pane.show_hidden = session.left_hidden;
-        let mut right_pane = PaneState::empty("Right", right_cwd.clone());
-        if let Some(sort) = session.right_sort {
-            right_pane.sort_mode = sort;
-        }
-        right_pane.show_hidden = session.right_hidden;
+            let mut left_pane = PaneState::empty("Left", left_cwd);
+            if let Some(sort) = saved.as_ref().and_then(|workspace| workspace.left_sort) {
+                left_pane.sort_mode = sort;
+            }
+            left_pane.show_hidden = saved
+                .as_ref()
+                .is_some_and(|workspace| workspace.left_hidden);
+
+            let mut right_pane = PaneState::empty("Right", right_cwd);
+            if let Some(sort) = saved.as_ref().and_then(|workspace| workspace.right_sort) {
+                right_pane.sort_mode = sort;
+            }
+            right_pane.show_hidden = saved
+                .as_ref()
+                .is_some_and(|workspace| workspace.right_hidden);
+
+            WorkspaceState::new(
+                PaneSetState::new(left_pane, right_pane).with_layout(layout),
+                PreviewState::new(
+                    loaded_config.config.preview_panel_open,
+                    loaded_config.config.preview_on_selection,
+                ),
+                default_status.clone(),
+            )
+        });
 
         Ok(Self {
-            panes: PaneSetState::new(left_pane, right_pane).with_layout(layout),
+            workspaces,
+            active_workspace_idx: session.active_workspace.unwrap_or(0).min(3),
             overlay: OverlayState::default(),
-            preview: PreviewState::new(
-                loaded_config.config.preview_panel_open,
-                loaded_config.config.preview_on_selection,
-            ),
-            editor: EditorState::default(),
-            terminal: crate::state::terminal::TerminalState::default(),
             config_path: loaded_config.path.display().to_string(),
             config: loaded_config.config.clone(),
             icon_mode: loaded_config.config.icon_mode,
-            theme: resolved_theme.clone(),
-            status_message: resolved_theme.warning.unwrap_or_else(|| {
-                format!(
-                    "loading panes | config {} ({})",
-                    loaded_config.path.display(),
-                    loaded_config.source.label()
-                )
-            }),
+            theme: resolved_theme,
             last_size: None,
             redraw_count: 0,
             startup_time_ms: started_at.elapsed().as_millis(),
-            last_scan_time_ms: None,
-            file_operation_status: None,
             should_quit: false,
-            editor_fullscreen: false,
-            git: [None, None],
-            pending_reveal: None,
-            diff_mode: false,
-            diff_map: std::collections::HashMap::new(),
-            pending_batch: None,
         })
     }
 
@@ -181,18 +280,21 @@ impl AppState {
     }
 
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
+        if let Action::SwitchToWorkspace(idx) = action {
+            return Ok(self.switch_to_workspace(idx));
+        }
+
         let mut commands = Vec::new();
         commands.extend(self.overlay.apply(&action)?);
         commands.extend(self.panes.apply(&action)?);
         commands.extend(self.editor.apply(&action)?);
-        commands.extend(self.preview.apply(&action, &self.panes.focus)?);
+        let pane_focus = self.panes.focus;
+        commands.extend(self.preview.apply(&action, &pane_focus)?);
         match action {
             Action::ToggleTerminal => {
                 let was_open = self.terminal.is_open();
-                commands.extend(
-                    self.terminal
-                        .apply(&action, self.panes.active_pane().cwd.clone())?,
-                );
+                let cwd = self.panes.active_pane().cwd.clone();
+                commands.extend(self.terminal.apply(&action, cwd)?);
                 if !was_open && self.terminal.is_open() {
                     self.status_message = String::from("terminal opened");
                 } else if was_open && !self.terminal.is_open() {
@@ -200,10 +302,8 @@ impl AppState {
                 }
             }
             _ => {
-                commands.extend(
-                    self.terminal
-                        .apply(&action, self.panes.active_pane().cwd.clone())?,
-                );
+                let cwd = self.panes.active_pane().cwd.clone();
+                commands.extend(self.terminal.apply(&action, cwd)?);
             }
         }
         commands.extend(self.apply_view(&action)?);
@@ -238,10 +338,14 @@ impl AppState {
             Action::TogglePreviewPanel => {
                 self.config.preview_panel_open = self.preview.panel_open;
                 if self.preview.panel_open {
-                    if let Some(entry) = self.panes.active_pane().selected_entry() {
-                        if entry.kind == EntryKind::File {
-                            self.preview.request_debounced_preview(entry.path.clone());
-                        }
+                    let selected_file = self
+                        .panes
+                        .active_pane()
+                        .selected_entry()
+                        .filter(|entry| entry.kind == EntryKind::File)
+                        .map(|entry| entry.path.clone());
+                    if let Some(path) = selected_file {
+                        self.preview.request_debounced_preview(path);
                     }
                 }
                 let _ = self.config.save(Path::new(&self.config_path));
@@ -1010,12 +1114,13 @@ impl AppState {
                 // Non-extend movement clears the range anchor.
                 self.panes.active_pane_mut().reset_mark_anchor();
                 if self.preview.should_auto_preview() {
-                    if let Some(entry) = self.panes.active_pane().selected_entry() {
-                        if entry.kind == EntryKind::File {
-                            self.preview.request_debounced_preview(entry.path.clone());
-                        } else {
-                            self.preview.view = None;
-                        }
+                    let selected_kind_and_path = self
+                        .panes
+                        .active_pane()
+                        .selected_entry()
+                        .map(|entry| (entry.kind, entry.path.clone()));
+                    if let Some((EntryKind::File, path)) = selected_kind_and_path {
+                        self.preview.request_debounced_preview(path);
                     } else {
                         self.preview.view = None;
                     }
@@ -1206,15 +1311,42 @@ impl AppState {
     }
 
     pub fn apply_job_result(&mut self, result: JobResult) {
+        let target_workspace = match &result {
+            JobResult::DirectoryScanned { workspace_id, .. }
+            | JobResult::ArchiveListed { workspace_id, .. }
+            | JobResult::FileOperationCompleted { workspace_id, .. }
+            | JobResult::FileOperationCollision { workspace_id, .. }
+            | JobResult::FileOperationProgress { workspace_id, .. }
+            | JobResult::JobFailed { workspace_id, .. }
+            | JobResult::PreviewLoaded { workspace_id, .. }
+            | JobResult::EditorLoaded { workspace_id, .. }
+            | JobResult::EditorLoadFailed { workspace_id, .. }
+            | JobResult::GitStatusLoaded { workspace_id, .. }
+            | JobResult::GitStatusAbsent { workspace_id, .. }
+            | JobResult::FindResults { workspace_id, .. }
+            | JobResult::TerminalOutput { workspace_id, .. }
+            | JobResult::TerminalDiagnostic { workspace_id, .. }
+            | JobResult::TerminalExited { workspace_id, .. }
+            | JobResult::DirSizeCalculated { workspace_id, .. } => Some(*workspace_id),
+            JobResult::DirectoryChanged { .. } | JobResult::ConfigChanged => None,
+        };
+
+        let previous_workspace = self.active_workspace_idx;
+        let target_is_active =
+            target_workspace.is_none_or(|workspace_id| workspace_id == previous_workspace);
+        if let Some(workspace_id) = target_workspace {
+            self.active_workspace_idx = workspace_id;
+        }
+
         match result {
             JobResult::DirectoryScanned {
+                workspace_id: _,
                 pane,
                 path,
                 entries,
                 elapsed_ms,
             } => {
                 self.panes.pane_mut(pane).cwd = path.clone();
-                // Prepend a ".." entry so users can click to navigate to the parent.
                 let mut all_entries = entries;
                 if let Some(parent) = path.parent() {
                     let parent_path: PathBuf = parent.to_path_buf();
@@ -1239,7 +1371,6 @@ impl AppState {
                 }
                 self.status_message = format!("refreshed {} in {elapsed_ms} ms", path.display());
                 self.last_scan_time_ms = Some(elapsed_ms);
-                // Recompute diff when diff mode is active.
                 if self.diff_mode {
                     self.diff_map = crate::diff::compute_diff(
                         &self.panes.left.entries,
@@ -1248,12 +1379,16 @@ impl AppState {
                 }
             }
             JobResult::FileOperationCompleted {
+                workspace_id: _,
                 identity,
                 message,
                 refreshed,
                 elapsed_ms,
             } => {
-                self.overlay.close_all();
+                if target_is_active {
+                    self.overlay.close_all();
+                }
+                self.pending_collision = None;
                 self.file_operation_status = None;
                 for pane in refreshed {
                     self.panes.pane_mut(pane.pane).cwd = pane.path;
@@ -1270,6 +1405,7 @@ impl AppState {
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::FileOperationCollision {
+                workspace_id: _,
                 identity,
                 operation,
                 refresh,
@@ -1278,11 +1414,16 @@ impl AppState {
             } => {
                 self.file_operation_status = None;
                 self.note_batch_settled(&identity, true);
-                self.overlay.set_collision(CollisionState {
+                let collision = CollisionState {
                     operation,
                     refresh,
                     path: path.clone(),
-                });
+                };
+                if target_is_active {
+                    self.overlay.set_collision(collision);
+                } else {
+                    self.pending_collision = Some(collision);
+                }
                 if self.pending_batch.is_some() {
                     self.status_message = format!(
                         "destination exists after {elapsed_ms} ms: {}",
@@ -1291,10 +1432,14 @@ impl AppState {
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::FileOperationProgress { status } => {
+            JobResult::FileOperationProgress {
+                workspace_id: _,
+                status,
+            } => {
                 self.file_operation_status = Some(status);
             }
             JobResult::JobFailed {
+                workspace_id: _,
                 path,
                 file_op,
                 message,
@@ -1320,10 +1465,18 @@ impl AppState {
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::PreviewLoaded { path, view } => {
+            JobResult::PreviewLoaded {
+                workspace_id: _,
+                path,
+                view,
+            } => {
                 self.preview.apply_job_loaded(path, view);
             }
-            JobResult::EditorLoaded { path, contents } => {
+            JobResult::EditorLoaded {
+                workspace_id: _,
+                path,
+                contents,
+            } => {
                 let is_expected = self
                     .editor
                     .buffer
@@ -1334,7 +1487,11 @@ impl AppState {
                     self.open_editor(EditorBuffer::from_text(path, contents));
                 }
             }
-            JobResult::EditorLoadFailed { path, message } => {
+            JobResult::EditorLoadFailed {
+                workspace_id: _,
+                path,
+                message,
+            } => {
                 let is_expected = self
                     .editor
                     .buffer
@@ -1346,13 +1503,21 @@ impl AppState {
                     self.set_error_status(format!("failed to open editor buffer: {message}"));
                 }
             }
-            JobResult::GitStatusLoaded { pane, status } => {
+            JobResult::GitStatusLoaded {
+                workspace_id: _,
+                pane,
+                status,
+            } => {
                 self.git[pane as usize] = Some(status);
             }
-            JobResult::GitStatusAbsent { pane } => {
+            JobResult::GitStatusAbsent {
+                workspace_id: _,
+                pane,
+            } => {
                 self.git[pane as usize] = None;
             }
             JobResult::FindResults {
+                workspace_id: _,
                 pane,
                 root,
                 entries,
@@ -1371,17 +1536,28 @@ impl AppState {
             JobResult::DirectoryChanged { path } => {
                 self.status_message = format!("filesystem changed: {}", path.display());
             }
-            JobResult::TerminalOutput(bytes) => {
+            JobResult::TerminalOutput {
+                workspace_id: _,
+                bytes,
+            } => {
                 self.terminal.process_output(&bytes);
             }
-            JobResult::TerminalDiagnostic(msg) => {
-                self.status_message = format!("[Terminal] {}", msg);
+            JobResult::TerminalDiagnostic {
+                workspace_id: _,
+                message,
+            } => {
+                self.status_message = format!("[Terminal] {}", message);
             }
-            JobResult::TerminalExited => {
+            JobResult::TerminalExited { workspace_id: _ } => {
                 self.terminal.close();
                 self.status_message = String::from("terminal session ended");
             }
-            JobResult::DirSizeCalculated { pane, path, bytes } => {
+            JobResult::DirSizeCalculated {
+                workspace_id: _,
+                pane,
+                path,
+                bytes,
+            } => {
                 let p = self.panes.pane_mut(pane);
                 if let Some(entry) = p.entries.iter_mut().find(|e| e.path == path) {
                     entry.size_bytes = Some(bytes);
@@ -1389,13 +1565,13 @@ impl AppState {
                 }
             }
             JobResult::ArchiveListed {
+                workspace_id: _,
                 pane,
                 archive_path,
                 inner_path,
                 entries,
                 elapsed_ms,
             } => {
-                // Enter archive mode for the pane and populate entries
                 let pane_mut = self.panes.pane_mut(pane);
                 pane_mut.mode = crate::pane::PaneMode::Archive {
                     source: archive_path.clone(),
@@ -1409,9 +1585,12 @@ impl AppState {
                 );
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
-            JobResult::ConfigChanged => {
-                // Consumed at the app layer; no state reducer work required here.
-            }
+            JobResult::ConfigChanged => {}
+        }
+
+        if target_workspace.is_some() {
+            self.active_workspace_idx = previous_workspace;
+            self.sync_editor_menu_mode();
         }
     }
 
@@ -1766,9 +1945,15 @@ impl AppState {
                 .map(|g| format!(" ⎇ {}", g.branch))
                 .unwrap_or_default()
         };
+        let workspace = format!(
+            "ws:{}/{}",
+            self.active_workspace_index() + 1,
+            self.workspace_count()
+        );
         format!(
-            "{} | {}{} | {} | up:{}ms {}{}{} | d:{}",
+            "{} | {} | {}{} | {} | up:{}ms {}{}{} | d:{}",
             self.config.theme.status_bar_label,
+            workspace,
             self.status_message,
             branch,
             self.theme.preset,
@@ -2023,6 +2208,20 @@ impl AppState {
     }
 }
 
+impl Deref for AppState {
+    type Target = WorkspaceState;
+
+    fn deref(&self) -> &Self::Target {
+        self.active_workspace()
+    }
+}
+
+impl DerefMut for AppState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.active_workspace_mut()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -2037,9 +2236,9 @@ mod tests {
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
 
     use super::{
-        resolve_prompt_target, AppState, CollisionState, EditorState, FocusLayer, ModalKind,
-        ModalState, OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind,
-        PromptState,
+        resolve_prompt_target, AppState, CollisionState, FocusLayer, ModalKind, ModalState,
+        OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
+        WorkspaceState,
     };
 
     fn pane_with_file(path: &str) -> PaneState {
@@ -2096,6 +2295,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2117,6 +2317,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2125,6 +2326,7 @@ mod tests {
             ),
         });
         state.apply_job_result(JobResult::GitStatusAbsent {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
         });
         assert!(state.git_status(crate::pane::PaneId::Left).is_none());
@@ -2136,6 +2338,7 @@ mod tests {
         use std::collections::HashMap;
         let mut state = test_state();
         state.apply_job_result(JobResult::GitStatusLoaded {
+            workspace_id: 0,
             pane: crate::pane::PaneId::Left,
             status: RepoStatus::new(
                 PathBuf::from("/tmp/repo"),
@@ -2204,6 +2407,137 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn workspace_switch_preserves_independent_pane_directories() {
+        let mut state = test_state();
+        state.panes.left.cwd = PathBuf::from("/tmp/ws0");
+
+        state.switch_to_workspace(1);
+        assert_eq!(state.panes.left.cwd, PathBuf::from("."));
+
+        state.panes.left.cwd = PathBuf::from("/tmp/ws1");
+
+        state.switch_to_workspace(0);
+        assert_eq!(state.panes.left.cwd, PathBuf::from("/tmp/ws0"));
+        assert_eq!(state.workspace(1).panes.left.cwd, PathBuf::from("/tmp/ws1"));
+    }
+
+    #[test]
+    fn workspace_switch_preserves_independent_editor_state() {
+        let mut state = test_state();
+
+        let mut ws0_editor = EditorBuffer::default();
+        ws0_editor.path = Some(PathBuf::from("alpha.txt"));
+        state.open_editor(ws0_editor);
+        state.editor.replace_active = true;
+        state.editor.replace_query = String::from("alpha");
+
+        state.switch_to_workspace(1);
+        assert!(state.editor().is_none());
+        assert!(!state.editor.replace_active);
+        assert!(state.editor.replace_query.is_empty());
+
+        let mut ws1_editor = EditorBuffer::default();
+        ws1_editor.path = Some(PathBuf::from("beta.txt"));
+        state.open_editor(ws1_editor);
+        state.editor.replace_active = true;
+        state.editor.replace_query = String::from("beta");
+
+        state.switch_to_workspace(0);
+        assert_eq!(
+            state.editor().and_then(|editor| editor.path.as_ref()),
+            Some(&PathBuf::from("alpha.txt"))
+        );
+        assert!(state.editor.replace_active);
+        assert_eq!(state.editor.replace_query, "alpha");
+
+        assert_eq!(
+            state
+                .workspace(1)
+                .editor
+                .buffer
+                .as_ref()
+                .and_then(|editor| editor.path.as_ref()),
+            Some(&PathBuf::from("beta.txt"))
+        );
+        assert!(state.workspace(1).editor.replace_active);
+        assert_eq!(state.workspace(1).editor.replace_query, "beta");
+    }
+
+    #[test]
+    fn switch_to_workspace_updates_index_and_queues_initial_scans() {
+        let mut state = test_state();
+
+        let commands = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert_eq!(state.active_workspace_index(), 1);
+        assert_eq!(
+            commands,
+            vec![
+                Command::ScanPane {
+                    pane: PaneId::Left,
+                    path: PathBuf::from("."),
+                },
+                Command::ScanPane {
+                    pane: PaneId::Right,
+                    path: PathBuf::from("."),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn directory_scan_result_updates_only_matching_workspace() {
+        let mut state = test_state();
+        state.workspace_mut(0).panes.left.cwd = PathBuf::from("/tmp/ws0");
+
+        state.apply_job_result(JobResult::DirectoryScanned {
+            workspace_id: 1,
+            pane: PaneId::Left,
+            path: PathBuf::from("/tmp/ws1"),
+            entries: vec![],
+            elapsed_ms: 1,
+        });
+
+        assert_eq!(state.workspace(1).panes.left.cwd, PathBuf::from("/tmp/ws1"));
+        assert_eq!(state.workspace(0).panes.left.cwd, PathBuf::from("/tmp/ws0"));
+    }
+
+    #[test]
+    fn switch_to_workspace_closes_shared_overlay() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Copy,
+            "Copy",
+            PathBuf::from("/tmp/target"),
+            Some(PathBuf::from("./note.txt")),
+            String::from("/tmp/target/note.txt"),
+        ));
+
+        let _ = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert!(state.overlay.modal.is_none());
+        assert_eq!(state.active_workspace_index(), 1);
+    }
+
+    #[test]
+    fn file_operation_progress_does_not_leak_across_workspaces() {
+        let mut state = test_state();
+
+        state.apply_job_result(JobResult::FileOperationProgress {
+            workspace_id: 2,
+            status: FileOperationStatus {
+                operation: "copy",
+                completed: 1,
+                total: 3,
+                current_path: PathBuf::from("/tmp/a"),
+            },
+        });
+
+        assert!(state.workspace(2).file_operation_status.is_some());
+        assert!(state.workspace(0).file_operation_status.is_none());
+    }
+
     fn test_state() -> AppState {
         let right = PaneState {
             title: String::from("right"),
@@ -2229,11 +2563,30 @@ mod tests {
             details_view: false,
             rename_state: None,
         };
+        let workspace0 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace1 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace2 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right.clone()),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
+        let workspace3 = WorkspaceState::new(
+            PaneSetState::new(pane_with_file("./note.txt"), right),
+            PreviewState::new(false, true),
+            String::from("ready"),
+        );
         AppState {
-            panes: PaneSetState::new(pane_with_file("./note.txt"), right),
+            workspaces: [workspace0, workspace1, workspace2, workspace3],
+            active_workspace_idx: 0,
             overlay: OverlayState::default(),
-            preview: PreviewState::new(false, true),
-            editor: EditorState::default(),
             config_path: String::from("/tmp/zeta/config.toml"),
             config: crate::config::AppConfig::default(),
             icon_mode: crate::config::IconMode::Unicode,
@@ -2242,20 +2595,10 @@ mod tests {
                 preset: String::from("fjord"),
                 warning: None,
             },
-            status_message: String::from("ready"),
             last_size: None,
             redraw_count: 0,
             startup_time_ms: 0,
-            last_scan_time_ms: None,
-            file_operation_status: None,
             should_quit: false,
-            editor_fullscreen: false,
-            git: [None, None],
-            pending_reveal: None,
-            diff_mode: false,
-            diff_map: std::collections::HashMap::new(),
-            terminal: crate::state::terminal::TerminalState::default(),
-            pending_batch: None,
         }
     }
 
@@ -2458,7 +2801,7 @@ mod tests {
         let mut state = test_state();
         state.overlay.modal = Some(ModalState::Menu {
             id: MenuId::Navigate,
-            selection: 1,
+            selection: 5,
         });
 
         let commands = state
@@ -2520,6 +2863,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/not-the-source-or-destination.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Move {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -2566,6 +2910,7 @@ mod tests {
             current_path: root.join("wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::ExtractArchive {
                 archive: archive_path.clone(),
                 inner_path: PathBuf::from("nested/note.txt"),
@@ -2608,6 +2953,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/wrong-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -2655,6 +3001,7 @@ mod tests {
             current_path: PathBuf::from("/tmp/irrelevant-progress-path.txt"),
         });
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./two.txt"),
                 destination: PathBuf::from("/tmp/target/two.txt"),
@@ -2667,6 +3014,7 @@ mod tests {
         assert!(state.pending_batch.is_some());
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: Some(FileOperationIdentity::from_operation(
@@ -2715,6 +3063,7 @@ mod tests {
             .expect("submit should work");
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: None,
@@ -2753,6 +3102,7 @@ mod tests {
             .expect("submit should work");
 
         state.apply_job_result(JobResult::JobFailed {
+            workspace_id: 0,
             pane: PaneId::Left,
             path: PathBuf::from("./note.txt"),
             file_op: Some(FileOperationIdentity::from_operation(
@@ -2829,6 +3179,16 @@ mod tests {
     }
 
     #[test]
+    fn status_line_includes_workspace_indicator() {
+        let mut state = test_state();
+        let _ = state.apply(Action::SwitchToWorkspace(2)).unwrap();
+
+        let status = state.status_line();
+
+        assert!(status.contains("ws:3/4"));
+    }
+
+    #[test]
     fn status_line_includes_mark_count() {
         let mut state = test_state();
         state.panes.left.marked.insert(PathBuf::from("./note.txt"));
@@ -2868,6 +3228,7 @@ mod tests {
         });
 
         state.apply_job_result(JobResult::FileOperationCompleted {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("/tmp/source/note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -3057,6 +3418,7 @@ mod tests {
         let mut state = test_state();
 
         state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 0,
             identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
                 source: PathBuf::from("./note.txt"),
                 destination: PathBuf::from("/tmp/target/note.txt"),
@@ -3078,6 +3440,65 @@ mod tests {
             state.collision().map(|collision| collision.path.clone()),
             Some(PathBuf::from("/tmp/target/note.txt"))
         );
+    }
+
+    #[test]
+    fn inactive_workspace_collision_does_not_replace_active_overlay() {
+        let mut state = test_state();
+        state.overlay.open_prompt(PromptState::with_value(
+            PromptKind::Copy,
+            "Copy",
+            PathBuf::from("/tmp/target"),
+            Some(PathBuf::from("./note.txt")),
+            String::from("/tmp/target/note.txt"),
+        ));
+
+        state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 1,
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            }),
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            },
+            refresh: vec![],
+            path: PathBuf::from("/tmp/other-target/other.txt"),
+            elapsed_ms: 5,
+        });
+
+        assert!(state.overlay.prompt().is_some());
+        assert!(!state.is_collision_open());
+        assert!(state.workspace(1).pending_collision.is_some());
+    }
+
+    #[test]
+    fn switching_to_workspace_surfaces_deferred_collision() {
+        let mut state = test_state();
+        state.apply_job_result(JobResult::FileOperationCollision {
+            workspace_id: 1,
+            identity: FileOperationIdentity::from_operation(&FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            }),
+            operation: FileOperation::Copy {
+                source: PathBuf::from("./other.txt"),
+                destination: PathBuf::from("/tmp/other-target/other.txt"),
+            },
+            refresh: vec![],
+            path: PathBuf::from("/tmp/other-target/other.txt"),
+            elapsed_ms: 5,
+        });
+
+        let _ = state.apply(Action::SwitchToWorkspace(1)).unwrap();
+
+        assert!(state.is_collision_open());
+        assert_eq!(
+            state.collision().map(|collision| collision.path.clone()),
+            Some(PathBuf::from("/tmp/other-target/other.txt"))
+        );
+        assert!(state.workspace(1).pending_collision.is_none());
     }
 
     #[test]

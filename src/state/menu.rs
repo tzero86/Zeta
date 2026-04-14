@@ -310,6 +310,30 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             MenuId::Navigate => vec![
                 MenuItem {
+                    label: "Switch to Workspace 1",
+                    shortcut: "Ctrl+1",
+                    mnemonic: '1',
+                    action: Action::SwitchToWorkspace(0),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 2",
+                    shortcut: "Ctrl+2",
+                    mnemonic: '2',
+                    action: Action::SwitchToWorkspace(1),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 3",
+                    shortcut: "Ctrl+3",
+                    mnemonic: '3',
+                    action: Action::SwitchToWorkspace(2),
+                },
+                MenuItem {
+                    label: "Switch to Workspace 4",
+                    shortcut: "Ctrl+4",
+                    mnemonic: '4',
+                    action: Action::SwitchToWorkspace(3),
+                },
+                MenuItem {
                     label: "Open Directory",
                     shortcut: "Enter",
                     mnemonic: 'o',
@@ -462,5 +486,23 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             ],
             _ => vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::menu_items_for;
+    use crate::action::{Action, MenuId};
+
+    #[test]
+    fn navigate_menu_starts_with_workspace_switch_items() {
+        let items = menu_items_for(MenuId::Navigate, false);
+
+        assert_eq!(items[0].label, "Switch to Workspace 1");
+        assert_eq!(items[0].shortcut, "Ctrl+1");
+        assert_eq!(items[0].action, Action::SwitchToWorkspace(0));
+        assert_eq!(items[3].label, "Switch to Workspace 4");
+        assert_eq!(items[3].shortcut, "Ctrl+4");
+        assert_eq!(items[3].action, Action::SwitchToWorkspace(3));
     }
 }

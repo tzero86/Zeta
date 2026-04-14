@@ -391,6 +391,7 @@ fn render_key_hints(
             &[("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
         }
         _ => &[
+            ("Ctrl+1..4", "Workspace"),
             ("F1", "Help"),
             ("F3", "View"),
             ("F4", "Edit"),
@@ -449,7 +450,7 @@ mod tests {
     use ratatui::style::{Color, Modifier};
 
     use super::editor::editor_render_state;
-    use super::menu_bar::top_bar_logo_spans;
+    use super::menu_bar::{top_bar_logo_spans, workspace_switcher_spans};
     use super::pane::{format_icon_slot, pane_chrome_style};
     use super::styles::{
         command_palette_entry_hint_style, command_palette_entry_label_style,
@@ -527,6 +528,36 @@ mod tests {
         let spans = top_bar_logo_spans(true, p);
         assert_eq!(spans.len(), 5);
         assert_eq!(spans[2].content, "Z");
+    }
+
+    #[test]
+    fn top_bar_workspace_indicator_has_four_pills_and_highlights_active() {
+        let p = test_palette();
+        let spans = workspace_switcher_spans(2, 4, true, p);
+
+        let labels = spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>();
+        assert!(labels.contains(&"[1]"));
+        assert!(labels.contains(&"[2]"));
+        assert!(labels.contains(&"[3]"));
+        assert!(labels.contains(&"[4]"));
+
+        let active = spans
+            .iter()
+            .find(|span| span.content.as_ref() == "[3]")
+            .expect("active workspace pill should exist");
+        let inactive = spans
+            .iter()
+            .find(|span| span.content.as_ref() == "[1]")
+            .expect("inactive workspace pill should exist");
+        assert_eq!(active.style.bg, Some(p.selection_bg));
+        assert_eq!(active.style.fg, Some(p.selection_fg));
+        assert!(active.style.add_modifier.contains(Modifier::REVERSED));
+        assert!(active.style.add_modifier.contains(Modifier::UNDERLINED));
+        assert_eq!(inactive.style.bg, Some(p.menu_active_bg));
+        assert!(!inactive.style.add_modifier.contains(Modifier::REVERSED));
     }
 
     #[test]

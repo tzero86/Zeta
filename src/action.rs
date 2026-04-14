@@ -50,6 +50,7 @@ pub enum Action {
     EditorReplaceAll,
     FocusNextPane,
     CycleFocus,
+    SwitchToWorkspace(usize),
     FocusPreviewPanel,
     OpenShell,
     ToggleTerminal,
@@ -295,10 +296,66 @@ impl Action {
     /// Low-priority fallback key handler for Pane and Editor contexts.
     /// Palette, settings, preview, collision, prompt, dialog, and menu
     /// are handled by their dedicated `from_*_key_event` helpers.
+    pub fn from_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('1'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(0))
+            }
+            (KeyCode::Char('2'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(1))
+            }
+            (KeyCode::Char('3'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(2))
+            }
+            (KeyCode::Char('4'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(3))
+            }
+            _ => None,
+        }
+    }
+
+    fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('1'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(0)),
+            (KeyCode::Char('!'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(0))
+            }
+            (KeyCode::Char('2'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(1)),
+            (KeyCode::Char('@'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(1))
+            }
+            (KeyCode::Char('3'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(2)),
+            (KeyCode::Char('#'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(2))
+            }
+            (KeyCode::Char('4'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(3)),
+            (KeyCode::Char('$'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(3))
+            }
+            _ => None,
+        }
+    }
+
     pub fn from_key_event_with_settings(
         key_event: KeyEvent,
         keymap: &RuntimeKeymap,
     ) -> Option<Self> {
+        if let Some(action) = Self::from_shift_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -624,6 +681,10 @@ impl Action {
         key_event: KeyEvent,
         keymap: &crate::config::RuntimeKeymap,
     ) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -658,6 +719,10 @@ impl Action {
     }
 
     pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -731,6 +796,14 @@ impl Action {
     }
 
     pub fn from_menu_key_event(key_event: KeyEvent) -> Option<Self> {
+        if let Some(action) = Self::from_shift_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
+        if let Some(action) = Self::from_workspace_key_event(key_event) {
+            return Some(action);
+        }
+
         if key_event.modifiers == KeyModifiers::ALT {
             return match key_event.code {
                 KeyCode::Char('f') | KeyCode::Char('F') => Some(Self::OpenMenu(MenuId::File)),
@@ -1008,6 +1081,99 @@ mod tests {
         assert_eq!(
             Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
             Some(Action::Quit)
+        );
+    }
+
+    #[test]
+    fn workspace_shortcuts_switch_workspaces() {
+        let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE),
+                &keymap
+            ),
+            None
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE)),
+            Some(Action::MenuMnemonic('3'))
+        );
+
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('$'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(3))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::NONE)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::SHIFT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::SHIFT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT)),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT)),
+            Some(Action::SwitchToWorkspace(3))
+        );
+    }
+
+    #[test]
+    fn editor_shift_number_keys_remain_text_input() {
+        assert_eq!(
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('@'), KeyModifiers::SHIFT)),
+            Some(Action::EditorInsert('@'))
         );
     }
 

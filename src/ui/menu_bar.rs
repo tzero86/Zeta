@@ -23,6 +23,12 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
             palette,
         ));
     }
+    line.spans.extend(workspace_switcher_spans(
+        state.active_workspace_index(),
+        state.workspace_count(),
+        active,
+        palette,
+    ));
 
     let menu = Paragraph::new(line).style(
         Style::default()
@@ -59,6 +65,39 @@ pub fn top_bar_logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'stat
         Span::styled("]", bracket_style),
         Span::styled("eta ", name_style),
     ]
+}
+
+pub fn workspace_switcher_spans(
+    active_workspace: usize,
+    workspace_count: usize,
+    bar_active: bool,
+    palette: ThemePalette,
+) -> Vec<Span<'static>> {
+    let bg = if bar_active {
+        palette.menu_active_bg
+    } else {
+        palette.menu_bg
+    };
+    let inactive_style = Style::default()
+        .fg(palette.menu_fg)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+    let active_style = Style::default()
+        .fg(palette.selection_fg)
+        .bg(palette.selection_bg)
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED | Modifier::REVERSED);
+    let mut spans = Vec::with_capacity(workspace_count.saturating_mul(2) + 1);
+    spans.push(Span::styled(" ", Style::default().bg(bg)));
+    for idx in 0..workspace_count {
+        let style = if idx == active_workspace {
+            active_style
+        } else {
+            inactive_style
+        };
+        spans.push(Span::styled(format!("[{}]", idx + 1), style));
+        spans.push(Span::styled(" ", Style::default().bg(bg)));
+    }
+    spans
 }
 
 fn menu_spans(
