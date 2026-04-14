@@ -5,7 +5,9 @@ use ratatui::Frame;
 
 use crate::config::ThemePalette;
 use crate::editor::{EditorBuffer, EditorRenderState};
-use crate::ui::code_view::{render_code_view, CodeViewRenderArgs, SearchHighlight};
+use crate::ui::code_view::{
+    render_code_view, CodeViewRenderArgs, SearchHighlight, SelectionHighlight,
+};
 
 pub struct RenderEditorArgs<'a> {
     pub editor: &'a mut EditorBuffer,
@@ -122,6 +124,13 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         };
 
     let gutter_width = 6u16;
+    let sel_row_ranges = editor.visible_selection_display_ranges(
+        render_state.visible_start,
+        &render_state.visible_lines,
+        cheap_tab_width,
+        render_state.word_wrap,
+    );
+    let has_selection = editor.selection_range().is_some();
     if loading {
         let loading_text = editor
             .path
@@ -152,6 +161,14 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 cursor_row: None,
                 palette,
                 search: None,
+                selection: if has_selection {
+                    Some(SelectionHighlight {
+                        row_ranges: &sel_row_ranges,
+                        bg: palette.text_sel_bg,
+                    })
+                } else {
+                    None
+                },
             },
         );
         // Compute per-row search match ranges for highlight overlay.
@@ -184,6 +201,14 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
                 cursor_row: render_state.cursor_visible_row,
                 palette,
                 search: search_highlight,
+                selection: if has_selection {
+                    Some(SelectionHighlight {
+                        row_ranges: &sel_row_ranges,
+                        bg: palette.text_sel_bg,
+                    })
+                } else {
+                    None
+                },
             },
         );
     }

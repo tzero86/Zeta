@@ -188,6 +188,27 @@ impl EditorState {
                     editor.redo();
                 }
             }
+            Action::EditorSelectAll => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    editor.select_all();
+                }
+            }
+            Action::EditorCopy => {
+                if let Some(editor) = self.buffer.as_ref() {
+                    if let Some(text) = editor.selected_text() {
+                        // Silently ignore clipboard errors.
+                        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
+                    }
+                }
+            }
+            Action::EditorCut => {
+                if let Some(editor) = self.buffer.as_mut() {
+                    if let Some(text) = editor.selected_text() {
+                        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
+                        editor.delete_selection();
+                    }
+                }
+            }
             Action::EditorMoveDown => {
                 if let Some(e) = self.buffer.as_mut() {
                     e.move_down();
@@ -390,5 +411,37 @@ mod tests {
         let buf = state.buffer.as_ref().unwrap();
         // Cursor starts at position 0, so EditorInsert prepends the char.
         assert_eq!(buf.visible_lines()[0], "!hello");
+    }
+    #[test]
+    fn select_all_covers_entire_buffer() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello world"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorSelectAll)
+            .unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        assert_eq!(buf.selected_text().as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn cut_removes_selected_text() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello world"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorSelectAll)
+            .unwrap();
+        state
+            .apply(&crate::action::Action::EditorCut)
+            .unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        // After cut, buffer should be empty and selection cleared.
+        assert_eq!(buf.selected_text(), None);
+        assert_eq!(buf.contents(), "");
     }
 }

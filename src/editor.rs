@@ -103,6 +103,7 @@ pub struct EditorBuffer {
     /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
     /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
     wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
+    sel_anchor: Option<usize>,
 }
 
 impl EditorBuffer {
@@ -148,6 +149,7 @@ impl EditorBuffer {
     // -----------------------------------------------------------------------
 
     pub fn insert_char(&mut self, ch: char) {
+        self.sel_anchor = None;
         let idx = self.cursor_char_idx.min(self.text.len_chars());
         let edit = Edit {
             char_start: idx,
@@ -178,6 +180,10 @@ impl EditorBuffer {
     }
 
     pub fn backspace(&mut self) {
+        if self.sel_anchor.is_some() {
+            self.delete_selection();
+            return;
+        }
         if self.cursor_char_idx == 0 {
             return;
         }
@@ -198,14 +204,17 @@ impl EditorBuffer {
     }
 
     pub fn move_left(&mut self) {
+        self.sel_anchor = None;
         self.cursor_char_idx = self.cursor_char_idx.saturating_sub(1);
     }
 
     pub fn move_right(&mut self) {
+        self.sel_anchor = None;
         self.cursor_char_idx = (self.cursor_char_idx + 1).min(self.text.len_chars());
     }
 
     pub fn move_up(&mut self) {
+        self.sel_anchor = None;
         let (line, col) = self.cursor_line_col();
         if line == 0 {
             return;
@@ -214,6 +223,7 @@ impl EditorBuffer {
     }
 
     pub fn move_down(&mut self) {
+        self.sel_anchor = None;
         let (line, col) = self.cursor_line_col();
         if line + 1 >= self.text.len_lines() {
             return;
@@ -228,6 +238,7 @@ impl EditorBuffer {
     /// Undo the most recent edit.
     pub fn undo(&mut self) {
         // Clone to avoid borrowing `self` while mutating it.
+        self.sel_anchor = None;
         let Some(edit) = self.history.pop_undo().cloned() else {
             return;
         };
@@ -244,6 +255,7 @@ impl EditorBuffer {
 
     /// Redo the most recently undone edit.
     pub fn redo(&mut self) {
+        self.sel_anchor = None;
         let Some(edit) = self.history.pop_redo().cloned() else {
             return;
         };
@@ -257,6 +269,156 @@ impl EditorBuffer {
         self.cursor_char_idx = edit.cursor_after;
         self.is_dirty = true;
         self.edit_version += 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // Selection
+    // -----------------------------------------------------------------------
+
+    /// Clear the selection anchor without affecting the cursor.
+    pub fn clear_selection(&mut self) {
+        self.sel_anchor = None;
+    }
+
+    /// Returns the selection as `(start, end)` char indices (start < end),
+    /// or `None` if no selection anchor is set.
+    pub fn selection_range(&self) -> Option<(usize, usize)> {
+        let anchor = self.sel_anchor?;
+        let cursor = self.cursor_char_idx;
+        if anchor <= cursor {
+            Some((anchor, cursor))
+        } else {
+            Some((cursor, anchor))
+        }
+    }
+
+    /// Returns the text covered by the current selection, or `None`.
+    pub fn selected_text(&self) -> Option<String> {
+        let (start, end) = self.selection_range()?;
+        Some(self.text.slice(start..end).to_string())
+    }
+
+    /// Delete the selected text, record an undo entry, clear the selection,
+    /// and move the cursor to the deletion point. Returns `true` if text was
+    /// actually deleted.
+    pub fn delete_selection(&mut self) -> bool {
+        let Some((start, end)) = self.selection_range() else {
+            return false;
+        };
+        if start == end {
+            self.sel_anchor = None;
+            return false;
+        }
+        let removed: String = self.text.slice(start..end).to_string();
+        let edit = Edit {
+            char_start: start,
+            removed,
+            inserted: String::new(),
+            cursor_before: self.cursor_char_idx,
+            cursor_after: start,
+        };
+        self.text.remove(start..end);
+        self.cursor_char_idx = start;
+        self.history.push(edit);
+        self.sel_anchor = None;
+        self.is_dirty = true;
+        self.edit_version += 1;
+        true
+    }
+
+    /// Set selection to the entire document.
+    pub fn select_all(&mut self) {
+        self.sel_anchor = Some(0);
+        self.cursor_char_idx = self.text.len_chars();
+    }
+
+    /// Map a char index within an original (non-tab-expanded) line string to
+    /// the display column, accounting for tab stops.
+    fn char_to_display_col(line: &str, char_idx: usize, tab_width: usize) -> usize {
+        if tab_width <= 1 {
+            return char_idx;
+        }
+        let mut display = 0usize;
+        for (i, ch) in line.chars().enumerate() {
+            if i >= char_idx {
+                break;
+            }
+            if ch == '\t' {
+                display += tab_width - (display % tab_width);
+            } else {
+                display += 1;
+            }
+        }
+        display
+    }
+
+    /// For each visible row, return the display-char range covered by the
+    /// current selection, or `None` if that row has no selected text.
+    ///
+    /// `visible_start` and `visible_lines` come from `EditorRenderState`.
+    /// In word-wrap mode the mapping is approximate (whole rows selected);
+    /// shift+arrow selection is not yet supported so this is correct for
+    /// SelectAll.
+    pub fn visible_selection_display_ranges(
+        &self,
+        visible_start: usize,
+        visible_lines: &[String],
+        tab_width: u8,
+        word_wrap: bool,
+    ) -> Vec<Option<(usize, usize)>> {
+        let Some((sel_start, sel_end)) = self.selection_range() else {
+            return vec![None; visible_lines.len()];
+        };
+        if sel_start == sel_end {
+            return vec![None; visible_lines.len()];
+        }
+        if word_wrap {
+            // Word-wrap: each visible row is a sub-chunk of a logical line;
+            // mapping back to doc chars is non-trivial. For SelectAll (the
+            // only supported selection) every visible row is fully selected.
+            return visible_lines
+                .iter()
+                .map(|row| {
+                    let len = row.chars().count();
+                    if len > 0 {
+                        Some((0, len))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        }
+        // Non-wrap: visible_lines[i] corresponds to logical line visible_start + i.
+        let total_lines = self.text.len_lines();
+        let tab_w = tab_width as usize;
+        visible_lines
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let logi = visible_start + i;
+                if logi >= total_lines {
+                    return None;
+                }
+                let line_char_start = self.text.line_to_char(logi);
+                let raw_line = self.text.line(logi).to_string();
+                let raw_line_no_nl = raw_line.trim_end_matches('\n');
+                let raw_len = raw_line_no_nl.chars().count();
+                let line_char_end = line_char_start + raw_len;
+                // No overlap with selection.
+                if sel_end <= line_char_start || sel_start >= line_char_end {
+                    return None;
+                }
+                let rel_start = sel_start.saturating_sub(line_char_start);
+                let rel_end = (sel_end - line_char_start).min(raw_len);
+                let disp_start = Self::char_to_display_col(raw_line_no_nl, rel_start, tab_w);
+                let disp_end = Self::char_to_display_col(raw_line_no_nl, rel_end, tab_w);
+                if disp_start < disp_end {
+                    Some((disp_start, disp_end))
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     // -----------------------------------------------------------------------

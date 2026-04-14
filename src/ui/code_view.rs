@@ -17,6 +17,14 @@ pub struct SearchHighlight<'a> {
     pub active_row_match: Option<(usize, usize, usize)>,
 }
 
+/// Selection highlight data for a single call to `render_code_view`.
+pub struct SelectionHighlight<'a> {
+    /// Per visual-row optional display-char range `(col_start, col_end)` that is selected.
+    pub row_ranges: &'a [Option<(usize, usize)>],
+    /// Background color for selected text.
+    pub bg: Color,
+}
+
 pub struct CodeViewRenderArgs<'a> {
     pub lines: &'a [HighlightedLine],
     pub first_line_number: usize,
@@ -26,6 +34,8 @@ pub struct CodeViewRenderArgs<'a> {
     pub palette: ThemePalette,
     /// Optional search highlight data; `None` when search is inactive.
     pub search: Option<SearchHighlight<'a>>,
+    /// Optional text selection highlight data; `None` when no selection.
+    pub selection: Option<SelectionHighlight<'a>>,
 }
 
 pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderArgs<'_>) {
@@ -110,6 +120,11 @@ pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderA
             let (ar, cs, ce) = s.active_row_match?;
             (ar == row_idx).then_some((cs, ce))
         });
+        let row_sel_range: Option<(usize, usize)> = args
+            .selection
+            .as_ref()
+            .and_then(|s| s.row_ranges.get(row_idx).copied().flatten());
+        let sel_bg = args.selection.as_ref().map(|s| s.bg);
 
         let spans = build_row_spans(
             line_tokens,
@@ -119,6 +134,8 @@ pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderA
             active_col_range,
             args.palette.search_match_bg,
             args.palette.search_match_active_bg,
+            row_sel_range,
+            sel_bg.unwrap_or(args.palette.surface_bg),
         );
 
         let line = Line::from(spans);
@@ -127,10 +144,11 @@ pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderA
 }
 
 /// Build the visible `Span` list for a single row, applying scroll offset, viewport
-/// clipping, and (optionally) search match background highlights.
+/// clipping, and (optionally) search match and selection background highlights.
 ///
 /// `match_ranges` and `active_col_range` are expressed as char-column offsets within
 /// the row (not display-width offsets), because `find_matches` works in char space.
+#[allow(clippy::too_many_arguments)]
 fn build_row_spans(
     tokens: &HighlightedLine,
     scroll_col: usize,
@@ -139,6 +157,8 @@ fn build_row_spans(
     active_col_range: Option<(usize, usize)>,
     match_bg: Color,
     active_match_bg: Color,
+    sel_range: Option<(usize, usize)>,
+    sel_bg: Color,
 ) -> Vec<Span<'static>> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     // `raw_cols`: display-width position (used for scroll / viewport clipping).
@@ -186,8 +206,10 @@ fn build_row_spans(
             }
 
             // Determine the appropriate background override for this char.
-            let char_bg = char_search_bg(
+            let char_bg = char_highlight_bg(
                 char_col,
+                sel_range,
+                sel_bg,
                 match_ranges,
                 active_col_range,
                 match_bg,
@@ -229,21 +251,31 @@ fn build_row_spans(
 /// Return the background override for the char at `char_col`, or `None` to use
 /// the row default. Active match takes precedence over non-active match.
 #[inline]
-fn char_search_bg(
+fn char_highlight_bg(
     char_col: usize,
+    sel_range: Option<(usize, usize)>,
+    sel_bg: Color,
     ranges: &[(usize, usize)],
     active: Option<(usize, usize)>,
     match_bg: Color,
     active_bg: Color,
 ) -> Option<Color> {
+    // Active search match: highest priority.
     if let Some((s, e)) = active {
         if char_col >= s && char_col < e {
             return Some(active_bg);
         }
     }
+    // Regular search match.
     for &(s, e) in ranges {
         if char_col >= s && char_col < e {
             return Some(match_bg);
+        }
+    }
+    // Text selection: lowest priority.
+    if let Some((s, e)) = sel_range {
+        if char_col >= s && char_col < e {
+            return Some(sel_bg);
         }
     }
     None

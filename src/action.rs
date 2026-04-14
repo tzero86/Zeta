@@ -202,6 +202,9 @@ pub enum Action {
     EditorPaste,
     EditorUndo,
     EditorRedo,
+    EditorSelectAll,
+    EditorCopy,
+    EditorCut,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -806,6 +809,15 @@ impl Action {
             }
             KeyCode::Char('v') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorPaste)
+            }
+            KeyCode::Char('a') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorSelectAll)
+            }
+            KeyCode::Char('c') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorCopy)
+            }
+            KeyCode::Char('x') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::EditorCut)
             }
             KeyCode::Char(ch)
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>

@@ -300,6 +300,8 @@ pub struct ThemePalette {
     pub search_match_bg: Color,
     /// Background for the active (cursor) search match.
     pub search_match_active_bg: Color,
+    /// Background for text selection highlighting in the editor.
+    pub text_sel_bg: Color,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -400,6 +402,7 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -429,6 +432,7 @@ impl ThemePalette {
             syntect_theme: "Solarized (light)",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -458,6 +462,7 @@ impl ThemePalette {
             syntect_theme: "base16-mocha.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -488,6 +493,7 @@ impl ThemePalette {
             syntect_theme: "Dracula",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -518,6 +524,7 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -548,6 +555,7 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -577,6 +585,7 @@ impl ThemePalette {
             syntect_theme: "Dracula",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
@@ -607,6 +616,7 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
     fn zeta() -> Self {
@@ -637,6 +647,7 @@ impl ThemePalette {
             syntect_theme: "base16-ocean.dark",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 }

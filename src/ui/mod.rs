@@ -483,6 +483,7 @@ mod tests {
             syntect_theme: "test",
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
+            text_sel_bg: Color::Rgb(35, 85, 145),
         }
     }
 
