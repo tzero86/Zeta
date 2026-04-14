@@ -85,8 +85,7 @@ pub fn workspace_switcher_spans(
     let active_style = Style::default()
         .fg(palette.selection_fg)
         .bg(palette.selection_bg)
-        .add_modifier(Modifier::BOLD);
-
+        .add_modifier(Modifier::BOLD | Modifier::UNDERLINED | Modifier::REVERSED);
     let mut spans = Vec::with_capacity(workspace_count.saturating_mul(2) + 1);
     spans.push(Span::styled(" ", Style::default().bg(bg)));
     for idx in 0..workspace_count {

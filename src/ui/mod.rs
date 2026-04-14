@@ -554,7 +554,10 @@ mod tests {
             .expect("inactive workspace pill should exist");
         assert_eq!(active.style.bg, Some(p.selection_bg));
         assert_eq!(active.style.fg, Some(p.selection_fg));
+        assert!(active.style.add_modifier.contains(Modifier::REVERSED));
+        assert!(active.style.add_modifier.contains(Modifier::UNDERLINED));
         assert_eq!(inactive.style.bg, Some(p.menu_active_bg));
+        assert!(!inactive.style.add_modifier.contains(Modifier::REVERSED));
     }
 
     #[test]

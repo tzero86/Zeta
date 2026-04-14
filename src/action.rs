@@ -308,10 +308,26 @@ impl Action {
 
     fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('1' | '!'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(0)),
-            (KeyCode::Char('2' | '@'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(1)),
-            (KeyCode::Char('3' | '#'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(2)),
-            (KeyCode::Char('4' | '$'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(3)),
+            (KeyCode::Char('!'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(0))
+            }
+            (KeyCode::Char('@'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(1))
+            }
+            (KeyCode::Char('#'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(2))
+            }
+            (KeyCode::Char('$'), modifiers)
+                if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
+            {
+                Some(Self::SwitchToWorkspace(3))
+            }
             _ => None,
         }
     }
@@ -1073,6 +1089,17 @@ mod tests {
                 &keymap
             ),
             Some(Action::SwitchToWorkspace(3))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(0))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::NONE)),
+            Some(Action::SwitchToWorkspace(2))
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT)),
