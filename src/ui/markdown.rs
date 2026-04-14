@@ -18,22 +18,9 @@ use ratatui::Frame;
 use crate::config::ThemePalette;
 
 // ---------------------------------------------------------------------------
-// Public entry point
 // ---------------------------------------------------------------------------
-
-/// Render a markdown string into `area` using native ratatui 0.29 widgets.
-pub fn render_markdown_preview(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    source: &str,
-    palette: ThemePalette,
-    scroll: usize,
-    is_focused: bool,
-) {
-    let inner_width = area.width.saturating_sub(2);
-    let lines = parse_markdown_lines_with_palette(source, palette, inner_width);
-    render_md_with_lines(frame, area, lines, palette, scroll, is_focused);
-}
+// Public entry points
+// ---------------------------------------------------------------------------
 
 /// Render pre-parsed `Line` objects into `area` with the standard markdown border.
 pub fn render_md_with_lines(
