@@ -232,6 +232,51 @@ impl EditorBuffer {
     }
 
     // -----------------------------------------------------------------------
+    // Selection extension (Shift+arrow)
+    // -----------------------------------------------------------------------
+
+    /// Extend the selection leftward. Sets the anchor at the current cursor
+    /// position if no selection is active, then moves the cursor left.
+    pub fn extend_left(&mut self) {
+        if self.sel_anchor.is_none() {
+            self.sel_anchor = Some(self.cursor_char_idx);
+        }
+        self.cursor_char_idx = self.cursor_char_idx.saturating_sub(1);
+    }
+
+    /// Extend the selection rightward.
+    pub fn extend_right(&mut self) {
+        if self.sel_anchor.is_none() {
+            self.sel_anchor = Some(self.cursor_char_idx);
+        }
+        self.cursor_char_idx = (self.cursor_char_idx + 1).min(self.text.len_chars());
+    }
+
+    /// Extend the selection upward.
+    pub fn extend_up(&mut self) {
+        if self.sel_anchor.is_none() {
+            self.sel_anchor = Some(self.cursor_char_idx);
+        }
+        let (line, col) = self.cursor_line_col();
+        if line == 0 {
+            return;
+        }
+        self.cursor_char_idx = self.line_col_to_char(line - 1, col);
+    }
+
+    /// Extend the selection downward.
+    pub fn extend_down(&mut self) {
+        if self.sel_anchor.is_none() {
+            self.sel_anchor = Some(self.cursor_char_idx);
+        }
+        let (line, col) = self.cursor_line_col();
+        if line + 1 >= self.text.len_lines() {
+            return;
+        }
+        self.cursor_char_idx = self.line_col_to_char(line + 1, col);
+    }
+
+    // -----------------------------------------------------------------------
     // Undo / redo
     // -----------------------------------------------------------------------
 

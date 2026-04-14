@@ -1223,6 +1223,94 @@ fn format_fingerprint(bytes: &[u8]) -> String {
         .join(":")
 }
 
+/// Encode bytes as standard base64 (RFC 4648, with padding).
+/// Avoids an external dependency for this single use-case.
+fn base64_encode(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let cap = bytes.len().div_ceil(3) * 4;
+    let mut out = String::with_capacity(cap);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let combined = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((combined >> 18) & 63) as usize] as char);
+        out.push(TABLE[((combined >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            TABLE[((combined >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(combined & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+/// Append the server's host key to `~/.ssh/known_hosts` in OpenSSH format.
+///
+/// Creates `~/.ssh/` (mode 0700 on Unix) and the file if they don't exist.
+/// Errors are silently swallowed — the connection already succeeded, so a
+/// persistence failure must not abort the session.
+fn persist_host_key(host: &str, port: u16, session: &ssh2::Session) {
+    let (key_bytes, key_type) = match session.host_key() {
+        Some(kv) => kv,
+        None => return,
+    };
+    let key_type_str = match key_type {
+        ssh2::HostKeyType::Rsa => "ssh-rsa",
+        ssh2::HostKeyType::Dss => "ssh-dss",
+        ssh2::HostKeyType::Ecdsa256 => "ecdsa-sha2-nistp256",
+        ssh2::HostKeyType::Ecdsa384 => "ecdsa-sha2-nistp384",
+        ssh2::HostKeyType::Ecdsa521 => "ecdsa-sha2-nistp521",
+        ssh2::HostKeyType::Ed25519 => "ssh-ed25519",
+        // Unknown or future types: do not write a malformed entry.
+        _ => return,
+    };
+    let key_b64 = base64_encode(key_bytes);
+    // OpenSSH format: plain hostname for port 22, [hostname]:port otherwise.
+    let host_field = if port == 22 {
+        host.to_string()
+    } else {
+        format!("[{}]:{}", host, port)
+    };
+    let entry = format!(
+        "{} {} {}
+",
+        host_field, key_type_str, key_b64
+    );
+
+    let ssh_dir = std::env::var("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("~"))
+        .join(".ssh");
+
+    if !ssh_dir.exists() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            let _ = std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&ssh_dir);
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = std::fs::create_dir_all(&ssh_dir);
+        }
+    }
+
+    use std::io::Write;
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(ssh_dir.join("known_hosts"))
+        .and_then(|mut f| f.write_all(entry.as_bytes()));
+}
+
 /// Verify SSH host key against known_hosts.
 ///
 /// Returns a structured `HostCheckResult` instead of `Result<(), String>` so the
@@ -1332,12 +1420,14 @@ fn connect_sftp(
     }
 
     // Verify host key; allow bypass when user has explicitly trusted this session.
+    let mut should_persist = false;
     match verify_host_key(&host, port, &session, known_hosts_file) {
         HostCheckResult::Match => {}
-        HostCheckResult::UnknownHost { fingerprint } if trust_unknown_host => {
-            // User accepted the trust prompt — proceed without saving to known_hosts.
-            // TODO: persist the host key to known_hosts for future connections.
-            let _ = fingerprint; // acknowledged, not persisted
+        HostCheckResult::UnknownHost { fingerprint: _ } if trust_unknown_host => {
+            // User accepted the trust prompt — proceed and persist the host key.
+            // `persist_host_key` is called after authentication succeeds (below)
+            // so we have a live session with the verified key still available.
+            should_persist = true;
         }
         HostCheckResult::UnknownHost { fingerprint } => {
             return SftpConnectOutcome::UnknownHost { fingerprint };
@@ -1394,6 +1484,12 @@ fn connect_sftp(
                 );
             }
         }
+    }
+
+    // Persist the host key now that authentication has proved the session is valid.
+    // This runs only when the user accepted the trust prompt for an unknown host.
+    if should_persist {
+        persist_host_key(&host, port, &session);
     }
 
     // Create SFTP backend

@@ -167,6 +167,8 @@ impl EditorState {
                         editor.search_next();
                         return Ok(commands);
                     }
+                    // If a selection is active, typing replaces it.
+                    editor.delete_selection();
                     editor.insert_char(*ch);
                 }
             }
@@ -212,6 +214,26 @@ impl EditorState {
             Action::EditorMoveDown => {
                 if let Some(e) = self.buffer.as_mut() {
                     e.move_down();
+                }
+            }
+            Action::EditorExtendLeft => {
+                if let Some(e) = self.buffer.as_mut() {
+                    e.extend_left();
+                }
+            }
+            Action::EditorExtendRight => {
+                if let Some(e) = self.buffer.as_mut() {
+                    e.extend_right();
+                }
+            }
+            Action::EditorExtendUp => {
+                if let Some(e) = self.buffer.as_mut() {
+                    e.extend_up();
+                }
+            }
+            Action::EditorExtendDown => {
+                if let Some(e) = self.buffer.as_mut() {
+                    e.extend_down();
                 }
             }
             Action::EditorMoveLeft => {
@@ -441,5 +463,64 @@ mod tests {
         // After cut, buffer should be empty and selection cleared.
         assert_eq!(buf.selected_text(), None);
         assert_eq!(buf.contents(), "");
+    }
+    #[test]
+    fn shift_right_extends_selection_from_cursor() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello"),
+        ));
+        // Cursor starts at 0; extend right 3 chars → selects "hel".
+        state
+            .apply(&crate::action::Action::EditorExtendRight)
+            .unwrap();
+        state
+            .apply(&crate::action::Action::EditorExtendRight)
+            .unwrap();
+        state
+            .apply(&crate::action::Action::EditorExtendRight)
+            .unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        assert_eq!(buf.selected_text().as_deref(), Some("hel"));
+    }
+
+    #[test]
+    fn shift_arrow_then_plain_arrow_clears_selection() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorExtendRight)
+            .unwrap();
+        state
+            .apply(&crate::action::Action::EditorExtendRight)
+            .unwrap();
+        // Plain arrow clears selection.
+        state
+            .apply(&crate::action::Action::EditorMoveRight)
+            .unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        assert_eq!(buf.selected_text(), None);
+    }
+
+    #[test]
+    fn typing_with_selection_replaces_selected_text() {
+        let mut state = EditorState::default();
+        state.open(EditorBuffer::from_text(
+            std::path::PathBuf::from("f.txt"),
+            String::from("hello"),
+        ));
+        state
+            .apply(&crate::action::Action::EditorSelectAll)
+            .unwrap();
+        state
+            .apply(&crate::action::Action::EditorInsert('X'))
+            .unwrap();
+        let buf = state.buffer.as_ref().unwrap();
+        assert_eq!(buf.contents(), "X");
+        assert_eq!(buf.selected_text(), None);
     }
 }

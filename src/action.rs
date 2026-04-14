@@ -205,6 +205,14 @@ pub enum Action {
     EditorSelectAll,
     EditorCopy,
     EditorCut,
+    /// Extend selection leftward (Shift+Left). Sets anchor if none is active.
+    EditorExtendLeft,
+    /// Extend selection rightward (Shift+Right).
+    EditorExtendRight,
+    /// Extend selection upward (Shift+Up).
+    EditorExtendUp,
+    /// Extend selection downward (Shift+Down).
+    EditorExtendDown,
     /// User accepted an unknown SSH host key and wants to proceed.
     SshTrustAccept,
     /// User rejected an unknown SSH host key; cancel the connection.
@@ -800,6 +808,16 @@ impl Action {
             KeyCode::Esc | KeyCode::F(4) => Some(Self::CloseEditor),
             KeyCode::Backspace => Some(Self::EditorBackspace),
             KeyCode::Enter => Some(Self::EditorNewline),
+            KeyCode::Left if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::EditorExtendLeft)
+            }
+            KeyCode::Right if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::EditorExtendRight)
+            }
+            KeyCode::Up if key_event.modifiers == KeyModifiers::SHIFT => Some(Self::EditorExtendUp),
+            KeyCode::Down if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::EditorExtendDown)
+            }
             KeyCode::Left => Some(Self::EditorMoveLeft),
             KeyCode::Right => Some(Self::EditorMoveRight),
             KeyCode::Up => Some(Self::EditorMoveUp),
