@@ -257,4 +257,4 @@ Core features — dual-pane navigation, embedded editor, integrated terminal, SS
 
 ## License
 
-Currently unlicensed. A license will be added explicitly before any public release.
+MIT — see [LICENSE](LICENSE) for the full text.
