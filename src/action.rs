@@ -316,22 +316,26 @@ impl Action {
 
     fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('1' | '!'), modifiers)
+            (KeyCode::Char('1'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(0)),
+            (KeyCode::Char('!'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(0))
             }
-            (KeyCode::Char('2' | '@'), modifiers)
+            (KeyCode::Char('2'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(1)),
+            (KeyCode::Char('@'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(1))
             }
-            (KeyCode::Char('3' | '#'), modifiers)
+            (KeyCode::Char('3'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(2)),
+            (KeyCode::Char('#'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(2))
             }
-            (KeyCode::Char('4' | '$'), modifiers)
+            (KeyCode::Char('4'), KeyModifiers::SHIFT) => Some(Self::SwitchToWorkspace(3)),
+            (KeyCode::Char('$'), modifiers)
                 if modifiers.is_empty() || modifiers == KeyModifiers::SHIFT =>
             {
                 Some(Self::SwitchToWorkspace(3))
@@ -1083,6 +1087,18 @@ mod tests {
     #[test]
     fn workspace_shortcuts_switch_workspaces() {
         let keymap = RuntimeKeymap::default();
+
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE),
+                &keymap
+            ),
+            None
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE)),
+            Some(Action::MenuMnemonic('3'))
+        );
 
         assert_eq!(
             Action::from_pane_key_event(
