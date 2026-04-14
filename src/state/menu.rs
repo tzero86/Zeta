@@ -311,25 +311,25 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
             MenuId::Navigate => vec![
                 MenuItem {
                     label: "Switch to Workspace 1",
-                    shortcut: "Shift+1",
+                    shortcut: "Ctrl+1",
                     mnemonic: '1',
                     action: Action::SwitchToWorkspace(0),
                 },
                 MenuItem {
                     label: "Switch to Workspace 2",
-                    shortcut: "Shift+2",
+                    shortcut: "Ctrl+2",
                     mnemonic: '2',
                     action: Action::SwitchToWorkspace(1),
                 },
                 MenuItem {
                     label: "Switch to Workspace 3",
-                    shortcut: "Shift+3",
+                    shortcut: "Ctrl+3",
                     mnemonic: '3',
                     action: Action::SwitchToWorkspace(2),
                 },
                 MenuItem {
                     label: "Switch to Workspace 4",
-                    shortcut: "Shift+4",
+                    shortcut: "Ctrl+4",
                     mnemonic: '4',
                     action: Action::SwitchToWorkspace(3),
                 },
@@ -499,10 +499,10 @@ mod tests {
         let items = menu_items_for(MenuId::Navigate, false);
 
         assert_eq!(items[0].label, "Switch to Workspace 1");
-        assert_eq!(items[0].shortcut, "Shift+1");
+        assert_eq!(items[0].shortcut, "Ctrl+1");
         assert_eq!(items[0].action, Action::SwitchToWorkspace(0));
         assert_eq!(items[3].label, "Switch to Workspace 4");
-        assert_eq!(items[3].shortcut, "Shift+4");
+        assert_eq!(items[3].shortcut, "Ctrl+4");
         assert_eq!(items[3].action, Action::SwitchToWorkspace(3));
     }
 }

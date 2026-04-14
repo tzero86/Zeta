@@ -391,7 +391,7 @@ fn render_key_hints(
             &[("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
         }
         _ => &[
-            ("Shift+1..4", "Workspace"),
+            ("Ctrl+1..4", "Workspace"),
             ("F1", "Help"),
             ("F3", "View"),
             ("F4", "Edit"),

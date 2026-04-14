@@ -298,10 +298,18 @@ impl Action {
     /// are handled by their dedicated `from_*_key_event` helpers.
     pub fn from_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
         match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('1'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(0)),
-            (KeyCode::Char('2'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(1)),
-            (KeyCode::Char('3'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(2)),
-            (KeyCode::Char('4'), KeyModifiers::ALT) => Some(Self::SwitchToWorkspace(3)),
+            (KeyCode::Char('1'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(0))
+            }
+            (KeyCode::Char('2'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(1))
+            }
+            (KeyCode::Char('3'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(2))
+            }
+            (KeyCode::Char('4'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
+                Some(Self::SwitchToWorkspace(3))
+            }
             _ => None,
         }
     }
@@ -1114,6 +1122,17 @@ mod tests {
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::SHIFT)),
+            Some(Action::SwitchToWorkspace(2))
+        );
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL),
+                &keymap
+            ),
+            Some(Action::SwitchToWorkspace(1))
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
             Some(Action::SwitchToWorkspace(2))
         );
 

@@ -68,7 +68,7 @@ impl DialogState {
                     "  [1] [2] [3] [4]	Top bar workspace pills; the highlighted box is active",
                 ),
                 String::from(
-                    "  Shift+1..Shift+4	Jump between workspaces from panes/menus (Alt+1..Alt+4 fallback)",
+                    "  Ctrl+1..Ctrl+4	Primary workspace shortcuts (Shift+1..Shift+4 and Alt+1..Alt+4 fallback)",
                 ),
                 String::from("  ws:N/4	Status bar also shows the active workspace"),
                 String::from("  Ctrl+O	Open settings, including theme chooser"),
@@ -90,7 +90,7 @@ impl DialogState {
                 String::from("  Up/Down/j/k\tMove selection"),
                 String::from("  PgUp/PgDn/scroll\tScroll lists and previews"),
                 String::from(
-                    "  Shift+1..Shift+4	Switch workspaces from panes/menus (Alt+1..Alt+4 fallback)",
+                    "  Ctrl+1..Ctrl+4	Switch workspaces reliably (Shift+1..Shift+4 and Alt+1..Alt+4 fallback)",
                 ),
                 String::from("  Click\tSelect row with mouse"),
                 String::new(),
