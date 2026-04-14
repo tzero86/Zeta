@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zeta — terminal file manager</title>
+  <meta name="description" content="Dual-pane, keyboard-first file manager for the terminal.">
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0d1117;
+      color: #e6edf3;
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    h1 {
+      font-size: 3rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      color: #e6edf3;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    .cursor {
+      color: #3fb950;
+      animation: blink 0.8s step-end infinite;
+    }
+
+    .tagline {
+      margin-top: 0.5rem;
+      color: #7d8590;
+      font-size: 0.95rem;
+    }
+
+    .install {
+      margin-top: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      background: #161b22;
+      border: 1px solid #30363d;
+      padding: 0.75rem 1rem;
+    }
+
+    .install code {
+      font-family: inherit;
+      font-size: 0.875rem;
+      color: #e6edf3;
+      white-space: nowrap;
+    }
+
+    .copy-btn {
+      font-family: inherit;
+      font-size: 0.75rem;
+      background: #0d1117;
+      color: #7d8590;
+      border: 1px solid #30363d;
+      border-radius: 3px;
+      padding: 0.25rem 0.6rem;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+    }
+
+    .copy-btn:hover {
+      color: #3fb950;
+      border-color: #3fb950;
+    }
+
+    .repo-link {
+      margin-top: 2rem;
+      font-size: 0.875rem;
+      color: #7d8590;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .repo-link:hover {
+      color: #e6edf3;
+    }
+  </style>
+</head>
+<body>
+  <main class="hero">
+    <h1>Zeta<span class="cursor">&#x2588;</span></h1>
+    <p class="tagline">Dual-pane, keyboard-first file manager for the terminal.</p>
+    <div class="install">
+      <code>cargo install --git https://github.com/tzero86/Zeta</code>
+      <button class="copy-btn" onclick="
+        navigator.clipboard.writeText('cargo install --git https://github.com/tzero86/Zeta').then(function() {
+          var btn = this;
+          btn.textContent = 'copied';
+          setTimeout(function() { btn.textContent = 'copy'; }, 2000);
+        }.bind(this));
+      ">copy</button>
+    </div>
+    <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
+  </main>
+</body>
+</html>
