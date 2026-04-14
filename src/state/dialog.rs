@@ -58,7 +58,7 @@ impl DialogState {
                     "  SSH/SFTP\tConnect to remote servers (command palette or Navigate menu)",
                 ),
                 String::from("  Archive browsing\tOpen .zip/.tar/.gz/.bz2/.xz like folders"),
-                String::from("  Diff mode\tF10 highlights unique/changed entries"),
+                String::from("  Diff mode\tF9 highlights unique/changed entries"),
                 String::from("  Mouse\tClick selects, double-click opens, wheel scrolls"),
                 String::from("  Sync\tCtrl+D copies diff entries to the other pane"),
                 String::from("  Parent entry\t'..' stays pinned at the top of directories"),
