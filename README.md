@@ -17,6 +17,27 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 ---
 
+## Download
+
+Precompiled binaries for Linux and Windows are attached to every [GitHub Release](https://github.com/tzero86/Zeta/releases/latest).
+
+| Platform | File |
+|---|---|
+| Linux x86\_64 | `zeta-linux-x86_64.tar.gz` |
+| Windows x86\_64 | `zeta-windows-x86_64.zip` |
+
+SHA-256 checksums are included alongside each binary.
+
+### Build from source
+
+Requires [rustup](https://rustup.rs) (stable toolchain) and git.
+
+```bash
+cargo install --git https://github.com/tzero86/Zeta
+```
+
+---
+
 ## Features
 
 ### File management
@@ -67,9 +88,10 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 ### Navigation & UX
 - Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
-- Command palette (`Ctrl+P`) with a dedicated Workspaces section
+- Command palette (`Shift+P`) with a dedicated Workspaces section
 - Navigate menu starts with explicit `Switch to Workspace 1..4` commands
-- Direct workspace switching uses `Ctrl+1..Ctrl+4` as the reliable primary shortcut; `Shift+1..Shift+4` and `Alt+1..Alt+4` remain best-effort fallbacks. The active workspace also remains visible as `ws:N/4` in the status bar
+- `q` / `F10` to quit; `F2` toggle terminal; `F9` toggle diff mode
+- Direct workspace switching uses `Alt+1..Alt+4` as the primary shortcut; `Shift+1..Shift+4` is also supported as a terminal fallback. The active workspace also remains visible as `ws:N/4` in the status bar
 - In-app settings panel for theme, icon mode, layout, and preview preferences (`Ctrl+O`)
 - Full mouse support: click to focus panes, scroll to navigate, click menu items, hover highlights
 - Zeta is the default theme; Fjord, Sandbar, Oxide, Matrix, Norton, Dracula, Neon, and Monochrome remain available
@@ -81,20 +103,22 @@ Norton Commander workflow, modern TUI, written in Rust.
 
 | Key | Action |
 |---|---|
-| `Ctrl+1..Ctrl+4` | Switch directly to workspace 1..4 reliably |
-| `Shift+1..Shift+4` | Best-effort workspace shortcut; behavior can depend on terminal/layout |
-| `Ctrl+P`, type `workspace` | Open explicit workspace switch commands in the palette |
-| `F4` | Open selected file in editor |
+| `Alt+1..4` | Switch to workspace 1..4 |
+| `Shift+1..4` | Switch workspace (terminal fallback) |
+| `F2` | Toggle embedded terminal |
 | `F3` | Toggle file preview panel |
+| `F4` | Open selected file in editor |
 | `F5` | Copy |
-| `F6` | Rename / `Shift+F6` Move |
+| `F6` | Rename |
+| `Shift+F6` | Move |
 | `F7` | New directory |
 | `F8` | Delete |
+| `F9` | Toggle diff mode |
+| `F10` / `q` | Quit |
 | `Ins` | New file |
 | `Tab` | Switch active pane |
-| `Ctrl+P` | Command palette |
+| `Shift+P` | Command palette |
 | `Ctrl+O` | Settings |
-| `Ctrl+Q` | Quit |
 | `Alt+F/N/V/H` | Open menu |
 | `Alt+←/→` | Navigate directory history |
 | `Alt+F3` | Focus preview panel |
@@ -215,17 +239,9 @@ Access settings at runtime with `Ctrl+O` or via the View menu.
 
 ## Roadmap
 
-See [`docs/superpowers/plans/ROADMAP.md`](docs/superpowers/plans/ROADMAP.md) for the full wave-by-wave development plan.
+See [`docs/superpowers/plans/ROADMAP.md`](docs/superpowers/plans/ROADMAP.md) for the full development plan.
 
-Upcoming highlights:
-- **Wave 4C** — full-window editor mode, markdown preview scroll sync, preview focus/toggle
-- **Wave 4D** — in-pane quick filter (`/`), `Ctrl+P` fuzzy file find
-- **Wave 5A** — Find & Replace in editor, directory auto-refresh watcher
-- **Wave 5B** — bookmarks (persisted), trash/recycle bin (recoverable delete)
-- **Wave 5C** — shell drop-in (`F2` opens shell in current directory)
-- **Wave 6A/6B** — archive browsing, directory diff mode
-- **Wave 7A** — SSH/SFTP remote filesystems
-
+Core features — dual-pane navigation, embedded editor, integrated terminal, SSH/SFTP, diff mode, four workspaces, command palette, and markdown preview — are all shipped as of v0.3.x.
 ---
 
 ## License
