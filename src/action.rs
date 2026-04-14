@@ -169,6 +169,12 @@ pub enum Action {
     SettingsMoveDown,
     SettingsMoveUp,
     SettingsToggleCurrent,
+    /// Begin capturing a new key binding for the currently selected keymap entry.
+    SettingsBeginRebind,
+    /// Discard an in-progress rebind without changing the binding.
+    SettingsCancelRebind,
+    /// A key event captured during rebind mode — becomes the new binding.
+    SettingsRebindCapture(crossterm::event::KeyEvent),
     CycleSortMode,
     ToggleDiffMode,
     DiffSyncToOther,
@@ -244,6 +250,8 @@ pub enum Command {
         pane: PaneId,
     },
     SaveEditor,
+    /// Replace the compiled keymap after a successful settings rebind.
+    UpdateKeymap(crate::config::RuntimeKeymap),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -296,22 +304,14 @@ impl Action {
     /// Low-priority fallback key handler for Pane and Editor contexts.
     /// Palette, settings, preview, collision, prompt, dialog, and menu
     /// are handled by their dedicated `from_*_key_event` helpers.
-    pub fn from_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
-        match (key_event.code, key_event.modifiers) {
-            (KeyCode::Char('1'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
-                Some(Self::SwitchToWorkspace(0))
+    pub fn from_workspace_key_event(key_event: KeyEvent, keymap: &RuntimeKeymap) -> Option<Self> {
+        // Check configurable workspace bindings first.
+        for (idx, binding) in keymap.workspace.iter().enumerate() {
+            if binding.matches(&key_event) {
+                return Some(Self::SwitchToWorkspace(idx));
             }
-            (KeyCode::Char('2'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
-                Some(Self::SwitchToWorkspace(1))
-            }
-            (KeyCode::Char('3'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
-                Some(Self::SwitchToWorkspace(2))
-            }
-            (KeyCode::Char('4'), KeyModifiers::ALT | KeyModifiers::CONTROL) => {
-                Some(Self::SwitchToWorkspace(3))
-            }
-            _ => None,
         }
+        None
     }
 
     fn from_shift_workspace_key_event(key_event: KeyEvent) -> Option<Self> {
@@ -352,7 +352,7 @@ impl Action {
             return Some(action);
         }
 
-        if let Some(action) = Self::from_workspace_key_event(key_event) {
+        if let Some(action) = Self::from_workspace_key_event(key_event, keymap) {
             return Some(action);
         }
 
@@ -506,7 +506,15 @@ impl Action {
     }
 
     /// Keys when the settings panel is open. Consumes ALL input.
-    pub fn from_settings_key_event(key_event: KeyEvent) -> Option<Self> {
+    /// When `rebinding` is true, the panel is waiting for a key combo to use as
+    /// the new binding; any key becomes `SettingsRebindCapture` and Esc cancels.
+    pub fn from_settings_key_event(key_event: KeyEvent, rebinding: bool) -> Option<Self> {
+        if rebinding {
+            return match key_event.code {
+                KeyCode::Esc => Some(Self::SettingsCancelRebind),
+                _ => Some(Self::SettingsRebindCapture(key_event)),
+            };
+        }
         match key_event.code {
             KeyCode::Esc => Some(Self::CloseSettingsPanel),
             KeyCode::Enter | KeyCode::Char(' ') => Some(Self::SettingsToggleCurrent),
@@ -681,7 +689,7 @@ impl Action {
         key_event: KeyEvent,
         keymap: &crate::config::RuntimeKeymap,
     ) -> Option<Self> {
-        if let Some(action) = Self::from_workspace_key_event(key_event) {
+        if let Some(action) = Self::from_workspace_key_event(key_event, keymap) {
             return Some(action);
         }
 
@@ -718,8 +726,8 @@ impl Action {
         Self::from_key_event_with_settings(key_event, keymap)
     }
 
-    pub fn from_editor_key_event(key_event: KeyEvent) -> Option<Self> {
-        if let Some(action) = Self::from_workspace_key_event(key_event) {
+    pub fn from_editor_key_event(key_event: KeyEvent, keymap: &RuntimeKeymap) -> Option<Self> {
+        if let Some(action) = Self::from_workspace_key_event(key_event, keymap) {
             return Some(action);
         }
 
@@ -795,12 +803,12 @@ impl Action {
         }
     }
 
-    pub fn from_menu_key_event(key_event: KeyEvent) -> Option<Self> {
+    pub fn from_menu_key_event(key_event: KeyEvent, keymap: &RuntimeKeymap) -> Option<Self> {
         if let Some(action) = Self::from_shift_workspace_key_event(key_event) {
             return Some(action);
         }
 
-        if let Some(action) = Self::from_workspace_key_event(key_event) {
+        if let Some(action) = Self::from_workspace_key_event(key_event, keymap) {
             return Some(action);
         }
 
@@ -931,6 +939,24 @@ mod tests {
                 code: KeyCode::Char('u'),
                 modifiers: KeyModifiers::CONTROL,
             },
+            workspace: [
+                KeyBinding {
+                    code: KeyCode::Char('1'),
+                    modifiers: KeyModifiers::ALT,
+                },
+                KeyBinding {
+                    code: KeyCode::Char('2'),
+                    modifiers: KeyModifiers::ALT,
+                },
+                KeyBinding {
+                    code: KeyCode::Char('3'),
+                    modifiers: KeyModifiers::ALT,
+                },
+                KeyBinding {
+                    code: KeyCode::Char('4'),
+                    modifiers: KeyModifiers::ALT,
+                },
+            ],
         };
 
         assert_eq!(
@@ -1066,20 +1092,30 @@ mod tests {
 
     #[test]
     fn editor_mode_prefers_text_entry() {
+        let keymap = RuntimeKeymap::default();
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE)),
+            Action::from_editor_key_event(
+                KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::EditorInsert('q'))
         );
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+            Action::from_editor_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE), &keymap),
             Some(Action::CloseEditor)
         );
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL)),
+            Action::from_editor_key_event(
+                KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+                &keymap
+            ),
             Some(Action::DiscardEditorChanges)
         );
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL)),
+            Action::from_editor_key_event(
+                KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+                &keymap
+            ),
             Some(Action::Quit)
         );
     }
@@ -1088,91 +1124,122 @@ mod tests {
     fn workspace_shortcuts_switch_workspaces() {
         let keymap = RuntimeKeymap::default();
 
+        // Bare digit without a modifier does not trigger workspace switch.
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('1'), KeyModifiers::NONE),
-                &keymap
+                &keymap,
             ),
             None
         );
+        // In menu context, bare '3' is a mnemonic, not a workspace switch.
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE)),
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('3'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::MenuMnemonic('3'))
         );
 
+        // Shift+digit and shifted-symbol fallbacks (terminal compat) still work.
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT),
-                &keymap
+                &keymap,
             ),
             Some(Action::SwitchToWorkspace(0))
         );
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('$'), KeyModifiers::SHIFT),
-                &keymap
+                &keymap,
             ),
             Some(Action::SwitchToWorkspace(3))
         );
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE),
-                &keymap
+                &keymap,
             ),
             Some(Action::SwitchToWorkspace(0))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::NONE)),
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('#'), KeyModifiers::NONE),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(2))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT)),
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('#'), KeyModifiers::SHIFT),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(2))
         );
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('2'), KeyModifiers::SHIFT),
-                &keymap
+                &keymap,
             ),
             Some(Action::SwitchToWorkspace(1))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::SHIFT)),
-            Some(Action::SwitchToWorkspace(2))
-        );
-        assert_eq!(
-            Action::from_pane_key_event(
-                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL),
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('3'), KeyModifiers::SHIFT),
                 &keymap
             ),
-            Some(Action::SwitchToWorkspace(1))
-        );
-        assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
             Some(Action::SwitchToWorkspace(2))
         );
 
+        // Ctrl+digit no longer triggers workspace switch (use Alt+digit or rebind).
+        assert_eq!(
+            Action::from_pane_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL),
+                &keymap,
+            ),
+            None
+        );
+        assert_eq!(
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL),
+                &keymap
+            ),
+            None
+        );
+
+        // Alt+digit uses the configurable binding (default: alt+1..4).
         assert_eq!(
             Action::from_pane_key_event(
                 KeyEvent::new(KeyCode::Char('1'), KeyModifiers::ALT),
-                &keymap
+                &keymap,
             ),
             Some(Action::SwitchToWorkspace(0))
         );
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT)),
+            Action::from_editor_key_event(
+                KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(1))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT)),
+            Action::from_menu_key_event(
+                KeyEvent::new(KeyCode::Char('4'), KeyModifiers::ALT),
+                &keymap
+            ),
             Some(Action::SwitchToWorkspace(3))
         );
     }
 
     #[test]
     fn editor_shift_number_keys_remain_text_input() {
+        let keymap = RuntimeKeymap::default();
         assert_eq!(
-            Action::from_editor_key_event(KeyEvent::new(KeyCode::Char('@'), KeyModifiers::SHIFT)),
+            Action::from_editor_key_event(
+                KeyEvent::new(KeyCode::Char('@'), KeyModifiers::SHIFT),
+                &keymap
+            ),
             Some(Action::EditorInsert('@'))
         );
     }
@@ -1203,7 +1270,7 @@ mod tests {
             Some(Action::OpenMenu(MenuId::Help))
         );
         assert_eq!(
-            Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE)),
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &keymap),
             Some(Action::MenuNext)
         );
     }

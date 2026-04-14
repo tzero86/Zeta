@@ -172,9 +172,14 @@ impl App {
             AppEvent::Input(key_event) => {
                 let focus = self.state.focus_layer();
                 let is_preview_open = self.state.is_preview_panel_open();
-                if let Some(action) =
-                    route_key_event(key_event, &self.keymap, focus, is_preview_open)
-                {
+                let is_settings_rebinding = self.state.is_settings_rebinding();
+                if let Some(action) = route_key_event(
+                    key_event,
+                    &self.keymap,
+                    focus,
+                    is_preview_open,
+                    is_settings_rebinding,
+                ) {
                     self.dispatch(action)?;
                 }
             }
@@ -616,6 +621,9 @@ impl App {
                     self.state.set_error_status("no editor buffer is open");
                 }
             }
+            Command::UpdateKeymap(new_keymap) => {
+                self.keymap = new_keymap;
+            }
         }
 
         Ok(())
@@ -627,6 +635,7 @@ fn route_key_event(
     keymap: &RuntimeKeymap,
     focus: FocusLayer,
     is_preview_open: bool,
+    is_settings_rebinding: bool,
 ) -> Option<Action> {
     use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -636,8 +645,10 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Collision) => Action::from_collision_key_event(key_event),
         FocusLayer::Modal(ModalKind::Prompt) => Action::from_prompt_key_event(key_event),
         FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
-        FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event),
-        FocusLayer::Modal(ModalKind::Settings) => Action::from_settings_key_event(key_event),
+        FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event, keymap),
+        FocusLayer::Modal(ModalKind::Settings) => {
+            Action::from_settings_key_event(key_event, is_settings_rebinding)
+        }
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
@@ -650,14 +661,14 @@ fn route_key_event(
                 return Some(Action::FocusPreviewPanel);
             }
             Action::from_markdown_preview_key_event(key_event)
-                .or_else(|| Action::from_editor_key_event(key_event))
+                .or_else(|| Action::from_editor_key_event(key_event, keymap))
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
         FocusLayer::Editor => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
             }
-            Action::from_editor_key_event(key_event)
+            Action::from_editor_key_event(key_event, keymap)
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
         FocusLayer::Pane => {
@@ -1251,6 +1262,7 @@ mod tests {
             &keymap,
             FocusLayer::Editor,
             false,
+            false,
         );
         assert_eq!(action, Some(Action::OpenCommandPalette));
     }
@@ -1262,6 +1274,7 @@ mod tests {
             KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
             &keymap,
             FocusLayer::Editor,
+            false,
             false,
         );
         assert_eq!(action, Some(Action::EditorOpenSearch));
@@ -1275,6 +1288,7 @@ mod tests {
             &keymap,
             FocusLayer::Modal(ModalKind::Palette),
             false,
+            false,
         );
         assert_eq!(action, None);
     }
@@ -1286,6 +1300,7 @@ mod tests {
             KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT),
             &keymap,
             FocusLayer::Modal(ModalKind::Prompt),
+            false,
             false,
         );
 
@@ -1300,6 +1315,7 @@ mod tests {
             &keymap,
             FocusLayer::Modal(ModalKind::Palette),
             false,
+            false,
         );
         assert_eq!(action, Some(Action::CloseCommandPalette));
     }
@@ -1311,6 +1327,7 @@ mod tests {
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &keymap,
             FocusLayer::Modal(ModalKind::Bookmarks),
+            false,
             false,
         );
         assert_eq!(action, Some(Action::BookmarkConfirm));
@@ -1324,6 +1341,7 @@ mod tests {
             &keymap,
             FocusLayer::Pane,
             false,
+            false,
         );
         assert_eq!(action, Some(Action::Quit));
     }
@@ -1335,6 +1353,7 @@ mod tests {
             KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
             &keymap,
             FocusLayer::Editor,
+            false,
             false,
         );
         assert_eq!(action, Some(Action::EditorOpenSearch));

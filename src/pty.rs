@@ -170,7 +170,7 @@ impl PlatformPty {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
 
         let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
         let mut cmd = CommandBuilder::new(&shell);
@@ -196,27 +196,27 @@ impl PlatformPty {
         let master = self
             .master
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "master already consumed"))?;
+            .ok_or_else(|| io::Error::other("master already consumed"))?;
         master
             .try_clone_reader()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn take_writer(&mut self) -> io::Result<Box<dyn Write + Send>> {
         let master = self
             .master
             .as_mut()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "master already consumed"))?;
+            .ok_or_else(|| io::Error::other("master already consumed"))?;
         master
             .take_writer()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
         let master = self
             .master
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no master"))?;
+            .ok_or_else(|| io::Error::other("no master"))?;
         master
             .resize(portable_pty::PtySize {
                 rows: if rows == 0 { 24 } else { rows },
@@ -224,14 +224,14 @@ impl PlatformPty {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn exit_waiter(&self) -> io::Result<Box<dyn FnOnce() + Send>> {
         let child_arc_clone = self
             ._child
             .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "no child process"))?
+            .ok_or_else(|| io::Error::other("no child process"))?
             .clone();
 
         Ok(Box::new(move || {

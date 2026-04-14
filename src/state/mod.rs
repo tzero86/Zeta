@@ -24,7 +24,10 @@ use std::time::Instant;
 use anyhow::Result;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
-use crate::config::{AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette, ThemePreset};
+use crate::config::{
+    key_event_to_string, AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette,
+    ThemePreset,
+};
 use crate::editor::EditorBuffer;
 use crate::finder::FileFinderState;
 use crate::fs;
@@ -37,7 +40,7 @@ pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
-pub use settings::{SettingsEntry, SettingsField, SettingsState};
+pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
 
 #[derive(Debug)]
@@ -267,7 +270,7 @@ impl AppState {
     }
 
     pub fn initial_commands(&self) -> Vec<Command> {
-        vec![
+        let mut commands = vec![
             Command::ScanPane {
                 pane: PaneId::Left,
                 path: self.panes.left.cwd.clone(),
@@ -276,7 +279,13 @@ impl AppState {
                 pane: PaneId::Right,
                 path: self.panes.right.cwd.clone(),
             },
-        ]
+        ];
+        if self.config.terminal_open_by_default {
+            commands.push(Command::SpawnTerminal {
+                cwd: self.panes.active_pane().cwd.clone(),
+            });
+        }
+        commands
     }
 
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
@@ -312,6 +321,93 @@ impl AppState {
 
     fn apply_view(&mut self, action: &Action) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
+
+        // Rebind capture: process before the main match so it can return early.
+        if let Action::SettingsRebindCapture(key_event) = action {
+            if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                if let Some(rebind_idx) = s.rebind_mode {
+                    let entries = self.settings_entries();
+                    if let Some(SettingsField::KeymapBinding { field, .. }) =
+                        entries.get(rebind_idx).map(|e| &e.field)
+                    {
+                        let field = *field;
+                        if let Some(raw) = key_event_to_string(*key_event) {
+                            // Apply the new string to the correct config field.
+                            match field {
+                                KeymapField::Quit => self.config.keymap.quit = raw.clone(),
+                                KeymapField::SwitchPane => {
+                                    self.config.keymap.switch_pane = raw.clone();
+                                }
+                                KeymapField::Refresh => {
+                                    self.config.keymap.refresh = raw.clone();
+                                }
+                                KeymapField::Workspace(0) => {
+                                    self.config.keymap.workspace_1 = raw.clone();
+                                }
+                                KeymapField::Workspace(1) => {
+                                    self.config.keymap.workspace_2 = raw.clone();
+                                }
+                                KeymapField::Workspace(2) => {
+                                    self.config.keymap.workspace_3 = raw.clone();
+                                }
+                                KeymapField::Workspace(_) => {
+                                    self.config.keymap.workspace_4 = raw.clone();
+                                }
+                            }
+                            // Try to compile; on success push an UpdateKeymap command.
+                            match self.config.compile_keymap() {
+                                Ok(new_keymap) => {
+                                    let _ = self.config.save(Path::new(&self.config_path));
+                                    self.status_message = format!("bound to {raw}");
+                                    commands.push(Command::UpdateKeymap(new_keymap));
+                                }
+                                Err(_) => {
+                                    // Roll back: restore old value from the entry's current field.
+                                    if let Some(SettingsField::KeymapBinding {
+                                        current: old, ..
+                                    }) = entries.get(rebind_idx).map(|e| &e.field)
+                                    {
+                                        match field {
+                                            KeymapField::Quit => {
+                                                self.config.keymap.quit = old.clone();
+                                            }
+                                            KeymapField::SwitchPane => {
+                                                self.config.keymap.switch_pane = old.clone();
+                                            }
+                                            KeymapField::Refresh => {
+                                                self.config.keymap.refresh = old.clone();
+                                            }
+                                            KeymapField::Workspace(0) => {
+                                                self.config.keymap.workspace_1 = old.clone();
+                                            }
+                                            KeymapField::Workspace(1) => {
+                                                self.config.keymap.workspace_2 = old.clone();
+                                            }
+                                            KeymapField::Workspace(2) => {
+                                                self.config.keymap.workspace_3 = old.clone();
+                                            }
+                                            KeymapField::Workspace(_) => {
+                                                self.config.keymap.workspace_4 = old.clone();
+                                            }
+                                        }
+                                    }
+                                    self.status_message =
+                                        format!("invalid key binding '{raw}', rebind cancelled");
+                                }
+                            }
+                        } else {
+                            self.status_message =
+                                String::from("unsupported key — rebind cancelled");
+                        }
+                    }
+                    if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                        s.rebind_mode = None;
+                    }
+                }
+            }
+            return Ok(commands);
+        }
+
         match action {
             Action::OpenAboutDialog => {
                 self.overlay.open_about(DialogState::about(
@@ -1105,9 +1201,33 @@ impl AppState {
                     let selection = s.selection;
                     let entries = self.settings_entries();
                     if let Some(entry) = entries.get(selection).cloned() {
-                        self.apply_settings_entry(entry);
+                        if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
+                            // Begin rebind: enter key-capture mode for this entry.
+                            if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                                s.rebind_mode = Some(selection);
+                            }
+                            self.status_message =
+                                String::from("press new key combo (Esc to cancel)");
+                        } else {
+                            self.apply_settings_entry(entry);
+                        }
                     }
                 }
+            }
+            Action::SettingsBeginRebind => {
+                if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    let selection = s.selection;
+                    if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                        s.rebind_mode = Some(selection);
+                    }
+                    self.status_message = String::from("press new key combo (Esc to cancel)");
+                }
+            }
+            Action::SettingsCancelRebind => {
+                if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                    s.rebind_mode = None;
+                }
+                self.status_message = String::from("rebind cancelled");
             }
             // Auto-preview after navigation
             Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
@@ -1661,9 +1781,37 @@ impl AppState {
                 };
                 let _ = self.config.save(Path::new(&self.config_path));
             }
-            SettingsField::KeymapPlaceholder => {
-                self.status_message = String::from("keymap settings coming soon");
+            SettingsField::TerminalOpenByDefault => {
+                self.config.terminal_open_by_default = !self.config.terminal_open_by_default;
+                self.status_message = if self.config.terminal_open_by_default {
+                    String::from("terminal will open on startup")
+                } else {
+                    String::from("terminal will not open on startup")
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
             }
+            SettingsField::EditorTabWidth(current) => {
+                let next = match current {
+                    2 => 4,
+                    4 => 8,
+                    _ => 2,
+                };
+                self.config.editor.tab_width = next;
+                self.status_message = format!("editor tab width set to {next}");
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::EditorWordWrap => {
+                self.config.editor.word_wrap = !self.config.editor.word_wrap;
+                self.status_message = if self.config.editor.word_wrap {
+                    String::from("editor word wrap enabled")
+                } else {
+                    String::from("editor word wrap disabled")
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            // Keymap bindings are rebindable — handled by SettingsBeginRebind/SettingsRebindCapture.
+            // This arm is reached when the user presses Enter on a keymap entry.
+            SettingsField::KeymapBinding { .. } => {}
         }
     }
 
@@ -1705,6 +1853,12 @@ impl AppState {
 
     pub fn is_editor_fullscreen(&self) -> bool {
         self.editor_fullscreen
+    }
+    pub fn is_settings_rebinding(&self) -> bool {
+        matches!(
+            &self.overlay.modal,
+            Some(ModalState::Settings(s)) if s.rebind_mode.is_some()
+        )
     }
     pub fn is_editor_loading(&self) -> bool {
         self.editor.loading
@@ -1980,7 +2134,7 @@ impl AppState {
                     "neon" => ThemePreset::Neon,
                     "monochrome" => ThemePreset::Monochrome,
                     "dracula" => ThemePreset::Dracula,
-                    _ => ThemePreset::Neon, // Fallback to Neon if an unknown theme string is somehow loaded
+                    _ => ThemePreset::Neon,
                 }),
             },
             SettingsEntry {
@@ -2023,10 +2177,93 @@ impl AppState {
                 field: SettingsField::PreviewOnSelection,
             },
             SettingsEntry {
-                label: "Keymap",
-                value: String::from("coming soon"),
-                hint: "-",
-                field: SettingsField::KeymapPlaceholder,
+                label: "Terminal on startup",
+                value: if self.config.terminal_open_by_default {
+                    String::from("yes")
+                } else {
+                    String::from("no")
+                },
+                hint: "Space",
+                field: SettingsField::TerminalOpenByDefault,
+            },
+            SettingsEntry {
+                label: "Editor tab width",
+                value: self.config.editor.tab_width.to_string(),
+                hint: "Space",
+                field: SettingsField::EditorTabWidth(self.config.editor.tab_width),
+            },
+            SettingsEntry {
+                label: "Editor word wrap",
+                value: if self.config.editor.word_wrap {
+                    String::from("on")
+                } else {
+                    String::from("off")
+                },
+                hint: "Space",
+                field: SettingsField::EditorWordWrap,
+            },
+            SettingsEntry {
+                label: "Workspace 1 key",
+                value: self.config.keymap.workspace_1.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Workspace(0),
+                    current: self.config.keymap.workspace_1.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Workspace 2 key",
+                value: self.config.keymap.workspace_2.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Workspace(1),
+                    current: self.config.keymap.workspace_2.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Workspace 3 key",
+                value: self.config.keymap.workspace_3.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Workspace(2),
+                    current: self.config.keymap.workspace_3.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Workspace 4 key",
+                value: self.config.keymap.workspace_4.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Workspace(3),
+                    current: self.config.keymap.workspace_4.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Quit key",
+                value: self.config.keymap.quit.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Quit,
+                    current: self.config.keymap.quit.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Switch pane key",
+                value: self.config.keymap.switch_pane.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::SwitchPane,
+                    current: self.config.keymap.switch_pane.clone(),
+                },
+            },
+            SettingsEntry {
+                label: "Refresh key",
+                value: self.config.keymap.refresh.clone(),
+                hint: "Enter",
+                field: SettingsField::KeymapBinding {
+                    field: KeymapField::Refresh,
+                    current: self.config.keymap.refresh.clone(),
+                },
             },
         ]
     }

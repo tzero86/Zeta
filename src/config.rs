@@ -2,7 +2,7 @@ use std::env;
 use std::fs as std_fs;
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{KeyCode, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -55,6 +55,8 @@ pub struct AppConfig {
     pub bookmarks: Vec<PathBuf>,
     #[serde(default)]
     pub editor: EditorConfig,
+    #[serde(default)]
+    pub terminal_open_by_default: bool,
 }
 
 impl Default for AppConfig {
@@ -68,6 +70,7 @@ impl Default for AppConfig {
             preview_on_selection: true,
             bookmarks: Vec::new(),
             editor: EditorConfig::default(),
+            terminal_open_by_default: false,
         }
     }
 }
@@ -182,6 +185,8 @@ pub struct RuntimeKeymap {
     pub quit: KeyBinding,
     pub switch_pane: KeyBinding,
     pub refresh: KeyBinding,
+    /// Configurable workspace-switch bindings, one per workspace slot (0-based)..
+    pub workspace: [KeyBinding; 4],
 }
 
 impl Default for RuntimeKeymap {
@@ -636,6 +641,14 @@ pub struct KeymapConfig {
     pub quit: String,
     pub switch_pane: String,
     pub refresh: String,
+    #[serde(default = "default_workspace_1")]
+    pub workspace_1: String,
+    #[serde(default = "default_workspace_2")]
+    pub workspace_2: String,
+    #[serde(default = "default_workspace_3")]
+    pub workspace_3: String,
+    #[serde(default = "default_workspace_4")]
+    pub workspace_4: String,
 }
 
 impl Default for KeymapConfig {
@@ -644,6 +657,10 @@ impl Default for KeymapConfig {
             quit: String::from("q"),
             switch_pane: String::from("tab"),
             refresh: String::from("r"),
+            workspace_1: String::from("alt+1"),
+            workspace_2: String::from("alt+2"),
+            workspace_3: String::from("alt+3"),
+            workspace_4: String::from("alt+4"),
         }
     }
 }
@@ -654,6 +671,12 @@ impl KeymapConfig {
             quit: parse_key_binding("quit", &self.quit)?,
             switch_pane: parse_key_binding("switch_pane", &self.switch_pane)?,
             refresh: parse_key_binding("refresh", &self.refresh)?,
+            workspace: [
+                parse_key_binding("workspace_1", &self.workspace_1)?,
+                parse_key_binding("workspace_2", &self.workspace_2)?,
+                parse_key_binding("workspace_3", &self.workspace_3)?,
+                parse_key_binding("workspace_4", &self.workspace_4)?,
+            ],
         })
     }
 }
@@ -706,6 +729,50 @@ fn parse_key_binding(field: &'static str, raw: &str) -> Result<KeyBinding, Confi
     };
 
     Ok(KeyBinding { code, modifiers })
+}
+
+fn default_workspace_1() -> String {
+    String::from("alt+1")
+}
+fn default_workspace_2() -> String {
+    String::from("alt+2")
+}
+fn default_workspace_3() -> String {
+    String::from("alt+3")
+}
+fn default_workspace_4() -> String {
+    String::from("alt+4")
+}
+
+/// Serialize a raw key event back into the string format accepted by `parse_key_binding`.
+/// Used to save a captured rebind to the TOML config.
+pub fn key_event_to_string(key: KeyEvent) -> Option<String> {
+    let key_str = match key.code {
+        KeyCode::Char(c) => c.to_ascii_lowercase().to_string(),
+        KeyCode::Tab => String::from("tab"),
+        KeyCode::Esc => String::from("esc"),
+        KeyCode::Enter => String::from("enter"),
+        KeyCode::Backspace => String::from("backspace"),
+        KeyCode::Up => String::from("up"),
+        KeyCode::Down => String::from("down"),
+        KeyCode::Left => String::from("left"),
+        KeyCode::Right => String::from("right"),
+        KeyCode::F(n) => format!("f{n}"),
+        // Modifier-only keys and other special keys cannot be used as bindings.
+        _ => return None,
+    };
+    let mut parts = Vec::new();
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        parts.push("ctrl");
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        parts.push("alt");
+    }
+    if key.modifiers.contains(KeyModifiers::SHIFT) {
+        parts.push("shift");
+    }
+    parts.push(&key_str);
+    Some(parts.join("+"))
 }
 
 #[derive(Debug, Error)]
@@ -924,6 +991,10 @@ mod tests {
             quit: String::from("ctrl+c"),
             switch_pane: String::from("tab"),
             refresh: String::from("r"),
+            workspace_1: String::from("alt+1"),
+            workspace_2: String::from("alt+2"),
+            workspace_3: String::from("alt+3"),
+            workspace_4: String::from("alt+4"),
         };
 
         let compiled = keymap.compile().expect("keymap should compile");
@@ -938,6 +1009,10 @@ mod tests {
             quit: String::from("ctrl+alt+tab+q"),
             switch_pane: String::from("tab"),
             refresh: String::from("r"),
+            workspace_1: String::from("alt+1"),
+            workspace_2: String::from("alt+2"),
+            workspace_3: String::from("alt+3"),
+            workspace_4: String::from("alt+4"),
         };
 
         assert!(keymap.compile().is_err());
