@@ -75,27 +75,27 @@ impl App {
         let mut terminal = TerminalSession::enter()?;
 
         while !self.state.should_quit() {
-            let mut cache = LayoutCache::default();
-            terminal.draw(|frame| {
-                cache = ui::render(frame, &mut self.state);
-            })?;
-            self.layout_cache = cache;
-            // Terminal resize logic
-            if let Some(t_area) = cache.terminal_panel {
-                // Inner width is the full width of t_area, but inner height is reduced by 1 for the border/title
-                let inner_rows = t_area.height.saturating_sub(1);
-                let inner_cols = t_area.width;
+            // Process events first; draw only when state actually changed.
+            self.process_next_event()?;
 
-                if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
-                    // We need to calculate the actual inner size used by vt100
-                    // Let's call resize. It only emits a command if the size actually changed.
-                    for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
-                        self.execute_command_try(cmd)?;
+            if self.state.needs_redraw() {
+                let mut cache = LayoutCache::default();
+                terminal.draw(|frame| {
+                    cache = ui::render(frame, &mut self.state);
+                })?;
+                self.layout_cache = cache;
+                // Propagate terminal panel size to the PTY worker when the layout changes.
+                if let Some(t_area) = cache.terminal_panel {
+                    let inner_rows = t_area.height.saturating_sub(1);
+                    let inner_cols = t_area.width;
+                    if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
+                        for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
+                            self.execute_command_try(cmd)?;
+                        }
                     }
                 }
+                self.state.mark_drawn(); // clears needs_redraw
             }
-            self.state.mark_drawn();
-            self.process_next_event()?;
         }
 
         let session = crate::session::SessionState {
@@ -144,25 +144,40 @@ impl App {
     fn process_next_event(&mut self) -> Result<()> {
         // Drain non-terminal job results completely. These workers are rate-limited
         // by bounded queues and finite work units, so the loop terminates promptly.
+        let mut had_job = false;
         while let Ok(result) = self.job_results.try_recv() {
             self.handle_event(AppEvent::Job(Box::new(result)))?;
+            had_job = true;
+        }
+        if had_job {
+            self.state.set_needs_redraw();
         }
 
         // Drain PTY output with a per-frame cap. The channel is unbounded so no
         // bytes are ever dropped, but we stop after this many chunks per frame so a
         // verbose process (e.g. `yes`) cannot keep the loop running indefinitely.
         const MAX_TERMINAL_CHUNKS_PER_FRAME: usize = 64;
+        let mut had_terminal = false;
         for _ in 0..MAX_TERMINAL_CHUNKS_PER_FRAME {
             match self.terminal_output.try_recv() {
-                Ok(result) => self.handle_event(AppEvent::Job(Box::new(result)))?,
+                Ok(result) => {
+                    self.handle_event(AppEvent::Job(Box::new(result)))?;
+                    had_terminal = true;
+                }
                 Err(_) => break,
             }
         }
+        if had_terminal {
+            self.state.set_needs_redraw();
+        }
 
-        // Then process at most one input/resize event per frame.
+        // Poll for at most one input / resize event per iteration.
         if !event::poll(Duration::from_millis(16)).context("failed to poll terminal events")? {
+            // Idle tick: dispatch a debounced preview request if one is due.
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
+                // No immediate redraw needed — the job result will set the flag
+                // when the preview worker completes.
             }
             return Ok(());
         }
@@ -170,12 +185,15 @@ impl App {
         match event::read().context("failed to read terminal event")? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                 self.handle_event(AppEvent::Input(key_event))?;
+                self.state.set_needs_redraw();
             }
             Event::Mouse(mouse_event) => {
                 self.handle_event(AppEvent::Mouse(mouse_event))?;
+                self.state.set_needs_redraw();
             }
             Event::Resize(width, height) => {
                 self.handle_event(AppEvent::Resize { width, height })?;
+                self.state.set_needs_redraw();
             }
             _ => {}
         }

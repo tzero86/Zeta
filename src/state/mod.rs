@@ -109,6 +109,10 @@ pub struct AppState {
     redraw_count: u64,
     startup_time_ms: u128,
     should_quit: bool,
+    /// Set whenever visible state changes; cleared by `mark_drawn()`.
+    /// The event loop skips `terminal.draw()` when this is false, avoiding
+    /// unconditional 60 fps redraws on resource-constrained machines.
+    needs_redraw: bool,
 }
 
 impl AppState {
@@ -253,6 +257,7 @@ impl AppState {
             redraw_count: 0,
             startup_time_ms: started_at.elapsed().as_millis(),
             should_quit: false,
+            needs_redraw: true,
         })
     }
 
@@ -2152,8 +2157,18 @@ impl AppState {
         self.should_quit
     }
 
+    pub fn needs_redraw(&self) -> bool {
+        self.needs_redraw
+    }
+
+    /// Signal that the visible state has changed and a redraw is needed.
+    pub fn set_needs_redraw(&mut self) {
+        self.needs_redraw = true;
+    }
+
     pub fn mark_drawn(&mut self) {
         self.redraw_count += 1;
+        self.needs_redraw = false;
     }
 
     pub fn status_line(&self) -> String {
@@ -2928,6 +2943,7 @@ mod tests {
             redraw_count: 0,
             startup_time_ms: 0,
             should_quit: false,
+            needs_redraw: true,
         }
     }
 
