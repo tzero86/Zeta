@@ -288,24 +288,42 @@ def main() -> None:
             f"Delete it first: git tag -d {selected.version.tag()}"
         )
 
+    # --- Detect whether gh CLI is available (needed for PR-based push) -------
+    gh_available = subprocess.run(
+        ["gh", "--version"], capture_output=True
+    ).returncode == 0
+
     # --- Execute --------------------------------------------------------
     header("Executing")
 
     new_version_str = str(selected.version)
     new_tag         = selected.version.tag()
+    release_branch  = f"release/{new_tag}"
 
     if dry_run:
+        step(f"[DRY RUN] Would create branch {release_branch}")
         step(f"[DRY RUN] Would write version {new_version_str} to Cargo.toml")
         step("[DRY RUN] Would run: cargo check --quiet")
         step("[DRY RUN] Would run: git add Cargo.toml Cargo.lock")
         step(f"[DRY RUN] Would run: git commit -m 'chore: bump version to {new_version_str}'")
+        step(f"[DRY RUN] Would run: git push origin {release_branch}")
+        if gh_available:
+            step(f"[DRY RUN] Would run: gh pr create + gh pr merge --squash")
+        else:
+            step("[DRY RUN] gh not found -- would print manual PR instructions")
+        step(f"[DRY RUN] Would run: git checkout main + git pull")
         step(f"[DRY RUN] Would run: git tag {new_tag}")
-        step("[DRY RUN] Would run: git push origin HEAD")
         step(f"[DRY RUN] Would run: git push origin {new_tag}")
         ok("Dry run complete -- nothing was written.")
         sys.exit(0)
 
-    # 1. Update Cargo.toml
+    # 1. Switch to a release branch so the version bump goes through a PR.
+    #    The tag is pushed directly after merge -- tags bypass branch protection.
+    base_branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    step(f"Creating release branch {release_branch}")
+    git("checkout", "-b", release_branch)
+
+    # 2. Update Cargo.toml
     step(f"Updating Cargo.toml -> {new_version_str}")
     new_toml = re.sub(
         r'(?m)(^version\s*=\s*")[^"]+(")',
@@ -314,26 +332,69 @@ def main() -> None:
     )
     cargo_toml.write_text(new_toml, encoding="utf-8")
 
-    # 2. Validate + refresh Cargo.lock
+    # 3. Validate + refresh Cargo.lock
     step("Running cargo check to refresh Cargo.lock")
     if cargo("check", "--quiet") != 0:
         cargo_toml.write_text(toml_text, encoding="utf-8")
+        git("checkout", base_branch)
+        git("branch", "-D", release_branch)
         bail("cargo check failed -- Cargo.toml has been restored.")
 
-    # 3. Commit
+    # 4. Commit + push the release branch
     step("Committing version bump")
     git("add", str(cargo_toml), str(repo_root / "Cargo.lock"))
     git("commit", "-m", f"chore: bump version to {new_version_str}")
 
-    # 4. Tag
-    step(f"Creating tag {new_tag}")
+    step(f"Pushing {release_branch} to origin")
+    git("push", "-u", "origin", release_branch)
+
+    # 5. Open PR and merge it
+    pre_note = " (pre-release -- GitHub Actions will mark it accordingly)" if selected.is_pre else ""
+    pr_body  = (
+        f"Automated version bump to {new_tag}{pre_note}.\n\n"
+        f"Created by `scripts/release.py`."
+    )
+
+    if gh_available:
+        step("Opening and merging PR via gh")
+
+        pr_result = subprocess.run(
+            ["gh", "pr", "create",
+             "--base", base_branch,
+             "--title", f"chore: bump version to {new_version_str}",
+             "--body", pr_body],
+            capture_output=True, text=True,
+        )
+        if pr_result.returncode != 0:
+            bail(f"gh pr create failed:\n{pr_result.stderr.strip()}")
+        pr_url = pr_result.stdout.strip().splitlines()[-1]
+        step(f"PR created: {pr_url}")
+
+        merge_result = subprocess.run(
+            ["gh", "pr", "merge", "--squash", "--delete-branch", pr_url],
+            capture_output=True, text=True,
+        )
+        if merge_result.returncode != 0:
+            bail(f"gh pr merge failed:\n{merge_result.stderr.strip()}")
+        step("PR merged")
+
+        # Pull the updated base branch so the tag lands on the merge commit
+        step(f"Updating local {base_branch}")
+        git("checkout", base_branch)
+        git("pull")
+
+    else:
+        # No gh: leave the branch open, print instructions, exit without tagging.
+        print()
+        warn("gh CLI not found -- cannot auto-merge. Merge the PR manually, then run:")
+        print(f"    git checkout {base_branch} && git pull")
+        print(f"    git tag {new_tag} && git push origin {new_tag}")
+        print()
+        sys.exit(0)
+
+    # 6. Tag the merge commit and push
+    step(f"Tagging {new_tag}")
     git("tag", new_tag)
-
-    # 5. Push branch + tag
-    step("Pushing branch to origin")
-    git("push", "origin", "HEAD")
-
-    step(f"Pushing tag {new_tag} to origin")
     git("push", "origin", new_tag)
 
     # --- Done -----------------------------------------------------------
