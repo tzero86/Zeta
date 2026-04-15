@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 
 use crate::action::{CollisionPolicy, FileOperation, RefreshTarget};
 use crate::fs::{
@@ -409,8 +409,11 @@ pub struct WorkerChannels {
 /// Spawn three dedicated background workers that all fan results into a single
 /// `Receiver<JobResult>`. Each worker processes its queue sequentially; because
 /// the queues are independent, a slow file operation never delays a scan.
-pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
+pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResult>) {
     let (result_tx, result_rx) = bounded::<JobResult>(512);
+    // Dedicated unbounded channel for PTY output. Isolated from the shared queue so
+    // the reader thread never blocks and a verbose process cannot starve input handling.
+    let (term_out_tx, term_out_rx) = unbounded::<JobResult>();
 
     // --- Scan worker ---
     let (scan_tx, scan_rx) = bounded::<ScanRequest>(32);
@@ -991,10 +994,11 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
     let (terminal_tx, terminal_rx) = bounded::<TerminalRequest>(16);
     {
         let result_tx = result_tx.clone();
+        let term_out_tx = term_out_tx.clone();
         thread::Builder::new()
             .name("zeta-terminal".into())
             .spawn(move || {
-                run_terminal_worker(terminal_rx, result_tx);
+                run_terminal_worker(terminal_rx, result_tx, term_out_tx);
             })
             .expect("failed to spawn terminal worker");
     }
@@ -1038,6 +1042,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>) {
             dir_size_tx,
         },
         result_rx,
+        term_out_rx,
     )
 }
 
@@ -1998,7 +2003,11 @@ fn run_extract_archive(
 /// Terminal worker: handles PTY spawn and raw I/O.
 ///
 /// Uses `conpty` on Windows and `portable-pty` on Unix via [`crate::pty::PtySession`].
-pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Sender<JobResult>) {
+pub fn run_terminal_worker(
+    terminal_rx: Receiver<TerminalRequest>,
+    result_tx: Sender<JobResult>,
+    term_out_tx: Sender<JobResult>,
+) {
     use std::collections::HashMap;
     use std::io::{Read, Write};
 
@@ -2020,7 +2029,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                 match crate::pty::PtySession::spawn(&cwd, safe_cols, safe_rows) {
                     Ok(mut pty) => match (pty.take_reader(), pty.take_writer()) {
                         (Ok(mut r), Ok(w)) => {
-                            let result_tx_inner = result_tx.clone();
+                            let term_out_tx_inner = term_out_tx.clone();
                             thread::Builder::new()
                                 .name(format!("zeta-terminal-reader-{workspace_id}"))
                                 .spawn(move || {
@@ -2029,7 +2038,7 @@ pub fn run_terminal_worker(terminal_rx: Receiver<TerminalRequest>, result_tx: Se
                                         if n == 0 {
                                             break;
                                         }
-                                        if result_tx_inner
+                                        if term_out_tx_inner
                                             .send(JobResult::TerminalOutput {
                                                 workspace_id,
                                                 bytes: buffer[..n].to_vec(),
@@ -2310,7 +2319,7 @@ mod tests {
 
     #[test]
     fn git_worker_responds_to_request() {
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         let tmp = std::env::temp_dir();
         workers
             .git_tx
@@ -2341,7 +2350,7 @@ mod tests {
 
     #[test]
     fn worker_channels_can_send_and_receive_scan_request() {
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         let tmp = std::env::temp_dir();
         workers
             .scan_tx
@@ -2371,7 +2380,7 @@ mod tests {
 
     #[test]
     fn finder_worker_returns_find_results() {
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         let tmp = std::env::temp_dir();
         workers
             .find_tx
@@ -2418,7 +2427,7 @@ mod tests {
             zip.finish().unwrap();
         }
 
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         workers
             .archive_tx
             .send(ArchiveListRequest {
@@ -2467,7 +2476,7 @@ mod tests {
             zip.finish().unwrap();
         }
 
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         workers
             .file_op_tx
             .send(FileOpRequest {
@@ -2503,7 +2512,7 @@ mod tests {
 
     #[test]
     fn watcher_worker_emits_directory_changed() {
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         let root = std::env::temp_dir().join(format!(
             "zeta-watch-test-{}",
             std::time::SystemTime::now()
@@ -2542,7 +2551,7 @@ mod tests {
 
     #[test]
     fn workers_process_requests_independently() {
-        let (workers, results) = spawn_workers();
+        let (workers, results, _term_out) = spawn_workers();
         let tmp = std::env::temp_dir();
 
         workers

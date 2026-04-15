@@ -29,6 +29,9 @@ type TuiTerminal = Terminal<CrosstermBackend<Stdout>>;
 pub struct App {
     workers: WorkerChannels,
     job_results: Receiver<JobResult>,
+    /// Dedicated receiver for PTY output, drained with a per-frame cap to prevent
+    /// a verbose process from starving keyboard/mouse handling.
+    terminal_output: Receiver<JobResult>,
     keymap: RuntimeKeymap,
     state: AppState,
     pub layout_cache: LayoutCache,
@@ -46,13 +49,14 @@ impl App {
             .config
             .compile_keymap()
             .context("failed to compile configured key bindings")?;
-        let (workers, job_results) = jobs::spawn_workers();
+        let (workers, job_results, terminal_output) = jobs::spawn_workers();
         let config_path = loaded_config.path.clone();
         let state = AppState::bootstrap(loaded_config, started_at)
             .context("failed to bootstrap application state")?;
         let mut app = Self {
             workers,
             job_results,
+            terminal_output,
             keymap,
             state,
             layout_cache: LayoutCache::default(),
@@ -138,9 +142,21 @@ impl App {
     }
 
     fn process_next_event(&mut self) -> Result<()> {
-        // First, drain ALL pending job results to keep the UI in sync with workers.
+        // Drain non-terminal job results completely. These workers are rate-limited
+        // by bounded queues and finite work units, so the loop terminates promptly.
         while let Ok(result) = self.job_results.try_recv() {
             self.handle_event(AppEvent::Job(Box::new(result)))?;
+        }
+
+        // Drain PTY output with a per-frame cap. The channel is unbounded so no
+        // bytes are ever dropped, but we stop after this many chunks per frame so a
+        // verbose process (e.g. `yes`) cannot keep the loop running indefinitely.
+        const MAX_TERMINAL_CHUNKS_PER_FRAME: usize = 64;
+        for _ in 0..MAX_TERMINAL_CHUNKS_PER_FRAME {
+            match self.terminal_output.try_recv() {
+                Ok(result) => self.handle_event(AppEvent::Job(Box::new(result)))?,
+                Err(_) => break,
+            }
         }
 
         // Then process at most one input/resize event per frame.
