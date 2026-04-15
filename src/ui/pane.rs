@@ -230,7 +230,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         let mark_prefix = if is_marked { "* " } else { "  " };
         let (git_char, git_colour) = match git_status {
             Some(s) => (s.symbol(), s.colour()),
-            None => (' ', palette.text_muted),
+            None => (" ", palette.text_muted),
         };
         // Fixed right: 9 (size) + 1 (gap) + 16 (date) = 26
         let right_fixed = 26usize;
@@ -266,9 +266,9 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
             row_styles.name
         };
         return ListItem::new(Line::from(vec![
-            Span::styled(mark_prefix.to_string(), row_styles.mark),
+            Span::styled(mark_prefix, row_styles.mark),
             Span::styled(format!("{icon_slot} "), row_styles.icon),
-            Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+            Span::styled(git_char, Style::default().fg(git_colour)),
             Span::raw(" "),
             Span::styled(name, name_style),
             Span::raw(" ".repeat(spacer_width)),
@@ -293,7 +293,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
                                                    // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
-        None => (' ', palette.text_muted),
+        None => (" ", palette.text_muted),
     };
     let meta_width = display_width(&meta);
     let content_width = available_width;
@@ -312,9 +312,9 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     ListItem::new(Line::from(vec![
         Span::styled(guide, row_styles.guide),
         Span::styled(format!("{} ", branch), row_styles.branch),
-        Span::styled(mark_prefix.to_string(), row_styles.mark),
+        Span::styled(mark_prefix, row_styles.mark),
         Span::styled(format!("{} ", icon_slot), row_styles.icon),
-        Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+        Span::styled(git_char, Style::default().fg(git_colour)),
         Span::raw(" "),
         Span::styled(
             name,

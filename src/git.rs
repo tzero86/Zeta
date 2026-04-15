@@ -25,14 +25,14 @@ pub enum FileStatus {
 
 impl FileStatus {
     /// Single-character indicator shown in the pane gutter.
-    pub fn symbol(self) -> char {
+    pub fn symbol(self) -> &'static str {
         match self {
-            Self::Conflicted => 'U',
-            Self::Added => 'A',
-            Self::Modified => 'M',
-            Self::Deleted => 'D',
-            Self::Renamed => 'R',
-            Self::Untracked => '?',
+            Self::Conflicted => "U",
+            Self::Added => "A",
+            Self::Modified => "M",
+            Self::Deleted => "D",
+            Self::Renamed => "R",
+            Self::Untracked => "?",
         }
     }
 
@@ -368,12 +368,12 @@ mod tests {
 
     #[test]
     fn file_status_symbols() {
-        assert_eq!(FileStatus::Modified.symbol(), 'M');
-        assert_eq!(FileStatus::Untracked.symbol(), '?');
-        assert_eq!(FileStatus::Added.symbol(), 'A');
-        assert_eq!(FileStatus::Deleted.symbol(), 'D');
-        assert_eq!(FileStatus::Renamed.symbol(), 'R');
-        assert_eq!(FileStatus::Conflicted.symbol(), 'U');
+        assert_eq!(FileStatus::Modified.symbol(), "M");
+        assert_eq!(FileStatus::Untracked.symbol(), "?");
+        assert_eq!(FileStatus::Added.symbol(), "A");
+        assert_eq!(FileStatus::Deleted.symbol(), "D");
+        assert_eq!(FileStatus::Renamed.symbol(), "R");
+        assert_eq!(FileStatus::Conflicted.symbol(), "U");
     }
 
     #[test]
