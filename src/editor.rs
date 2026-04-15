@@ -7,6 +7,12 @@ use thiserror::Error;
 
 use crate::highlight::{highlight_text, normalize_preview_text, HighlightedLine};
 
+/// Compact alias for the word-wrap highlight cache tuple:
+/// `(edit_version, theme, tab_width, viewport_cols, wrapped_rows, visual_offsets)`.
+/// `visual_offsets[i]` is the cumulative visual row count before logical line `i`,
+/// allowing O(1) scroll-position lookup instead of O(n) re-wrap on every frame.
+type WrapHighlightCache = (usize, String, u8, usize, Vec<HighlightedLine>, Vec<usize>);
+
 // ---------------------------------------------------------------------------
 // Public render state
 // ---------------------------------------------------------------------------
@@ -102,7 +108,9 @@ pub struct EditorBuffer {
     highlight_cache: Option<(usize, String, u8, Vec<HighlightedLine>)>,
     /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
     /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
-    wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
+    /// The sixth element is a prefix-sum of visual row counts per logical line — one entry per
+    /// logical line plus a sentinel at the end — enabling O(1) visual-offset lookup during scroll.
+    wrap_highlight_cache: Option<WrapHighlightCache>,
     sel_anchor: Option<usize>,
 }
 
@@ -662,7 +670,7 @@ impl EditorBuffer {
             let wrap_valid =
                 self.wrap_highlight_cache
                     .as_ref()
-                    .is_some_and(|(v, t, tw, cols, _)| {
+                    .is_some_and(|(v, t, tw, cols, _, _)| {
                         *v == self.edit_version
                             && t == syntect_theme
                             && *tw == tab_width
@@ -670,28 +678,34 @@ impl EditorBuffer {
                     });
             if !wrap_valid {
                 let logical_lines = &self.highlight_cache.as_ref().unwrap().3;
+                // Build wrapped rows and precompute prefix-sum visual offsets so that
+                // mapping a logical line index to a visual row is O(1) during scroll.
                 let mut wrapped: Vec<HighlightedLine> = Vec::new();
+                let mut visual_offsets: Vec<usize> = Vec::with_capacity(logical_lines.len() + 1);
+                let mut offset = 0usize;
                 for line in logical_lines {
-                    wrapped.extend(Self::wrap_highlighted_line(line, viewport_cols));
+                    visual_offsets.push(offset);
+                    let rows = Self::wrap_highlighted_line(line, viewport_cols);
+                    offset += rows.len();
+                    wrapped.extend(rows);
                 }
+                visual_offsets.push(offset); // sentinel = total visual row count
                 self.wrap_highlight_cache = Some((
                     self.edit_version,
                     syntect_theme.to_string(),
                     tab_width,
                     viewport_cols,
                     wrapped,
+                    visual_offsets,
                 ));
             }
             // Determine the first visual row to show using the same start logic as
             // visible_line_window_h (word_wrap=true path).
             let (logical_start, _, _) =
                 self.visible_line_window_h(height, viewport_cols, tab_width, true);
-            // Map logical_start to a visual row offset in the wrap cache.
-            let all_logical = &self.highlight_cache.as_ref().unwrap().3;
-            let visual_start: usize = all_logical[..logical_start]
-                .iter()
-                .map(|line| Self::wrap_highlighted_line(line, viewport_cols).len())
-                .sum();
+            // Map logical_start to a visual row offset using the precomputed prefix-sum —
+            // O(1) index lookup instead of the former O(n) re-wrap of all preceding lines.
+            let visual_start = self.wrap_highlight_cache.as_ref().unwrap().5[logical_start];
             let all_wrapped = &self.wrap_highlight_cache.as_ref().unwrap().4;
             let end = (visual_start + height).min(all_wrapped.len());
             all_wrapped[visual_start..end].to_vec()
