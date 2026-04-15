@@ -103,7 +103,9 @@ pub struct EditorBuffer {
     highlight_cache: Option<(usize, String, u8, Vec<HighlightedLine>)>,
     /// Word-wrap-expanded highlighted lines, keyed by `(edit_version, theme, tab_width, cols)`.
     /// Computed from `highlight_cache` by splitting each logical line at `cols` chars.
-    wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>)>,
+    /// Index 5 holds prefix sums: `prefix_sums[i]` = total visual rows for logical lines `0..i`.
+    #[allow(clippy::type_complexity)]
+    wrap_highlight_cache: Option<(usize, String, u8, usize, Vec<HighlightedLine>, Vec<usize>)>,
     /// Parsed markdown preview lines, keyed by `(edit_version, panel_width, theme)`.
     /// `None` until first render. Recomputed only when text, panel width, or theme changes.
     md_preview_cache: Option<(usize, u16, String, Vec<Line<'static>>)>,
@@ -666,7 +668,7 @@ impl EditorBuffer {
             let wrap_valid =
                 self.wrap_highlight_cache
                     .as_ref()
-                    .is_some_and(|(v, t, tw, cols, _)| {
+                    .is_some_and(|(v, t, tw, cols, _, _)| {
                         *v == self.edit_version
                             && t == syntect_theme
                             && *tw == tab_width
@@ -675,8 +677,12 @@ impl EditorBuffer {
             if !wrap_valid {
                 let logical_lines = &self.highlight_cache.as_ref().unwrap().3;
                 let mut wrapped: Vec<HighlightedLine> = Vec::new();
+                let mut prefix_sums: Vec<usize> = Vec::with_capacity(logical_lines.len() + 1);
+                prefix_sums.push(0);
                 for line in logical_lines {
-                    wrapped.extend(Self::wrap_highlighted_line(line, viewport_cols));
+                    let w = Self::wrap_highlighted_line(line, viewport_cols);
+                    prefix_sums.push(prefix_sums.last().copied().unwrap_or(0) + w.len());
+                    wrapped.extend(w);
                 }
                 self.wrap_highlight_cache = Some((
                     self.edit_version,
@@ -684,18 +690,16 @@ impl EditorBuffer {
                     tab_width,
                     viewport_cols,
                     wrapped,
+                    prefix_sums,
                 ));
             }
             // Determine the first visual row to show using the same start logic as
             // visible_line_window_h (word_wrap=true path).
             let (logical_start, _, _) =
                 self.visible_line_window_h(height, viewport_cols, tab_width, true);
-            // Map logical_start to a visual row offset in the wrap cache.
-            let all_logical = &self.highlight_cache.as_ref().unwrap().3;
-            let visual_start: usize = all_logical[..logical_start]
-                .iter()
-                .map(|line| Self::wrap_highlighted_line(line, viewport_cols).len())
-                .sum();
+            // Map logical_start to a visual row offset using the prefix-sum
+            // stored alongside the wrap cache. O(1) regardless of file size.
+            let visual_start = self.wrap_highlight_cache.as_ref().unwrap().5[logical_start];
             let all_wrapped = &self.wrap_highlight_cache.as_ref().unwrap().4;
             let end = (visual_start + height).min(all_wrapped.len());
             all_wrapped[visual_start..end].to_vec()

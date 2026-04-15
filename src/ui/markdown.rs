@@ -26,7 +26,7 @@ use crate::config::ThemePalette;
 pub fn render_md_with_lines(
     frame: &mut Frame<'_>,
     area: Rect,
-    lines: Vec<Line<'static>>,
+    lines: &[Line<'static>],
     palette: ThemePalette,
     scroll: usize,
     is_focused: bool,
@@ -46,7 +46,7 @@ pub fn render_md_with_lines(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let paragraph = Paragraph::new(lines)
+    let paragraph = Paragraph::new(lines.to_vec())
         .style(Style::default().bg(palette.tools_bg))
         .scroll((scroll.min(u16::MAX as usize) as u16, 0))
         .wrap(Wrap { trim: false });
