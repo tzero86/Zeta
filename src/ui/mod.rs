@@ -27,7 +27,7 @@ use crate::state::{AppState, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
-use crate::ui::markdown::render_markdown_preview;
+use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
@@ -227,8 +227,24 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                             inner,
                         );
                     } else {
-                        render_markdown_preview(
-                            frame, md_area, &source, palette, md_scroll, md_focused,
+                        let inner_width = md_area.width.saturating_sub(2);
+                        if editor
+                            .md_preview_cached(inner_width, syntect_theme)
+                            .is_none()
+                        {
+                            let parsed =
+                                parse_markdown_lines_with_palette(&source, palette, inner_width);
+                            editor.set_md_preview_cache(inner_width, syntect_theme, parsed);
+                        }
+                        render_md_with_lines(
+                            frame,
+                            md_area,
+                            editor
+                                .md_preview_cached(inner_width, syntect_theme)
+                                .unwrap(),
+                            palette,
+                            md_scroll,
+                            md_focused,
                         );
                     }
                 }

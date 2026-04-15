@@ -2,6 +2,7 @@ use std::fs as std_fs;
 use std::path::{Path, PathBuf};
 
 use ratatui::style::{Color, Modifier};
+use ratatui::text::Line;
 use ropey::Rope;
 use thiserror::Error;
 
@@ -111,6 +112,9 @@ pub struct EditorBuffer {
     /// The sixth element is a prefix-sum of visual row counts per logical line — one entry per
     /// logical line plus a sentinel at the end — enabling O(1) visual-offset lookup during scroll.
     wrap_highlight_cache: Option<WrapHighlightCache>,
+    /// Parsed markdown preview lines, keyed by `(edit_version, panel_width, theme)`.
+    /// `None` until first render. Recomputed only when text, panel width, or theme changes.
+    md_preview_cache: Option<(usize, u16, String, Vec<Line<'static>>)>,
     sel_anchor: Option<usize>,
 }
 
@@ -716,6 +720,30 @@ impl EditorBuffer {
             let end = (start + height).min(all_lines.len());
             all_lines[start..end].to_vec()
         }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Markdown preview cache
+    // ---------------------------------------------------------------------------
+
+    /// Return the cached parsed markdown lines if the cache is valid for the
+    /// current `edit_version`, `panel_width`, and `theme`. Returns `None` on miss.
+    pub fn md_preview_cached(&self, panel_width: u16, theme: &str) -> Option<&Vec<Line<'static>>> {
+        self.md_preview_cache
+            .as_ref()
+            .filter(|(v, w, t, _)| *v == self.edit_version && *w == panel_width && t == theme)
+            .map(|(_, _, _, lines)| lines)
+    }
+
+    /// Store parsed markdown lines in the cache, keyed by the current
+    /// `edit_version`, `panel_width`, and `theme`.
+    pub fn set_md_preview_cache(
+        &mut self,
+        panel_width: u16,
+        theme: &str,
+        lines: Vec<Line<'static>>,
+    ) {
+        self.md_preview_cache = Some((self.edit_version, panel_width, theme.to_string(), lines));
     }
 
     /// Compute the visible line window for rendering `viewport_rows` rows.
