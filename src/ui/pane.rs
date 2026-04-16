@@ -516,6 +516,7 @@ mod tests {
                 kind: EntryKind::File,
                 size_bytes: Some(1024),
                 modified: None,
+                link_target: None,
             },
             is_focused: true,
             is_marked: false,

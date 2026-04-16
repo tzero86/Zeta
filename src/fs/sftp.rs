@@ -59,6 +59,7 @@ impl SftpBackend {
             modified: stat
                 .mtime
                 .map(|mtime| std::time::UNIX_EPOCH + std::time::Duration::from_secs(mtime)),
+            link_target: None,
         }
     }
 }
@@ -87,6 +88,7 @@ impl FsBackend for SftpBackend {
                 kind: EntryKind::Directory,
                 size_bytes: None,
                 modified: None,
+                link_target: None,
             });
         }
 

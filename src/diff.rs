@@ -120,6 +120,7 @@ mod tests {
             kind: EntryKind::File,
             size_bytes: Some(size),
             modified: None,
+            link_target: None,
         }
     }
 
@@ -130,6 +131,7 @@ mod tests {
             kind: EntryKind::Directory,
             size_bytes: None,
             modified: None,
+            link_target: None,
         }
     }
 

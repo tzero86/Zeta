@@ -87,6 +87,11 @@ impl FsBackend for LocalBackend {
             crate::fs::EntryKind::Other
         };
 
+        let link_target = if kind == crate::fs::EntryKind::Symlink {
+            std::fs::read_link(path).ok()
+        } else {
+            None
+        };
         Ok(EntryInfo {
             name,
             path: path.to_path_buf(),
@@ -97,6 +102,7 @@ impl FsBackend for LocalBackend {
                 None
             },
             modified: metadata.modified().ok(),
+            link_target,
         })
     }
 }

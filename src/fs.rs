@@ -13,6 +13,8 @@ pub struct EntryInfo {
     pub kind: EntryKind,
     pub size_bytes: Option<u64>,
     pub modified: Option<std::time::SystemTime>,
+    /// Resolved target path for symlinks; `None` for all other entry kinds.
+    pub link_target: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -154,12 +156,18 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
         };
         let modified = metadata.as_ref().and_then(|m| m.modified().ok());
 
+        let link_target = if kind == EntryKind::Symlink {
+            std_fs::read_link(&entry_path).ok()
+        } else {
+            None
+        };
         results.push(EntryInfo {
             name,
             path: entry_path,
             kind,
             size_bytes,
             modified,
+            link_target,
         });
     }
 

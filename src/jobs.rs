@@ -731,6 +731,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         kind,
                                         size_bytes,
                                         modified: None,
+                                        link_target: None,
                                     });
                                 }
                             }
@@ -831,6 +832,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                     kind,
                                     size_bytes,
                                     modified: None,
+                                    link_target: None,
                                 });
                             }
                         }

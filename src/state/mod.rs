@@ -1525,6 +1525,7 @@ impl AppState {
                             kind: EntryKind::Directory,
                             size_bytes: None,
                             modified: None,
+                            link_target: None,
                         },
                     );
                 }
@@ -2586,6 +2587,7 @@ mod tests {
                 kind: EntryKind::File,
                 size_bytes: Some(1024),
                 modified: None,
+                link_target: None,
             }],
             selection: 0,
             scroll_offset: 0,
@@ -3313,6 +3315,7 @@ mod tests {
             kind: EntryKind::File,
             size_bytes: Some(64),
             modified: None,
+            link_target: None,
         });
         state.panes.left.marked.insert(PathBuf::from("./note.txt"));
         state.panes.left.marked.insert(PathBuf::from("./two.txt"));
