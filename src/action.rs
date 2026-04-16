@@ -217,6 +217,11 @@ pub enum Action {
     SshTrustAccept,
     /// User rejected an unknown SSH host key; cancel the connection.
     SshTrustReject,
+    /// Navigate the active pane into the symlink's resolved target directory (or open the
+    /// target file). No-op if the focused entry is not a symlink or the target does not exist.
+    FollowSymlink,
+    /// Display the symlink's resolved target path in the status bar without navigating.
+    ShowSymlinkTarget,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -445,6 +450,14 @@ impl Action {
             // Char('l') without Ctrl is the vim right/enter binding.
             KeyCode::Char('l') if key_event.modifiers == KeyModifiers::NONE => {
                 Some(Self::EnterSelection)
+            }
+            // Alt+l follows a symlink into its target directory / file.
+            KeyCode::Char('l') if key_event.modifiers == KeyModifiers::ALT => {
+                Some(Self::FollowSymlink)
+            }
+            // Alt+i shows the symlink target path in the status bar.
+            KeyCode::Char('i') if key_event.modifiers == KeyModifiers::ALT => {
+                Some(Self::ShowSymlinkTarget)
             }
             KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => Some(Self::NavigateToParent),
             KeyCode::Char(' ') => Some(Self::ToggleMark),

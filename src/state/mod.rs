@@ -1446,6 +1446,37 @@ impl AppState {
                 self.overlay.close_all();
                 self.status_message = String::from("SSH connection cancelled");
             }
+            Action::ShowSymlinkTarget => {
+                if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    if entry.kind == EntryKind::Symlink {
+                        self.status_message = match &entry.link_target {
+                            Some(t) => format!("symlink → {}", t.display()),
+                            None => String::from("symlink target unavailable"),
+                        };
+                    }
+                }
+            }
+            Action::FollowSymlink => {
+                if let Some(entry) = self.panes.active_pane().selected_entry().cloned() {
+                    if entry.kind == EntryKind::Symlink {
+                        if let Some(target) = entry.link_target {
+                            if target.is_dir() {
+                                let pane = self.panes.active_pane_mut();
+                                pane.push_history();
+                                pane.cwd = target;
+                                return Ok(vec![Command::DispatchAction(Action::Refresh)]);
+                            } else if target.is_file() {
+                                return Ok(vec![Command::DispatchAction(
+                                    Action::OpenSelectedInEditor,
+                                )]);
+                            } else {
+                                self.status_message =
+                                    format!("target does not exist: {}", target.display());
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 

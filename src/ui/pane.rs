@@ -284,6 +284,14 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = display_name.unwrap_or_else(|| match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
+        EntryKind::Symlink => {
+            if let Some(ref target) = entry.link_target {
+                let target_str = target.to_string_lossy();
+                format!("{} → {}", entry.name, target_str)
+            } else {
+                entry.name.clone()
+            }
+        }
         _ => entry.name.clone(),
     });
     let meta = format_entry_meta(entry);
