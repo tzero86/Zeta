@@ -17,5 +17,6 @@ pub mod pty;
 pub mod session;
 pub mod state;
 pub mod ui;
+pub mod utils;
 
 pub use app::App;

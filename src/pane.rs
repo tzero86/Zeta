@@ -534,9 +534,13 @@ impl PaneState {
         });
 
         if self.filter_active && !self.filter_query.is_empty() {
-            let query = self.filter_query.to_lowercase();
             // ".." is always visible even during filtering.
-            rest_indices.retain(|&idx| self.entries[idx].name.to_lowercase().contains(&query));
+            rest_indices.retain(|&idx| {
+                crate::utils::glob_match::matches(
+                    &self.filter_query,
+                    &self.entries[idx].name,
+                )
+            });
         }
 
         // Prepend ".." (if present) before all other entries.
