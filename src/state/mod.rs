@@ -222,6 +222,9 @@ impl AppState {
             left_pane.show_hidden = saved
                 .as_ref()
                 .is_some_and(|workspace| workspace.left_hidden);
+            if let Some(saved_ws) = saved.as_ref() {
+                left_pane.history_back = saved_ws.left_history.clone();
+            }
 
             let mut right_pane = PaneState::empty("Right", right_cwd);
             if let Some(sort) = saved.as_ref().and_then(|workspace| workspace.right_sort) {
@@ -230,6 +233,9 @@ impl AppState {
             right_pane.show_hidden = saved
                 .as_ref()
                 .is_some_and(|workspace| workspace.right_hidden);
+            if let Some(saved_ws) = saved.as_ref() {
+                right_pane.history_back = saved_ws.right_history.clone();
+            }
 
             WorkspaceState::new(
                 PaneSetState::new(left_pane, right_pane).with_layout(layout),

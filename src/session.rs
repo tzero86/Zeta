@@ -20,6 +20,12 @@ pub struct WorkspaceSessionState {
     pub left_hidden: bool,
     pub right_hidden: bool,
     pub layout: Option<PaneLayout>,
+    /// Navigation history for the left pane (oldest first, capped at 50).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_history: Vec<PathBuf>,
+    /// Navigation history for the right pane (oldest first, capped at 50).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub right_history: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -83,6 +89,8 @@ impl SessionState {
             left_hidden: self.left_hidden,
             right_hidden: self.right_hidden,
             layout: self.layout,
+            left_history: Vec::new(),
+            right_history: Vec::new(),
         })
     }
 
@@ -117,6 +125,8 @@ mod tests {
                     left_hidden: false,
                     right_hidden: true,
                     layout: Some(PaneLayout::SideBySide),
+                    left_history: Vec::new(),
+                    right_history: Vec::new(),
                 },
                 WorkspaceSessionState::default(),
                 WorkspaceSessionState::default(),
@@ -171,5 +181,44 @@ layout = "SideBySide"
         assert!(!workspace.right_hidden);
         assert_eq!(workspace.layout, Some(PaneLayout::SideBySide));
         assert!(session.workspace(1).is_none());
+    }
+
+    #[test]
+    fn session_round_trips_history() {
+        let history = vec![
+            std::path::PathBuf::from("/home/user"),
+            std::path::PathBuf::from("/tmp"),
+        ];
+        let session = SessionState {
+            active_workspace: Some(0),
+            workspaces: vec![WorkspaceSessionState {
+                left_cwd: Some(std::path::PathBuf::from("/home/user/docs")),
+                left_history: history.clone(),
+                right_history: vec![std::path::PathBuf::from("/var")],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+
+        let text = toml::to_string(&session).expect("should serialize");
+        let rt: SessionState = toml::from_str(&text).expect("should deserialize");
+        assert_eq!(rt.workspaces[0].left_history, history);
+        assert_eq!(
+            rt.workspaces[0].right_history,
+            vec![std::path::PathBuf::from("/var")]
+        );
+    }
+
+    #[test]
+    fn empty_history_is_omitted_from_serialized_output() {
+        let session = SessionState {
+            workspaces: vec![WorkspaceSessionState::default()],
+            ..Default::default()
+        };
+        let text = toml::to_string(&session).expect("should serialize");
+        assert!(
+            !text.contains("left_history"),
+            "empty history should be omitted"
+        );
     }
 }

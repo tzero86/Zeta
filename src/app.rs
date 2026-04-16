@@ -111,6 +111,8 @@ impl App {
                         left_hidden: workspace.panes.left.show_hidden,
                         right_hidden: workspace.panes.right.show_hidden,
                         layout: Some(workspace.panes.pane_layout),
+                        left_history: workspace.panes.left.history_back.clone(),
+                        right_history: workspace.panes.right.history_back.clone(),
                     }
                 })
                 .collect(),
