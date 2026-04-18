@@ -41,7 +41,7 @@ pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
-pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout};
+pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
 
 #[derive(Debug)]
 struct PendingBatchOperation {
@@ -1544,24 +1544,77 @@ impl AppState {
                 entries,
                 elapsed_ms,
             } => {
+                // Detect whether this is a refresh of the pane's current directory
+                // or navigation to a new one. Checked before updating `cwd`.
+                let is_refresh =
+                    self.panes.pane(pane).cwd == path && !self.panes.pane(pane).entries.is_empty();
+                let is_local =
+                    !self.panes.pane(pane).in_archive() && !self.panes.pane(pane).in_remote();
+
                 self.panes.pane_mut(pane).cwd = path.clone();
-                let mut all_entries = entries;
-                if let Some(parent) = path.parent() {
-                    let parent_path: PathBuf = parent.to_path_buf();
-                    all_entries.insert(
-                        0,
-                        crate::fs::EntryInfo {
-                            name: String::from(".."),
-                            path: parent_path,
-                            kind: EntryKind::Directory,
-                            size_bytes: None,
-                            modified: None,
-                            link_target: None,
-                        },
-                    );
+
+                let cache_entries: Option<Vec<crate::fs::EntryInfo>> = if is_refresh {
+                    // Incremental update: compute diff against the current entry list.
+                    let old: Vec<crate::fs::EntryInfo> = self
+                        .panes
+                        .pane(pane)
+                        .entries
+                        .iter()
+                        .filter(|e| e.name != "..")
+                        .cloned()
+                        .collect();
+                    let diff = crate::fs::scan_diff::compute_scan_diff(&old, &entries);
+                    self.panes.pane_mut(pane).apply_scan_diff(diff);
+                    // `entries` is still owned here; re-use for cache.
+                    if is_local {
+                        Some(entries)
+                    } else {
+                        None
+                    }
+                } else {
+                    // Full replace (navigation to a new directory).
+                    let parent_entry = path.parent().map(|parent| crate::fs::EntryInfo {
+                        name: String::from(".."),
+                        path: parent.to_path_buf(),
+                        kind: EntryKind::Directory,
+                        size_bytes: None,
+                        modified: None,
+                        link_target: None,
+                    });
+                    let mut all_entries = Vec::with_capacity(entries.len() + 1);
+                    if let Some(pe) = parent_entry {
+                        all_entries.push(pe);
+                    }
+                    all_entries.extend_from_slice(&entries);
+                    let cache = if is_local {
+                        // Cache the raw entries without the ".." sentinel.
+                        Some(
+                            all_entries
+                                .iter()
+                                .filter(|e| e.name != "..")
+                                .cloned()
+                                .collect::<Vec<_>>(),
+                        )
+                    } else {
+                        None
+                    };
+                    self.panes.pane_mut(pane).set_entries(all_entries);
+                    self.panes.pane_mut(pane).refresh_filter();
+                    cache
+                };
+
+                // Update the scan cache for local, non-archive panes.
+                if let Some(raw_entries) = cache_entries {
+                    let dir_mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
+                    if let Some(dir_mtime) = dir_mtime {
+                        self.panes.pane_mut(pane).scan_cache = Some(crate::pane::ScanCache {
+                            path: path.clone(),
+                            dir_mtime,
+                            entries: raw_entries,
+                        });
+                    }
                 }
-                self.panes.pane_mut(pane).set_entries(all_entries);
-                self.panes.pane_mut(pane).refresh_filter();
+
                 if let Some((pending_pane, pending_path)) = self.pending_reveal.clone() {
                     if pending_pane == pane && pending_path.parent() == Some(path.as_path()) {
                         self.panes.pane_mut(pane).select_path(&pending_path);
@@ -2639,6 +2692,7 @@ mod tests {
             mark_anchor: None,
             details_view: false,
             rename_state: None,
+            scan_cache: None,
         }
     }
 
@@ -2930,6 +2984,7 @@ mod tests {
             mark_anchor: None,
             details_view: false,
             rename_state: None,
+            scan_cache: None,
         };
         let workspace0 = WorkspaceState::new(
             PaneSetState::new(pane_with_file("./note.txt"), right.clone()),

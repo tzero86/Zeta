@@ -163,8 +163,23 @@ impl PaneSetState {
             }
             Action::Refresh => {
                 let pane = self.focused_pane_id();
-                let path = self.active_pane().cwd.clone();
-                commands.push(Command::ScanPane { pane, path });
+                let active = self.active_pane();
+                let path = active.cwd.clone();
+                // Skip the background scan when:
+                //   (a) the pane is on a real local filesystem, AND
+                //   (b) we have a cached scan result, AND
+                //   (c) the directory's mtime has not changed since the scan.
+                // In all other cases we always re-scan.
+                let cache_hit = !active.in_archive()
+                    && !active.in_remote()
+                    && active
+                        .scan_cache
+                        .as_ref()
+                        .map(|c| c.is_fresh(&path))
+                        .unwrap_or(false);
+                if !cache_hit {
+                    commands.push(Command::ScanPane { pane, path });
+                }
             }
             Action::CycleSortMode => {
                 let pane = self.active_pane_mut();
@@ -237,6 +252,7 @@ impl PaneSetState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::action::Command;
     use crate::pane::PaneState;
 
     fn make_state() -> PaneSetState {
@@ -261,6 +277,62 @@ mod tests {
         s.focus = PaneFocus::Right;
         s.apply(&Action::FocusNextPane).unwrap();
         assert_eq!(s.focus, PaneFocus::Left);
+    }
+
+    #[test]
+    fn refresh_with_fresh_cache_skips_scan() {
+        // Create a real temp directory so mtime queries succeed.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().to_path_buf();
+        let mtime = std::fs::metadata(&path)
+            .expect("metadata")
+            .modified()
+            .expect("mtime");
+        let mut s = PaneSetState::new(
+            PaneState::empty("Left", path.clone()),
+            PaneState::empty("Right", std::env::temp_dir()),
+        );
+        s.left.scan_cache = Some(crate::pane::ScanCache {
+            path: path.clone(),
+            dir_mtime: mtime,
+            entries: vec![],
+        });
+        let cmds = s.apply(&Action::Refresh).unwrap();
+        let has_scan = cmds.iter().any(|c| matches!(c, Command::ScanPane { .. }));
+        assert!(!has_scan, "fresh cache should suppress ScanPane");
+    }
+
+    #[test]
+    fn refresh_with_stale_mtime_queues_scan() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().to_path_buf();
+        // Use UNIX_EPOCH as a deliberately wrong mtime.
+        let stale_mtime = std::time::UNIX_EPOCH;
+        let mut s = PaneSetState::new(
+            PaneState::empty("Left", path.clone()),
+            PaneState::empty("Right", std::env::temp_dir()),
+        );
+        s.left.scan_cache = Some(crate::pane::ScanCache {
+            path: path.clone(),
+            dir_mtime: stale_mtime,
+            entries: vec![],
+        });
+        let cmds = s.apply(&Action::Refresh).unwrap();
+        let has_scan = cmds.iter().any(|c| matches!(c, Command::ScanPane { .. }));
+        assert!(has_scan, "stale mtime should trigger ScanPane");
+    }
+
+    #[test]
+    fn refresh_with_no_cache_queues_scan() {
+        let cwd = std::env::temp_dir();
+        let mut s = PaneSetState::new(
+            PaneState::empty("Left", cwd.clone()),
+            PaneState::empty("Right", cwd),
+        );
+        assert!(s.left.scan_cache.is_none());
+        let cmds = s.apply(&Action::Refresh).unwrap();
+        let has_scan = cmds.iter().any(|c| matches!(c, Command::ScanPane { .. }));
+        assert!(has_scan, "missing cache should trigger ScanPane");
     }
 
     #[test]

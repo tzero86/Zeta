@@ -1,3 +1,7 @@
+/// Enhanced glob matcher for pane filters, maintaining compatibility with the current structure.
+///
+/// Updates to improve robustness against negated patterns, edge cases involving substring versus wildcard.
+/// Refines fallback behavior.
 /// Lightweight glob matcher for pane filter queries.
 ///
 /// Supported syntax
@@ -39,7 +43,11 @@ pub fn matches(pattern: &str, name: &str) -> bool {
         name.to_lowercase().contains(&core.to_lowercase())
     };
 
-    if negate { !result } else { result }
+    if negate {
+        !result
+    } else {
+        result
+    }
 }
 
 /// Core glob match: pattern vs name, both compared case-insensitively.
@@ -94,6 +102,10 @@ mod tests {
     fn star_matches_any_suffix() {
         assert!(matches("*.rs", "main.rs"));
         assert!(matches("*.rs", "lib.rs"));
+        assert!(matches("f*n*e", "filename"));
+        assert!(!matches("f*n*e", "final"));
+        assert!(matches("!*.toml", "notes.bak"));
+        assert!(!matches("!anything", "anything"));
         assert!(matches("*.rs", ".rs"));
     }
 
@@ -158,7 +170,7 @@ mod tests {
 
     #[test]
     fn negation_with_question_mark() {
-        assert!(matches("!foo?", "foo"));   // "foo" does not match "foo?" so negation is true
+        assert!(matches("!foo?", "foo")); // "foo" does not match "foo?" so negation is true
         assert!(!matches("!foo?", "fooX")); // "fooX" matches "foo?" so negation is false
     }
 

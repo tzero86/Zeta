@@ -1,4 +1,5 @@
 use crate::action::Action;
+use crate::fs::FileSystemError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +62,51 @@ pub enum ModalKind {
     SshTrustPrompt,
 }
 
+/// Structured application-level error type.
+///
+/// Wraps lower-level errors with a short context string so that user-facing
+/// messages can explain *what* the app was trying to do when the error
+/// occurred, not just what the OS says.
+///
+/// Use the constructor helpers rather than constructing variants directly.
+#[derive(Debug, thiserror::Error)]
+pub enum ZetaError {
+    #[error("{context}: {source}")]
+    Fs {
+        context: String,
+        source: FileSystemError,
+    },
+    #[error("{context}: {source}")]
+    Io {
+        context: String,
+        source: std::io::Error,
+    },
+    #[error("{message}")]
+    Other { message: String },
+}
+
+impl ZetaError {
+    pub fn fs(source: FileSystemError, context: impl Into<String>) -> Self {
+        Self::Fs {
+            context: context.into(),
+            source,
+        }
+    }
+
+    pub fn io(source: std::io::Error, context: impl Into<String>) -> Self {
+        Self::Io {
+            context: context.into(),
+            source,
+        }
+    }
+
+    pub fn other(message: impl Into<String>) -> Self {
+        Self::Other {
+            message: message.into(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +120,21 @@ mod tests {
     #[test]
     fn focus_layer_pane_is_default() {
         assert!(matches!(FocusLayer::default(), FocusLayer::Pane));
+    }
+
+    #[test]
+    fn zeta_error_fs_displays_context() {
+        let source = FileSystemError::Other {
+            message: "permission denied".into(),
+        };
+        let err = ZetaError::fs(source, "directory scan failed");
+        assert!(err.to_string().contains("directory scan failed"));
+        assert!(err.to_string().contains("permission denied"));
+    }
+
+    #[test]
+    fn zeta_error_other_displays_message() {
+        let err = ZetaError::other("something went wrong");
+        assert_eq!(err.to_string(), "something went wrong");
     }
 }

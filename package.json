@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@ifi/oh-pi": "^0.4.4"
+    "@ifi/oh-pi": "^0.4.4",
+    "oh-my-copilot": "^4.11.9"
   }
 }

@@ -317,31 +317,9 @@ impl App {
                         } else {
                             None
                         };
-                    let refresh_watch = matches!(&other, JobResult::DirectoryScanned { .. });
                     self.state.apply_job_result(other);
-                    if refresh_watch {
-                        self.sync_watched_paths()?;
-                    }
                     if let Some((workspace_id, pane)) = scanned_target {
-                        let pane_state = self.state.workspace(workspace_id).panes.pane(pane);
-                        if pane_state.details_view
-                            || matches!(
-                                pane_state.sort_mode,
-                                crate::pane::SortMode::Size | crate::pane::SortMode::SizeDesc
-                            )
-                        {
-                            for entry in &pane_state.entries {
-                                if entry.kind == crate::fs::EntryKind::Directory
-                                    && entry.name != ".."
-                                {
-                                    let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
-                                        workspace_id,
-                                        pane,
-                                        path: entry.path.clone(),
-                                    });
-                                }
-                            }
-                        }
+                        self.post_scan_completed(workspace_id, pane)?;
                     }
                 }
             },
@@ -376,6 +354,38 @@ impl App {
             .watch_tx
             .send(WatchRequest { paths, config_path })
             .context("failed to update watched directories")?;
+        Ok(())
+    }
+
+    /// Shared post-scan completion logic: update file-system watchers and
+    /// enqueue directory-size requests when in details view or size sort.
+    fn post_scan_completed(
+        &mut self,
+        workspace_id: usize,
+        pane: crate::pane::PaneId,
+    ) -> Result<()> {
+        self.sync_watched_paths()?;
+        let pane_state = self.state.workspace(workspace_id).panes.pane(pane);
+        if pane_state.details_view
+            || matches!(
+                pane_state.sort_mode,
+                crate::pane::SortMode::Size | crate::pane::SortMode::SizeDesc
+            )
+        {
+            let entries_snapshot: Vec<_> = pane_state
+                .entries
+                .iter()
+                .filter(|e| e.kind == crate::fs::EntryKind::Directory && e.name != "..")
+                .map(|e| e.path.clone())
+                .collect();
+            for path in entries_snapshot {
+                let _ = self.workers.dir_size_tx.try_send(DirSizeRequest {
+                    workspace_id,
+                    pane,
+                    path,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -526,22 +536,51 @@ impl App {
                         }))
                         .context("failed to queue SFTP scan job")?;
                 } else {
-                    self.workers
-                        .scan_tx
-                        .send(ScanRequest {
-                            workspace_id,
-                            pane,
-                            path: path.clone(),
-                        })
-                        .context("failed to queue background scan job")?;
-                    self.workers
-                        .git_tx
-                        .send(GitStatusRequest {
+                    // For local panes, serve from the scan cache when it is still
+                    // fresh (directory mtime unchanged).  Cloning the entries
+                    // inside the scoped block ends the immutable borrow before
+                    // any mutable state mutation happens below.
+                    let cached_entries = {
+                        let pane_state = self.state.panes.pane(pane);
+                        if !pane_state.in_archive() {
+                            pane_state
+                                .scan_cache
+                                .as_ref()
+                                .filter(|cache| cache.is_fresh(&path))
+                                .map(|cache| cache.entries.clone())
+                        } else {
+                            None
+                        }
+                    };
+
+                    if let Some(entries) = cached_entries {
+                        let result = JobResult::DirectoryScanned {
                             workspace_id,
                             pane,
                             path,
-                        })
-                        .context("failed to queue git status job")?;
+                            entries,
+                            elapsed_ms: 0,
+                        };
+                        self.state.apply_job_result(result);
+                        self.post_scan_completed(workspace_id, pane)?;
+                    } else {
+                        self.workers
+                            .scan_tx
+                            .send(ScanRequest {
+                                workspace_id,
+                                pane,
+                                path: path.clone(),
+                            })
+                            .context("failed to queue background scan job")?;
+                        self.workers
+                            .git_tx
+                            .send(GitStatusRequest {
+                                workspace_id,
+                                pane,
+                                path,
+                            })
+                            .context("failed to queue git status job")?;
+                    }
                 }
             }
             Command::FindFiles {

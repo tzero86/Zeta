@@ -1,6 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use crate::fs::{scan_directory, EntryInfo, EntryKind, FileSystemError};
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,36 @@ pub struct InlineRenameState {
     pub original_path: PathBuf,
 }
 
+/// Cached result of the last successful directory scan for one pane.
+///
+/// Held in `PaneState::scan_cache`. The cache is considered fresh when
+/// the directory's modification time has not changed since the scan.
+#[derive(Clone, Debug)]
+pub struct ScanCache {
+    /// The directory that was scanned.
+    pub path: PathBuf,
+    /// Modification time of `path` at scan time.
+    pub dir_mtime: SystemTime,
+    /// The raw entries returned by the scan (before ".." is prepended).
+    pub entries: Vec<crate::fs::EntryInfo>,
+}
+
+impl ScanCache {
+    /// Return `true` when the cached entries are still valid for `path`.
+    ///
+    /// Validity is defined as: the path matches AND the OS-reported
+    /// modification time of the directory equals the recorded mtime.
+    pub fn is_fresh(&self, path: &std::path::Path) -> bool {
+        if self.path != path {
+            return false;
+        }
+        std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .map(|mtime| mtime == self.dir_mtime)
+            .unwrap_or(false)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct PaneState {
     pub title: String,
@@ -100,6 +131,8 @@ pub struct PaneState {
     pub(crate) cache_filter_active: Cell<bool>,
     pub(crate) cache_filter_query: RefCell<String>,
     pub mode: PaneMode, // New: real fs or archive mode
+    /// Cached result of the last completed directory scan.
+    pub scan_cache: Option<ScanCache>,
 }
 
 impl PaneState {
@@ -139,6 +172,7 @@ impl PaneState {
             rename_state: None,
             history_back: Vec::new(),
             history_forward: Vec::new(),
+            scan_cache: None,
             filtered_indices: RefCell::new(Vec::new()),
             cache_dirty: Cell::new(true),
             cache_entry_count: Cell::new(0),
@@ -201,6 +235,45 @@ impl PaneState {
         self.marked.retain(|path| entry_paths.contains(path));
 
         self.clamp_selection();
+    }
+
+    /// Apply an incremental scan diff to the current entry list.
+    ///
+    /// - Removed entries are dropped (the `".."` sentinel is always kept).
+    /// - Modified entries are updated in place.
+    /// - Added entries are appended, respecting the `show_hidden` setting.
+    /// - Stale marks are purged for removed paths.
+    ///
+    /// Callers should pass raw entries (without `".."`) from
+    /// [`crate::fs::scan_diff::compute_scan_diff`].
+    pub fn apply_scan_diff(&mut self, diff: crate::fs::scan_diff::ScanDiff) {
+        if diff.is_empty() {
+            return;
+        }
+
+        let removed_paths: BTreeSet<&std::path::Path> =
+            diff.removed.iter().map(|e| e.path.as_path()).collect();
+
+        self.entries
+            .retain(|e| e.name == ".." || !removed_paths.contains(e.path.as_path()));
+
+        for removed in &diff.removed {
+            self.marked.remove(&removed.path);
+        }
+
+        for modified in &diff.modified {
+            if let Some(entry) = self.entries.iter_mut().find(|e| e.path == modified.path) {
+                *entry = modified.clone();
+            }
+        }
+
+        for added in diff.added {
+            if self.show_hidden || !added.name.starts_with('.') {
+                self.entries.push(added);
+            }
+        }
+
+        self.refresh_filter();
     }
 
     pub fn set_show_hidden(&mut self, show_hidden: bool) -> Result<(), FileSystemError> {
@@ -536,10 +609,7 @@ impl PaneState {
         if self.filter_active && !self.filter_query.is_empty() {
             // ".." is always visible even during filtering.
             rest_indices.retain(|&idx| {
-                crate::utils::glob_match::matches(
-                    &self.filter_query,
-                    &self.entries[idx].name,
-                )
+                crate::utils::glob_match::matches(&self.filter_query, &self.entries[idx].name)
             });
         }
 

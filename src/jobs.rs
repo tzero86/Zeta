@@ -438,7 +438,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                             pane: req.pane,
                             path: req.path,
                             file_op: None,
-                            message: err.to_string(),
+                            message: crate::state::ZetaError::fs(err, "directory scan failed")
+                                .to_string(),
                             elapsed_ms: started_at.elapsed().as_millis(),
                         },
                     };
@@ -1643,9 +1644,13 @@ fn run_file_operation(
                 return Err(JobResult::JobFailed {
                     workspace_id,
                     pane: target.pane,
-                    path: target.path,
+                    path: target.path.clone(),
                     file_op: Some(identity),
-                    message: error.to_string(),
+                    message: crate::state::ZetaError::fs(
+                        error,
+                        format!("post-op scan failed for {}", target.path.display()),
+                    )
+                    .to_string(),
                     elapsed_ms: started_at.elapsed().as_millis(),
                 });
             }
