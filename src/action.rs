@@ -539,6 +539,11 @@ impl Action {
             KeyCode::Char('r') if key_event.modifiers == KeyModifiers::NONE => {
                 Some(Self::BeginInlineRename)
             }
+            // Pane resize: '+' (Shift+=) grows left pane; '_' (Shift+-) shrinks it.
+            // Matched as plain characters so they work regardless of how terminals
+            // report the Shift modifier.
+            KeyCode::Char('+') => Some(Self::GrowLeftPane),
+            KeyCode::Char('_') => Some(Self::ShrinkLeftPane),
             _ => None,
         }
     }
