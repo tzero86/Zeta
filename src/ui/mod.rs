@@ -76,11 +76,16 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let panes_pct = 100 - tools_pct;
 
     let (main_content_area, terminal_area) = if state.terminal.is_open() {
-        let splits = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Percentage(30)])
-            .split(areas[1]);
-        (splits[0], Some(splits[1]))
+        if state.is_terminal_fullscreen() {
+            // Full content area goes to the terminal; panes/editor are hidden.
+            (Rect::default(), Some(areas[1]))
+        } else {
+            let splits = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(0), Constraint::Percentage(30)])
+                .split(areas[1]);
+            (splits[0], Some(splits[1]))
+        }
     } else {
         (areas[1], None)
     };
