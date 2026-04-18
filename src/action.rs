@@ -227,6 +227,20 @@ pub enum Action {
     FollowSymlink,
     /// Display the symlink's resolved target path in the status bar without navigating.
     ShowSymlinkTarget,
+    /// Shrink the left pane width by 5 percentage points (minimum 20%).
+    ShrinkLeftPane,
+    /// Grow the left pane width by 5 percentage points (maximum 80%).
+    GrowLeftPane,
+    /// Open the "open with" popup for the selected file.
+    OpenOpenWithMenu,
+    /// Move the selection up in the open-with menu.
+    OpenWithMoveUp,
+    /// Move the selection down in the open-with menu.
+    OpenWithMoveDown,
+    /// Confirm the current open-with selection and launch the program.
+    OpenWithConfirm,
+    /// Dismiss the open-with menu without opening anything.
+    CloseOpenWithMenu,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -582,6 +596,16 @@ impl Action {
         }
     }
 
+    pub fn from_open_with_key_event(key_event: KeyEvent) -> Option<Self> {
+        match key_event.code {
+            KeyCode::Esc => Some(Self::CloseOpenWithMenu),
+            KeyCode::Enter => Some(Self::OpenWithConfirm),
+            KeyCode::Up | KeyCode::Char('k') => Some(Self::OpenWithMoveUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(Self::OpenWithMoveDown),
+            _ => None,
+        }
+    }
+
     /// Keys when the active pane quick-filter is open. Consumes ALL input.
     pub fn from_pane_filter_key_event(key_event: KeyEvent) -> Option<Self> {
         match key_event.code {
@@ -763,6 +787,9 @@ impl Action {
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
+                KeyCode::Char('[') => Some(Self::ShrinkLeftPane),
+                KeyCode::Char(']') => Some(Self::GrowLeftPane),
+                KeyCode::Char('o') | KeyCode::Char('O') => Some(Self::OpenOpenWithMenu),
                 _ => None,
             };
         }

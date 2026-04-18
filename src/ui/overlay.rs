@@ -366,3 +366,59 @@ pub fn render_footer_hint(frame: &mut Frame<'_>, area: Rect, text: &str, palette
         area,
     );
 }
+
+/// Render the "Open With" context menu popup centred in `area`.
+pub fn render_open_with_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    items: &[(String, String)],
+    selection: usize,
+    palette: ThemePalette,
+) {
+    let max_name_len = items
+        .iter()
+        .map(|(n, _)| n.chars().count())
+        .max()
+        .unwrap_or(16)
+        .max(16);
+    let width = (max_name_len as u16 + 4).min(area.width);
+    let height = (items.len() as u16 + 2).min(area.height);
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    render_modal_backdrop(frame, area, popup_area, palette);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(Span::styled(" Open With ", overlay_title_style(palette)))
+        .borders(Borders::ALL)
+        .border_style(elevated_surface_style(palette));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let list_items: Vec<ListItem<'_>> = items
+        .iter()
+        .enumerate()
+        .map(|(i, (name, _))| {
+            let style = if i == selection {
+                Style::default()
+                    .bg(palette.selection_bg)
+                    .fg(palette.selection_fg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.text_primary)
+            };
+            ListItem::new(Span::styled(format!(" {name} "), style))
+        })
+        .collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(selection));
+    frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
+}

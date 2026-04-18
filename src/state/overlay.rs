@@ -36,6 +36,13 @@ pub enum ModalState {
         credential: String,
         pane: crate::pane::PaneId,
     },
+    /// Context menu for opening a file with a specific program.
+    OpenWith {
+        /// `(display_name, command)` — command is empty string for the OS default.
+        items: Vec<(String, String)>,
+        selection: usize,
+        target: std::path::PathBuf,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -178,6 +185,23 @@ impl OverlayState {
 
     pub fn is_ssh_trust_prompt(&self) -> bool {
         matches!(self.modal, Some(ModalState::SshTrustPrompt { .. }))
+    }
+
+    pub fn is_open_with(&self) -> bool {
+        matches!(self.modal, Some(ModalState::OpenWith { .. }))
+    }
+
+    /// Return the open-with menu state as `(items, selection, target)` if active.
+    #[allow(clippy::type_complexity)]
+    pub fn open_with(&self) -> Option<(&[(String, String)], usize, &std::path::Path)> {
+        match &self.modal {
+            Some(ModalState::OpenWith {
+                items,
+                selection,
+                target,
+            }) => Some((items.as_slice(), *selection, target.as_path())),
+            _ => None,
+        }
     }
 
     /// Open the SSH host-trust prompt with the pending connection parameters.

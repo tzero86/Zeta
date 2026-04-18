@@ -63,6 +63,51 @@ pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome 
     }
 }
 
+/// Produce a compact display of `path` for use in the pane title.
+///
+/// * Replaces the user's home directory prefix with `~`.
+/// * If the result is still longer than `max_chars`, abbreviates to `…/parent/leaf`.
+fn path_breadcrumb(path: &std::path::Path, max_chars: usize) -> String {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from);
+
+    let display = if let Some(ref home) = home {
+        if let Ok(rel) = path.strip_prefix(home) {
+            let rel_str = rel.display().to_string();
+            if rel_str.is_empty() {
+                String::from("~")
+            } else {
+                format!("~/{rel_str}")
+            }
+        } else {
+            path.display().to_string()
+        }
+    } else {
+        path.display().to_string()
+    };
+
+    if display.chars().count() <= max_chars {
+        return display;
+    }
+
+    let leaf = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let parent = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    if parent.is_empty() {
+        format!("…/{leaf}")
+    } else {
+        format!("…/{parent}/{leaf}")
+    }
+}
+
 pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) {
     let RenderPaneArgs {
         pane,
@@ -83,10 +128,13 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     } else {
         String::new()
     };
-    let cwd_display = if pane.in_remote() {
+    let cwd_breadcrumb: String;
+    let cwd_display: &str = if pane.in_remote() {
         pane.remote_address().unwrap_or("unknown")
     } else {
-        &pane.cwd.display().to_string()
+        let max_chars = (area.width as usize).saturating_sub(40).max(10);
+        cwd_breadcrumb = path_breadcrumb(&pane.cwd, max_chars);
+        &cwd_breadcrumb
     };
     let title = format!(
         "{} [{}]  {}{}{}  ({})",

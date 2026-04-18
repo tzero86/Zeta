@@ -57,6 +57,8 @@ pub struct AppConfig {
     pub editor: EditorConfig,
     #[serde(default)]
     pub terminal_open_by_default: bool,
+    #[serde(default)]
+    pub openers: Vec<OpenerConfig>,
 }
 
 impl Default for AppConfig {
@@ -71,7 +73,29 @@ impl Default for AppConfig {
             bookmarks: Vec::new(),
             editor: EditorConfig::default(),
             terminal_open_by_default: false,
+            openers: Vec::new(),
         }
+    }
+}
+
+/// A custom "open with" program entry defined in the user config.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OpenerConfig {
+    /// Display name shown in the open-with menu.
+    pub name: String,
+    /// Shell command to run. Use `{}` as a placeholder for the file path;
+    /// if absent, the path is appended as the last argument.
+    pub command: String,
+    /// File extensions this opener applies to (e.g. `["rs", "toml"]`).
+    /// An empty list means the opener matches every file type.
+    #[serde(default)]
+    pub extensions: Vec<String>,
+}
+
+impl OpenerConfig {
+    /// Return `true` if this opener applies to the given file extension.
+    pub fn matches_extension(&self, ext: &str) -> bool {
+        self.extensions.is_empty() || self.extensions.iter().any(|e| e.eq_ignore_ascii_case(ext))
     }
 }
 

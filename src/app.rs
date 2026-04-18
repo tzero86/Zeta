@@ -742,6 +742,7 @@ fn route_key_event(
             Action::from_settings_key_event(key_event, is_settings_rebinding)
         }
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
+        FocusLayer::Modal(ModalKind::OpenWith) => Action::from_open_with_key_event(key_event),
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshTrustPrompt) => Action::from_ssh_trust_key_event(key_event),

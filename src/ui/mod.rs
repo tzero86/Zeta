@@ -30,7 +30,8 @@ use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
-    menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup, render_prompt,
+    menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup,
+    render_open_with_popup, render_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -349,6 +350,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     }) = &state.overlay.modal
     {
         render_ssh_trust_prompt(frame, areas[1], host, *port, fingerprint, &palette);
+    }
+
+    if let Some((items, selection, _target)) = state.overlay.open_with() {
+        render_open_with_popup(frame, areas[1], items, selection, palette);
     }
 
     let status = Paragraph::new(Line::raw(state.status_line())).style(

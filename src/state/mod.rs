@@ -70,6 +70,8 @@ pub struct WorkspaceState {
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
     pending_collision: Option<CollisionState>,
+    /// Left pane width as a percentage of the content split (clamped to 20–80, default 50).
+    pane_split_ratio: u8,
     pub diff_mode: bool,
     pub diff_map: std::collections::HashMap<String, crate::diff::DiffStatus>,
     /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
@@ -92,6 +94,7 @@ impl WorkspaceState {
             pending_reveal: None,
             pending_collision: None,
             diff_mode: false,
+            pane_split_ratio: 50,
             diff_map: std::collections::HashMap::new(),
             pending_batch: None,
         }
@@ -686,6 +689,105 @@ impl AppState {
                         }
                     }
                 }
+            }
+            Action::ShrinkLeftPane => {
+                self.pane_split_ratio = self.pane_split_ratio.saturating_sub(5).max(20);
+                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+            }
+            Action::GrowLeftPane => {
+                self.pane_split_ratio = (self.pane_split_ratio + 5).min(80);
+                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+            }
+            Action::OpenOpenWithMenu => {
+                if let Some(path) = self.panes.active_pane().selected_path() {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let mut items: Vec<(String, String)> =
+                        vec![(String::from("Default App"), String::new())];
+                    for opener in &self.config.openers {
+                        if opener.matches_extension(&ext) {
+                            items.push((opener.name.clone(), opener.command.clone()));
+                        }
+                    }
+                    self.overlay.modal = Some(crate::state::overlay::ModalState::OpenWith {
+                        items,
+                        selection: 0,
+                        target: path,
+                    });
+                } else {
+                    self.status_message = String::from("no file selected");
+                }
+            }
+            Action::OpenWithMoveUp => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items, selection, ..
+                }) = &mut self.overlay.modal
+                {
+                    let len = items.len();
+                    if *selection == 0 {
+                        *selection = len.saturating_sub(1);
+                    } else {
+                        *selection -= 1;
+                    }
+                }
+            }
+            Action::OpenWithMoveDown => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items, selection, ..
+                }) = &mut self.overlay.modal
+                {
+                    let len = items.len();
+                    *selection = (*selection + 1) % len.max(1);
+                }
+            }
+            Action::OpenWithConfirm => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items,
+                    selection,
+                    target,
+                }) = self.overlay.modal.take()
+                {
+                    let idx = selection.min(items.len().saturating_sub(1));
+                    if let Some((name, command)) = items.into_iter().nth(idx) {
+                        let target_str = target.display().to_string();
+                        if command.is_empty() {
+                            match open::that(&target) {
+                                Ok(()) => {
+                                    self.status_message =
+                                        format!("opened {} with default app", target.display());
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("could not open file: {e}");
+                                }
+                            }
+                        } else {
+                            let expanded = if command.contains("{}") {
+                                command.replace("{}", &target_str)
+                            } else {
+                                format!("{command} {target_str}")
+                            };
+                            let mut parts = expanded.split_whitespace();
+                            if let Some(prog) = parts.next() {
+                                let args: Vec<&str> = parts.collect();
+                                match std::process::Command::new(prog).args(&args).spawn() {
+                                    Ok(_) => {
+                                        self.status_message =
+                                            format!("opened {} with {name}", target.display());
+                                    }
+                                    Err(e) => {
+                                        self.status_message = format!("could not open file: {e}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::CloseOpenWithMenu => {
+                self.overlay.close_all();
             }
             Action::ToggleDiffMode => {
                 self.diff_mode = !self.diff_mode;
@@ -2160,6 +2262,10 @@ impl AppState {
     pub fn is_terminal_fullscreen(&self) -> bool {
         self.terminal_fullscreen
     }
+
+    pub fn pane_split_ratio(&self) -> u8 {
+        self.pane_split_ratio
+    }
     pub fn is_settings_rebinding(&self) -> bool {
         matches!(
             &self.overlay.modal,
@@ -2201,6 +2307,9 @@ impl AppState {
         }
         if self.ssh_connect().is_some() {
             return FocusLayer::Modal(ModalKind::SshConnect);
+        }
+        if self.overlay.is_open_with() {
+            return FocusLayer::Modal(ModalKind::OpenWith);
         }
         if self.overlay.is_ssh_trust_prompt() {
             return FocusLayer::Modal(ModalKind::SshTrustPrompt);

@@ -60,6 +60,7 @@ pub enum ModalKind {
     FileFinder,
     SshConnect,
     SshTrustPrompt,
+    OpenWith,
 }
 
 /// Structured application-level error type.
