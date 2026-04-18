@@ -510,6 +510,11 @@ impl Action {
             KeyCode::Up if key_event.modifiers == KeyModifiers::SHIFT => {
                 Some(Self::ExtendSelectionUp)
             }
+            // Ctrl+J opens the GoTo prompt (Windows Terminal sometimes intercepts Ctrl+G).
+            // Must come before the unguarded Char('j') arm below.
+            KeyCode::Char('j') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenGoToPrompt)
+            }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
             KeyCode::Up | KeyCode::Char('k') => Some(Self::MoveSelectionUp),
             KeyCode::Char('o') if key_event.modifiers == KeyModifiers::NONE => {
@@ -794,8 +799,9 @@ impl Action {
                 KeyCode::Right => Some(Self::NavigateForward),
                 KeyCode::Char('o') | KeyCode::Char('O') => Some(Self::OpenOpenWithMenu),
                 // Alt+- shrinks left pane; Alt+= grows left pane.
+                // Crossterm reports Alt+= as Char('+') not Char('=').
                 KeyCode::Char('-') => Some(Self::ShrinkLeftPane),
-                KeyCode::Char('=') => Some(Self::GrowLeftPane),
+                KeyCode::Char('+') => Some(Self::GrowLeftPane),
                 _ => None,
             };
         }
@@ -804,6 +810,13 @@ impl Action {
         }
         if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::CycleFocus);
+        }
+        // Shift+Left / Shift+Right for pane resize (confirmed working via keytest).
+        if key_event.code == KeyCode::Left && key_event.modifiers == KeyModifiers::SHIFT {
+            return Some(Self::ShrinkLeftPane);
+        }
+        if key_event.code == KeyCode::Right && key_event.modifiers == KeyModifiers::SHIFT {
+            return Some(Self::GrowLeftPane);
         }
         if key_event.code == KeyCode::Char('r') && key_event.modifiers == KeyModifiers::NONE {
             return Some(Self::BeginInlineRename);
