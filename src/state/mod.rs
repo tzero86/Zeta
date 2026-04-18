@@ -64,6 +64,8 @@ pub struct WorkspaceState {
     /// Full-window editor mode hides the pane browser and lets the editor own
     /// the full content area.
     editor_fullscreen: bool,
+    /// When true, the terminal panel expands to fill the full content area.
+    terminal_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
@@ -85,6 +87,7 @@ impl WorkspaceState {
             last_scan_time_ms: None,
             file_operation_status: None,
             editor_fullscreen: false,
+            terminal_fullscreen: false,
             git: [None, None],
             pending_reveal: None,
             pending_collision: None,
@@ -311,7 +314,18 @@ impl AppState {
                 if !was_open && self.terminal.is_open() {
                     self.status_message = String::from("terminal opened");
                 } else if was_open && !self.terminal.is_open() {
+                    self.terminal_fullscreen = false;
                     self.status_message = String::from("terminal closed");
+                }
+            }
+            Action::ToggleTerminalFullscreen => {
+                if self.terminal.is_open() {
+                    self.terminal_fullscreen = !self.terminal_fullscreen;
+                    self.status_message = if self.terminal_fullscreen {
+                        String::from("terminal fullscreen enabled")
+                    } else {
+                        String::from("terminal fullscreen disabled")
+                    };
                 }
             }
             _ => {
@@ -997,6 +1011,35 @@ impl AppState {
                     self.status_message = String::from("no item selected to rename");
                 }
             }
+            Action::OpenGoToPrompt => {
+                let cwd = self.panes.active_pane().cwd.clone();
+                self.overlay
+                    .open_prompt(PromptState::new(PromptKind::GoTo, "Go to Path", cwd));
+                self.status_message = String::from("type an absolute or relative path");
+            }
+            Action::OpenBulkRenamePrompt => {
+                let marked: Vec<PathBuf> = {
+                    let m = &self.panes.active_pane().marked;
+                    let mut v: Vec<PathBuf> = m.iter().cloned().collect();
+                    v.sort();
+                    v
+                };
+                if marked.is_empty() {
+                    self.status_message =
+                        String::from("mark files first (Space), then Ctrl+R to bulk rename");
+                } else {
+                    let count = marked.len();
+                    let cwd = self.panes.active_pane().cwd.clone();
+                    let mut prompt = PromptState::new(
+                        PromptKind::BulkRename,
+                        "Bulk Rename — pattern: {n} {name} {ext}",
+                        cwd,
+                    );
+                    prompt.source_paths = marked;
+                    self.overlay.open_prompt(prompt);
+                    self.status_message = format!("{count} files marked — enter rename pattern");
+                }
+            }
             Action::PromptSubmit => {
                 if let Some(ModalState::Prompt(prompt)) = &self.overlay.modal {
                     let prompt = prompt.clone();
@@ -1007,65 +1050,28 @@ impl AppState {
                         if !prompt.source_paths.is_empty() {
                             let kind = prompt.kind;
                             let value = prompt.value.trim().to_string();
-                            let dest_dir = {
-                                let p = PathBuf::from(&value);
-                                if p.is_absolute() {
-                                    p
-                                } else {
-                                    prompt.base_path.join(p)
-                                }
-                            };
                             let count = prompt.source_paths.len();
                             let batch_sources: BTreeSet<PathBuf> =
                                 prompt.source_paths.iter().cloned().collect();
                             let mut pending_operations = Vec::with_capacity(count);
-                            for source in &prompt.source_paths {
-                                let (operation, refresh_path) = match kind {
-                                    PromptKind::Copy => {
-                                        let target_path = source
-                                            .file_name()
-                                            .map(|n| dest_dir.join(n))
-                                            .unwrap_or_else(|| dest_dir.clone());
-                                        let copy_target =
-                                            if Self::archive_member_source(source).is_some() {
-                                                dest_dir.clone()
-                                            } else {
-                                                target_path.clone()
-                                            };
-                                        let operation =
-                                            self.copy_operation_for_source(source, &copy_target);
-                                        let refresh_path = self
-                                            .refresh_target_path_for_transfer(source, &copy_target);
-                                        (Some(operation), refresh_path)
-                                    }
-                                    PromptKind::Move => {
-                                        let target_path = source
-                                            .file_name()
-                                            .map(|n| dest_dir.join(n))
-                                            .unwrap_or_else(|| dest_dir.clone());
-                                        let operation = FileOperation::Move {
-                                            source: source.clone(),
-                                            destination: target_path.clone(),
-                                        };
-                                        let refresh_path = self
-                                            .refresh_target_path_for_transfer(source, &target_path);
-                                        (Some(operation), refresh_path)
-                                    }
-                                    PromptKind::Trash => (
-                                        Some(FileOperation::Trash {
-                                            path: source.clone(),
-                                        }),
-                                        self.panes.active_pane().cwd.clone(),
-                                    ),
-                                    PromptKind::Delete => (
-                                        Some(FileOperation::Delete {
-                                            path: source.clone(),
-                                        }),
-                                        self.panes.active_pane().cwd.clone(),
-                                    ),
-                                    _ => (None, self.panes.active_pane().cwd.clone()),
-                                };
-                                if let Some(op) = operation {
+
+                            if kind == PromptKind::BulkRename {
+                                // Generate one Rename operation per marked file.
+                                for (idx, source) in prompt.source_paths.iter().enumerate() {
+                                    let new_name =
+                                        Self::apply_rename_pattern(&value, source, idx + 1);
+                                    let destination = source
+                                        .parent()
+                                        .map(|p| p.join(&new_name))
+                                        .unwrap_or_else(|| PathBuf::from(&new_name));
+                                    let refresh_path = source
+                                        .parent()
+                                        .map(Path::to_path_buf)
+                                        .unwrap_or_else(|| self.panes.active_pane().cwd.clone());
+                                    let op = FileOperation::Rename {
+                                        source: source.clone(),
+                                        destination,
+                                    };
                                     pending_operations
                                         .push(FileOperationIdentity::from_operation(&op));
                                     commands.push(Command::RunFileOperation {
@@ -1075,112 +1081,227 @@ impl AppState {
                                         collision: CollisionPolicy::Fail,
                                     });
                                 }
-                            }
-                            self.pending_batch = Some(PendingBatchOperation {
-                                pane: self.panes.focused_pane_id(),
-                                pending_operations,
-                                original_sources: batch_sources,
-                                failed_sources: BTreeSet::new(),
-                                total_count: count,
-                            });
-                            self.overlay.close_all();
-                            self.status_message = match kind {
-                                PromptKind::Copy => format!("copying {count} items"),
-                                PromptKind::Move => format!("moving {count} items"),
-                                PromptKind::Trash => format!("trashing {count} items"),
-                                PromptKind::Delete => {
-                                    format!("deleting {count} items permanently")
+                                self.pending_batch = Some(PendingBatchOperation {
+                                    pane: self.panes.focused_pane_id(),
+                                    pending_operations,
+                                    original_sources: batch_sources,
+                                    failed_sources: BTreeSet::new(),
+                                    total_count: count,
+                                });
+                                self.overlay.close_all();
+                                self.status_message = format!("renaming {count} items");
+                            } else {
+                                let dest_dir = {
+                                    let p = PathBuf::from(&value);
+                                    if p.is_absolute() {
+                                        p
+                                    } else {
+                                        prompt.base_path.join(p)
+                                    }
+                                };
+                                for source in &prompt.source_paths {
+                                    let (operation, refresh_path) = match kind {
+                                        PromptKind::Copy => {
+                                            let target_path = source
+                                                .file_name()
+                                                .map(|n| dest_dir.join(n))
+                                                .unwrap_or_else(|| dest_dir.clone());
+                                            let copy_target =
+                                                if Self::archive_member_source(source).is_some() {
+                                                    dest_dir.clone()
+                                                } else {
+                                                    target_path.clone()
+                                                };
+                                            let operation = self
+                                                .copy_operation_for_source(source, &copy_target);
+                                            let refresh_path = self
+                                                .refresh_target_path_for_transfer(
+                                                    source,
+                                                    &copy_target,
+                                                );
+                                            (Some(operation), refresh_path)
+                                        }
+                                        PromptKind::Move => {
+                                            let target_path = source
+                                                .file_name()
+                                                .map(|n| dest_dir.join(n))
+                                                .unwrap_or_else(|| dest_dir.clone());
+                                            let operation = FileOperation::Move {
+                                                source: source.clone(),
+                                                destination: target_path.clone(),
+                                            };
+                                            let refresh_path = self
+                                                .refresh_target_path_for_transfer(
+                                                    source,
+                                                    &target_path,
+                                                );
+                                            (Some(operation), refresh_path)
+                                        }
+                                        PromptKind::Trash => (
+                                            Some(FileOperation::Trash {
+                                                path: source.clone(),
+                                            }),
+                                            self.panes.active_pane().cwd.clone(),
+                                        ),
+                                        PromptKind::Delete => (
+                                            Some(FileOperation::Delete {
+                                                path: source.clone(),
+                                            }),
+                                            self.panes.active_pane().cwd.clone(),
+                                        ),
+                                        _ => (None, self.panes.active_pane().cwd.clone()),
+                                    };
+                                    if let Some(op) = operation {
+                                        pending_operations
+                                            .push(FileOperationIdentity::from_operation(&op));
+                                        commands.push(Command::RunFileOperation {
+                                            operation: op,
+                                            refresh: self
+                                                .refresh_targets_for_prompt(kind, &refresh_path),
+                                            collision: CollisionPolicy::Fail,
+                                        });
+                                    }
                                 }
-                                _ => String::from("processing items"),
-                            };
+                                self.pending_batch = Some(PendingBatchOperation {
+                                    pane: self.panes.focused_pane_id(),
+                                    pending_operations,
+                                    original_sources: batch_sources,
+                                    failed_sources: BTreeSet::new(),
+                                    total_count: count,
+                                });
+                                self.overlay.close_all();
+                                self.status_message = match kind {
+                                    PromptKind::Copy => format!("copying {count} items"),
+                                    PromptKind::Move => format!("moving {count} items"),
+                                    PromptKind::Trash => format!("trashing {count} items"),
+                                    PromptKind::Delete => {
+                                        format!("deleting {count} items permanently")
+                                    }
+                                    _ => String::from("processing items"),
+                                };
+                            } // end else (non-BulkRename batch)
                         } else {
                             let kind = prompt.kind;
                             let value = prompt.value.trim().to_string();
-                            let target_path = resolve_prompt_target(&prompt, &value);
-                            let operation = match kind {
-                                PromptKind::Copy => prompt
-                                    .source_path
-                                    .as_ref()
-                                    .map(|s| self.copy_operation_for_source(s, &target_path)),
-
-                                PromptKind::Trash => prompt
-                                    .source_path
-                                    .as_ref()
-                                    .map(|p| FileOperation::Trash { path: p.clone() }),
-                                PromptKind::Delete => prompt
-                                    .source_path
-                                    .as_ref()
-                                    .map(|p| FileOperation::Delete { path: p.clone() }),
-                                PromptKind::Move => {
-                                    prompt.source_path.as_ref().map(|s| FileOperation::Move {
-                                        source: s.clone(),
-                                        destination: target_path.clone(),
-                                    })
+                            // GoTo: navigate the active pane to the typed directory.
+                            if kind == PromptKind::GoTo {
+                                let target = resolve_prompt_target(&prompt, &value);
+                                if target.is_dir() {
+                                    let pane = self.panes.focused_pane_id();
+                                    commands.push(Command::ScanPane {
+                                        pane,
+                                        path: target.clone(),
+                                    });
+                                    self.status_message =
+                                        format!("navigated to {}", target.display());
+                                    self.overlay.close_all();
+                                } else {
+                                    self.status_message = format!("not a directory: {value}");
                                 }
-                                PromptKind::NewDirectory => Some(FileOperation::CreateDirectory {
-                                    path: target_path.clone(),
-                                }),
-                                PromptKind::NewFile => Some(FileOperation::CreateFile {
-                                    path: target_path.clone(),
-                                }),
-                                PromptKind::Rename => prompt.source_path.as_ref().and_then(|s| {
-                                    match Self::validate_rename_target(s, &value) {
-                                        Err(msg) => {
-                                            self.status_message = msg;
-                                            None
-                                        }
-                                        Ok(None) => {
-                                            self.status_message = String::from("rename unchanged");
-                                            None
-                                        }
-                                        Ok(Some(destination)) => Some(FileOperation::Rename {
-                                            source: s.clone(),
-                                            destination,
-                                        }),
-                                    }
-                                }),
-                            };
-                            let should_close_overlay = if let Some(operation) = operation {
-                                let refresh_path = match &operation {
-                                    FileOperation::Copy {
-                                        source,
-                                        destination,
-                                    }
-                                    | FileOperation::Move {
-                                        source,
-                                        destination,
-                                    } => self.refresh_target_path_for_transfer(source, destination),
-                                    FileOperation::ExtractArchive { destination, .. } => {
-                                        destination.clone()
-                                    }
-                                    _ => target_path.clone(),
-                                };
-                                let refresh = self.refresh_targets_for_prompt(kind, &refresh_path);
-                                commands.push(Command::RunFileOperation {
-                                    operation,
-                                    refresh,
-                                    collision: CollisionPolicy::Fail,
-                                });
-                                self.status_message = match kind {
-                                    PromptKind::Copy => String::from("copying item"),
-                                    PromptKind::Trash => String::from("moving item to trash"),
-                                    PromptKind::Delete => String::from("deleting item permanently"),
-                                    PromptKind::Move => String::from("moving item"),
-                                    PromptKind::NewDirectory => String::from("creating directory"),
-                                    PromptKind::NewFile => String::from("creating file"),
-                                    PromptKind::Rename => String::from("renaming item"),
-                                };
-                                true
-                            } else if !(matches!(kind, PromptKind::Rename)
-                                && prompt.source_path.is_some())
-                            {
-                                self.status_message = String::from("missing source for operation");
-                                true
                             } else {
-                                false
-                            };
-                            if should_close_overlay {
-                                self.overlay.close_all();
+                                let target_path = resolve_prompt_target(&prompt, &value);
+                                let operation = match kind {
+                                    PromptKind::Copy => prompt
+                                        .source_path
+                                        .as_ref()
+                                        .map(|s| self.copy_operation_for_source(s, &target_path)),
+
+                                    PromptKind::Trash => prompt
+                                        .source_path
+                                        .as_ref()
+                                        .map(|p| FileOperation::Trash { path: p.clone() }),
+                                    PromptKind::Delete => prompt
+                                        .source_path
+                                        .as_ref()
+                                        .map(|p| FileOperation::Delete { path: p.clone() }),
+                                    PromptKind::Move => {
+                                        prompt.source_path.as_ref().map(|s| FileOperation::Move {
+                                            source: s.clone(),
+                                            destination: target_path.clone(),
+                                        })
+                                    }
+                                    PromptKind::NewDirectory => {
+                                        Some(FileOperation::CreateDirectory {
+                                            path: target_path.clone(),
+                                        })
+                                    }
+                                    PromptKind::NewFile => Some(FileOperation::CreateFile {
+                                        path: target_path.clone(),
+                                    }),
+                                    PromptKind::Rename => {
+                                        prompt.source_path.as_ref().and_then(|s| {
+                                            match Self::validate_rename_target(s, &value) {
+                                                Err(msg) => {
+                                                    self.status_message = msg;
+                                                    None
+                                                }
+                                                Ok(None) => {
+                                                    self.status_message =
+                                                        String::from("rename unchanged");
+                                                    None
+                                                }
+                                                Ok(Some(destination)) => {
+                                                    Some(FileOperation::Rename {
+                                                        source: s.clone(),
+                                                        destination,
+                                                    })
+                                                }
+                                            }
+                                        })
+                                    }
+                                    // GoTo handled above; BulkRename only applies in batch mode.
+                                    PromptKind::GoTo | PromptKind::BulkRename => None,
+                                };
+                                let should_close_overlay = if let Some(operation) = operation {
+                                    let refresh_path = match &operation {
+                                        FileOperation::Copy {
+                                            source,
+                                            destination,
+                                        }
+                                        | FileOperation::Move {
+                                            source,
+                                            destination,
+                                        } => self
+                                            .refresh_target_path_for_transfer(source, destination),
+                                        FileOperation::ExtractArchive { destination, .. } => {
+                                            destination.clone()
+                                        }
+                                        _ => target_path.clone(),
+                                    };
+                                    let refresh =
+                                        self.refresh_targets_for_prompt(kind, &refresh_path);
+                                    commands.push(Command::RunFileOperation {
+                                        operation,
+                                        refresh,
+                                        collision: CollisionPolicy::Fail,
+                                    });
+                                    self.status_message = match kind {
+                                        PromptKind::Copy => String::from("copying item"),
+                                        PromptKind::Trash => String::from("moving item to trash"),
+                                        PromptKind::Delete => {
+                                            String::from("deleting item permanently")
+                                        }
+                                        PromptKind::Move => String::from("moving item"),
+                                        PromptKind::NewDirectory => {
+                                            String::from("creating directory")
+                                        }
+                                        PromptKind::NewFile => String::from("creating file"),
+                                        PromptKind::Rename => String::from("renaming item"),
+                                        PromptKind::GoTo | PromptKind::BulkRename => String::new(),
+                                    };
+                                    true
+                                } else if !(matches!(kind, PromptKind::Rename)
+                                    && prompt.source_path.is_some())
+                                {
+                                    self.status_message =
+                                        String::from("missing source for operation");
+                                    true
+                                } else {
+                                    false
+                                };
+                                if should_close_overlay {
+                                    self.overlay.close_all();
+                                }
                             }
                         } // end single-file path
                     }
@@ -1806,6 +1927,7 @@ impl AppState {
             } => {
                 if spawn_id == self.terminal.spawn_id {
                     self.terminal.close();
+                    self.terminal_fullscreen = false;
                     self.status_message = String::from("terminal session ended");
                 }
             }
@@ -2034,6 +2156,10 @@ impl AppState {
     pub fn is_editor_fullscreen(&self) -> bool {
         self.editor_fullscreen
     }
+
+    pub fn is_terminal_fullscreen(&self) -> bool {
+        self.terminal_fullscreen
+    }
     pub fn is_settings_rebinding(&self) -> bool {
         matches!(
             &self.overlay.modal,
@@ -2253,8 +2379,46 @@ impl AppState {
             .last_scan_time_ms
             .map(|value| format!("scan:{value}ms"))
             .unwrap_or_else(|| String::from("scan:-"));
+
+        // Selected entry detail: permissions (unix) + human-readable size.
+        let entry_detail = self
+            .panes
+            .active_pane()
+            .selected_entry()
+            .map(|e| {
+                let size_str = e.size_bytes.map(format_file_size).unwrap_or_default();
+                #[cfg(unix)]
+                let perms = format_permissions_unix(&e.path);
+                #[cfg(not(unix))]
+                let perms = String::new();
+                match (perms.is_empty(), size_str.is_empty()) {
+                    (true, true) => String::new(),
+                    (true, false) => format!(" {size_str}"),
+                    (false, true) => format!(" {perms}"),
+                    (false, false) => format!(" {perms} {size_str}"),
+                }
+            })
+            .unwrap_or_default();
+
         let marks = if mark_count > 0 {
-            format!(" | marks:{mark_count}")
+            let total_bytes: u64 = {
+                let pane = self.panes.active_pane();
+                pane.marked
+                    .iter()
+                    .filter_map(|path| {
+                        pane.entries
+                            .iter()
+                            .find(|e| &e.path == path)
+                            .and_then(|e| e.size_bytes)
+                    })
+                    .sum()
+            };
+            let size_suffix = if total_bytes > 0 {
+                format!(" ({})", format_file_size(total_bytes))
+            } else {
+                String::new()
+            };
+            format!(" | {mark_count} marked{size_suffix}")
         } else {
             String::new()
         };
@@ -2288,7 +2452,7 @@ impl AppState {
             self.workspace_count()
         );
         format!(
-            "{} | {} | {}{} | {} | up:{}ms {}{}{} | d:{}",
+            "{} | {} | {}{} | {} | up:{}ms {}{}{}{} | d:{}",
             self.config.theme.status_bar_label,
             workspace,
             self.status_message,
@@ -2298,6 +2462,7 @@ impl AppState {
             scan,
             marks,
             progress,
+            entry_detail,
             self.redraw_count
         )
     }
@@ -2492,6 +2657,24 @@ impl AppState {
         Ok(Some(parent.join(name)))
     }
 
+    /// Apply a bulk-rename pattern to a single source path.
+    ///
+    /// Supported substitutions:
+    /// - `{n}` — 1-based index within the batch
+    /// - `{name}` — filename stem (without extension)
+    /// - `{ext}` — file extension (without the leading dot), empty for files with no extension
+    fn apply_rename_pattern(pattern: &str, source: &Path, index: usize) -> String {
+        let stem = source
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("file");
+        let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("");
+        pattern
+            .replace("{n}", &index.to_string())
+            .replace("{name}", stem)
+            .replace("{ext}", ext)
+    }
+
     fn note_batch_settled(&mut self, identity: &FileOperationIdentity, failed: bool) {
         let mut finalize: Option<(PaneId, BTreeSet<PathBuf>, BTreeSet<PathBuf>, usize)> = None;
         if let Some(batch) = self.pending_batch.as_mut() {
@@ -2640,6 +2823,56 @@ impl DerefMut for AppState {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.active_workspace_mut()
     }
+}
+
+/// Format a byte count as a human-readable string (B / K / M / G).
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if bytes >= GB {
+        format!("{:.1}G", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1}M", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1}K", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes}B")
+    }
+}
+
+/// Return a Unix-style permission string (e.g. `drwxr-xr-x`) for the given path.
+/// Returns an empty string on non-unix platforms or if metadata cannot be read.
+#[cfg(unix)]
+fn format_permissions_unix(path: &std::path::Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(meta) = std::fs::symlink_metadata(path) else {
+        return String::new();
+    };
+    let mode = meta.permissions().mode();
+    let bit = |mask: u32, c: char| if mode & mask != 0 { c } else { '-' };
+    let type_char = match mode & 0o170_000 {
+        0o040_000 => 'd',
+        0o120_000 => 'l',
+        0o060_000 => 'b',
+        0o020_000 => 'c',
+        0o010_000 => 'p',
+        0o140_000 => 's',
+        _ => '-',
+    };
+    format!(
+        "{}{}{}{}{}{}{}{}{}{}",
+        type_char,
+        bit(0o400, 'r'),
+        bit(0o200, 'w'),
+        bit(0o100, 'x'),
+        bit(0o040, 'r'),
+        bit(0o020, 'w'),
+        bit(0o010, 'x'),
+        bit(0o004, 'r'),
+        bit(0o002, 'w'),
+        bit(0o001, 'x'),
+    )
 }
 
 #[cfg(test)]
@@ -3619,7 +3852,7 @@ mod tests {
 
         let status = state.status_line();
 
-        assert!(status.contains("marks:1"));
+        assert!(status.contains("1 marked"));
     }
 
     #[test]

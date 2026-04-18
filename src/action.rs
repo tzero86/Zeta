@@ -114,6 +114,10 @@ pub enum Action {
     InlineRenameType(char),
     /// Delete the last character from the inline rename buffer.
     InlineRenameBackspace,
+    /// Navigate the active pane to a user-typed path (Ctrl+G).
+    OpenGoToPrompt,
+    /// Bulk rename all marked files using a pattern (Ctrl+R when marks exist).
+    OpenBulkRenamePrompt,
     OpenSelectedInEditor,
     OpenSettingsPanel,
     PreviewFile {
@@ -132,6 +136,7 @@ pub enum Action {
     ToggleHiddenFiles,
     TogglePreviewPanel,
     ToggleEditorFullscreen,
+    ToggleTerminalFullscreen,
     ToggleMarkdownPreview,
     FocusMarkdownPreview,
     ScrollMarkdownPreviewUp,
@@ -510,6 +515,12 @@ impl Action {
             KeyCode::Char('l') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::ToggleDetailsView)
             }
+            KeyCode::Char('g') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenGoToPrompt)
+            }
+            KeyCode::Char('r') if key_event.modifiers == KeyModifiers::CONTROL => {
+                Some(Self::OpenBulkRenamePrompt)
+            }
             // 'r' for inline rename (intuitive, not otherwise bound in pane context).
             KeyCode::Char('r') if key_event.modifiers == KeyModifiers::NONE => {
                 Some(Self::BeginInlineRename)
@@ -624,6 +635,11 @@ impl Action {
                 && key_event.modifiers == KeyModifiers::CONTROL)
         {
             return Some(Self::ToggleTerminal);
+        }
+
+        // F11 toggles the terminal panel into/out of fullscreen.
+        if key_event.code == KeyCode::F(11) {
+            return Some(Self::ToggleTerminalFullscreen);
         }
 
         // Map some common keys to terminal sequences

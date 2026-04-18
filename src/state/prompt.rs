@@ -10,6 +10,10 @@ pub enum PromptKind {
     NewDirectory,
     NewFile,
     Rename,
+    /// Navigate the active pane to a typed path.
+    GoTo,
+    /// Rename all marked files using a pattern ({n}, {name}, {ext}).
+    BulkRename,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
