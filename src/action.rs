@@ -788,6 +788,9 @@ impl Action {
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
                 KeyCode::Char('o') | KeyCode::Char('O') => Some(Self::OpenOpenWithMenu),
+                // Alt+- shrinks left pane; Alt+= grows left pane.
+                KeyCode::Char('-') => Some(Self::ShrinkLeftPane),
+                KeyCode::Char('=') => Some(Self::GrowLeftPane),
                 _ => None,
             };
         }
@@ -796,12 +799,6 @@ impl Action {
         }
         if key_event.code == KeyCode::Char('w') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::CycleFocus);
-        }
-        if key_event.code == KeyCode::Left && key_event.modifiers == KeyModifiers::SHIFT {
-            return Some(Self::ShrinkLeftPane);
-        }
-        if key_event.code == KeyCode::Right && key_event.modifiers == KeyModifiers::SHIFT {
-            return Some(Self::GrowLeftPane);
         }
         if key_event.code == KeyCode::Char('r') && key_event.modifiers == KeyModifiers::NONE {
             return Some(Self::BeginInlineRename);
