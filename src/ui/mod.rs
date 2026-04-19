@@ -118,9 +118,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut markdown_preview_panel_rect = None;
 
     if !editor_fullscreen {
+        let ratio = state.pane_split_ratio() as u16;
         let panes = Layout::default()
             .direction(pane_direction)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .constraints([Constraint::Percentage(ratio), Constraint::Percentage(100 - ratio)])
             .split(pane_area);
 
         left_pane_rect = panes[0];
