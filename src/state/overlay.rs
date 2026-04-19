@@ -1,4 +1,6 @@
 use anyhow::Result;
+use crossterm::event::Event;
+use tui_input::backend::crossterm::EventHandler;
 
 use crate::action::{Action, CollisionPolicy, Command, MenuId};
 use crate::finder::FileFinderState;
@@ -45,10 +47,19 @@ pub enum ModalState {
     },
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct OverlayState {
     pub modal: Option<ModalState>,
-    pub editor_menu_mode: bool,
+    pub menu_context: crate::state::menu::MenuContext,
+}
+
+impl Default for OverlayState {
+    fn default() -> Self {
+        Self {
+            modal: None,
+            menu_context: crate::state::menu::MenuContext::Pane,
+        }
+    }
 }
 
 impl OverlayState {
@@ -77,13 +88,22 @@ impl OverlayState {
 
     pub fn menu_items(&self) -> Vec<MenuItem> {
         match &self.modal {
-            Some(ModalState::Menu { id, .. }) => menu_items_for(*id, self.editor_menu_mode),
+            Some(ModalState::Menu { id, .. }) => menu_items_for(*id, self.menu_context),
             _ => vec![],
         }
     }
 
+    pub fn set_menu_context(&mut self, ctx: crate::state::menu::MenuContext) {
+        self.menu_context = ctx;
+    }
+
+    /// Legacy helper kept for compatibility — sets context to Editor or Pane.
     pub fn set_editor_menu_mode(&mut self, enabled: bool) {
-        self.editor_menu_mode = enabled;
+        self.menu_context = if enabled {
+            crate::state::menu::MenuContext::Editor
+        } else {
+            crate::state::menu::MenuContext::Pane
+        };
     }
 
     pub fn prompt(&self) -> Option<&PromptState> {
@@ -355,8 +375,7 @@ impl OverlayState {
                 if let Some(ModalState::Menu { id, selection }) = &self.modal {
                     let id = *id;
                     let sel = *selection;
-                    if let Some(item) = menu_items_for(id, self.editor_menu_mode).get(sel).cloned()
-                    {
+                    if let Some(item) = menu_items_for(id, self.menu_context).get(sel).cloned() {
                         self.close_all();
                         commands.push(Command::DispatchAction(item.action.clone()));
                     }
@@ -365,7 +384,7 @@ impl OverlayState {
             Action::MenuClickItem(index) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;
-                    let items = menu_items_for(id, self.editor_menu_mode);
+                    let items = menu_items_for(id, self.menu_context);
                     if *index < items.len() {
                         let item = items[*index].clone();
                         self.close_all();
@@ -381,7 +400,7 @@ impl OverlayState {
             Action::MenuMnemonic(ch) => {
                 if let Some(ModalState::Menu { id, .. }) = &self.modal {
                     let id = *id;
-                    if let Some(item) = menu_items_for(id, self.editor_menu_mode)
+                    if let Some(item) = menu_items_for(id, self.menu_context)
                         .into_iter()
                         .find(|item| item.mnemonic.eq_ignore_ascii_case(ch))
                     {
@@ -392,7 +411,7 @@ impl OverlayState {
             }
             Action::MenuMoveDown => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    let len = menu_items_for(*id, self.editor_menu_mode).len();
+                    let len = menu_items_for(*id, self.menu_context).len();
                     if len > 0 {
                         *selection = (*selection + 1).min(len.saturating_sub(1));
                     }
@@ -405,7 +424,7 @@ impl OverlayState {
             }
             Action::MenuNext => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    let tabs = crate::state::menu::menu_tabs(self.editor_menu_mode);
+                    let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + 1) % tabs.len()].id;
                     }
@@ -414,7 +433,7 @@ impl OverlayState {
             }
             Action::MenuPrevious => {
                 if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    let tabs = crate::state::menu::menu_tabs(self.editor_menu_mode);
+                    let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + tabs.len() - 1) % tabs.len()].id;
                     }
@@ -437,21 +456,39 @@ impl OverlayState {
 
             // ── Prompt input ─────────────────────────────────────────────────
             Action::PromptBackspace => {
+                // Legacy variant — kept so existing tests compile.
+                // Routes through tui-input for consistent cursor handling.
                 if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
                     if !p.kind.is_confirmation_only() {
-                        p.value.pop();
+                        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+                        p.input.handle_event(&Event::Key(KeyEvent::new(
+                            KeyCode::Backspace,
+                            KeyModifiers::NONE,
+                        )));
+                    }
+                }
+            }
+            Action::PromptInput(ch) => {
+                // Legacy variant — kept so existing tests compile.
+                if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
+                    if !p.kind.is_confirmation_only() {
+                        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+                        p.input.handle_event(&Event::Key(KeyEvent::new(
+                            KeyCode::Char(*ch),
+                            KeyModifiers::NONE,
+                        )));
+                    }
+                }
+            }
+            Action::PromptKey(key_event) => {
+                if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
+                    if !p.kind.is_confirmation_only() {
+                        p.input.handle_event(&Event::Key(*key_event));
                     }
                 }
             }
             Action::PromptCancel => {
                 self.close_all();
-            }
-            Action::PromptInput(ch) => {
-                if let Some(ModalState::Prompt(p)) = self.modal.as_mut() {
-                    if !p.kind.is_confirmation_only() {
-                        p.value.push(*ch);
-                    }
-                }
             }
             Action::PromptSubmit => {
                 // Full submission logic needs pane context — handled in AppState::apply_view

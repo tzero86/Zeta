@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::path::PathBuf;
 
+use tui_input::Input;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PromptKind {
     Copy,
@@ -16,7 +18,7 @@ pub enum PromptKind {
     BulkRename,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PromptState {
     pub kind: PromptKind,
     pub title: &'static str,
@@ -24,7 +26,28 @@ pub struct PromptState {
     pub source_path: Option<PathBuf>,
     /// For batch operations: the full set of source paths. Empty in single-file mode.
     pub source_paths: Vec<PathBuf>,
-    pub value: String,
+    /// The editable input field (tracks text + cursor position).
+    pub input: Input,
+}
+
+impl PartialEq for PromptState {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.title == other.title
+            && self.base_path == other.base_path
+            && self.source_path == other.source_path
+            && self.source_paths == other.source_paths
+            && self.input.value() == other.input.value()
+    }
+}
+
+impl Eq for PromptState {}
+
+impl PromptState {
+    /// The current text value of the input field.
+    pub fn value(&self) -> &str {
+        self.input.value()
+    }
 }
 
 impl PromptKind {
@@ -51,7 +74,7 @@ impl PromptState {
             base_path,
             source_path,
             source_paths: Vec::new(),
-            value,
+            input: Input::from(value),
         }
     }
 }

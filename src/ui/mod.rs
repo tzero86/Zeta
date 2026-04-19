@@ -122,7 +122,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         let ratio = state.pane_split_ratio() as u16;
         let panes = Layout::default()
             .direction(pane_direction)
-            .constraints([Constraint::Percentage(ratio), Constraint::Percentage(100 - ratio)])
+            .constraints([
+                Constraint::Percentage(ratio),
+                Constraint::Percentage(100 - ratio),
+            ])
             .split(pane_area);
 
         left_pane_rect = panes[0];
@@ -278,10 +281,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut menu_popup_rect: Option<Rect> = None;
     if let Some(menu) = state.active_menu() {
         let item_count = state.menu_items().len();
-        let editor_menu_mode = state.is_editor_fullscreen() && state.editor().is_some();
+        let menu_ctx = state.menu_context();
         let mut popup_x = areas[0].x + 1;
         let mut cursor = areas[0].x + 8;
-        for tab in crate::state::menu_tabs(editor_menu_mode) {
+        for tab in crate::state::menu_tabs(menu_ctx) {
             if tab.id == menu {
                 popup_x = cursor;
                 break;
@@ -302,7 +305,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             &state.menu_items(),
             state.menu_selection(),
             palette,
-            editor_menu_mode,
+            menu_ctx,
         );
     }
 

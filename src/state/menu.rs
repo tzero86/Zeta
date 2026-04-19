@@ -5,6 +5,27 @@ use crate::config::ThemePreset;
 use super::MenuItem;
 use super::PaneLayout;
 
+/// The current UI context, used to drive context-aware menus and status display.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MenuContext {
+    /// Dual-pane file manager (default).
+    Pane,
+    /// Embedded editor (pane layout still visible).
+    Editor,
+    /// Editor occupies the full screen.
+    EditorFullscreen,
+    /// Integrated terminal is open (split).
+    Terminal,
+    /// Terminal occupies the full screen.
+    TerminalFullscreen,
+}
+
+impl MenuContext {
+    pub fn is_editor(self) -> bool {
+        matches!(self, Self::Editor | Self::EditorFullscreen)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MenuTab {
     pub id: MenuId,
@@ -12,8 +33,8 @@ pub struct MenuTab {
     pub mnemonic: char,
 }
 
-pub fn menu_tabs(editor_mode: bool) -> Vec<MenuTab> {
-    if editor_mode {
+pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
+    if ctx.is_editor() {
         vec![
             MenuTab {
                 id: MenuId::File,
@@ -77,8 +98,8 @@ pub fn menu_tabs(editor_mode: bool) -> Vec<MenuTab> {
     }
 }
 
-pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
-    if editor_mode {
+pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
+    if ctx.is_editor() {
         match menu {
             MenuId::File => vec![
                 MenuItem {
@@ -497,12 +518,12 @@ pub fn menu_items_for(menu: MenuId, editor_mode: bool) -> Vec<MenuItem> {
 
 #[cfg(test)]
 mod tests {
-    use super::menu_items_for;
+    use super::{menu_items_for, MenuContext};
     use crate::action::{Action, MenuId};
 
     #[test]
     fn navigate_menu_starts_with_workspace_switch_items() {
-        let items = menu_items_for(MenuId::Navigate, false);
+        let items = menu_items_for(MenuId::Navigate, MenuContext::Pane);
 
         assert_eq!(items[0].label, "Switch to Workspace 1");
         assert_eq!(items[0].shortcut, "Alt+1");

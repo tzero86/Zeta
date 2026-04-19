@@ -38,7 +38,7 @@ pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
-pub use menu::{menu_tabs, MenuTab};
+pub use menu::{menu_tabs, MenuContext, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
@@ -207,8 +207,7 @@ impl AppState {
     }
 
     fn sync_editor_menu_mode(&mut self) {
-        let enabled = self.editor_fullscreen && self.editor.is_open();
-        self.overlay.set_editor_menu_mode(enabled);
+        self.overlay.set_menu_context(self.menu_context());
     }
 
     fn can_focus_preview_panel(&self) -> bool {
@@ -1180,13 +1179,13 @@ impl AppState {
             Action::PromptSubmit => {
                 if let Some(ModalState::Prompt(prompt)) = &self.overlay.modal {
                     let prompt = prompt.clone();
-                    if !prompt.kind.is_confirmation_only() && prompt.value.trim().is_empty() {
+                    if !prompt.kind.is_confirmation_only() && prompt.value().trim().is_empty() {
                         self.status_message = String::from("name cannot be empty");
                     } else {
                         // --- Batch mode: source_paths non-empty ---
                         if !prompt.source_paths.is_empty() {
                             let kind = prompt.kind;
-                            let value = prompt.value.trim().to_string();
+                            let value = prompt.value().trim().to_string();
                             let count = prompt.source_paths.len();
                             let batch_sources: BTreeSet<PathBuf> =
                                 prompt.source_paths.iter().cloned().collect();
@@ -1319,7 +1318,7 @@ impl AppState {
                             } // end else (non-BulkRename batch)
                         } else {
                             let kind = prompt.kind;
-                            let value = prompt.value.trim().to_string();
+                            let value = prompt.value().trim().to_string();
                             // GoTo: navigate the active pane to the typed directory.
                             if kind == PromptKind::GoTo {
                                 let target = resolve_prompt_target(&prompt, &value);
@@ -2298,6 +2297,21 @@ impl AppState {
         self.terminal_fullscreen
     }
 
+    /// Computes the current UI context for menu/status display.
+    pub fn menu_context(&self) -> MenuContext {
+        if self.terminal_fullscreen {
+            MenuContext::TerminalFullscreen
+        } else if self.editor_fullscreen && self.editor.is_open() {
+            MenuContext::EditorFullscreen
+        } else if self.editor.is_open() {
+            MenuContext::Editor
+        } else if self.terminal.is_open() {
+            MenuContext::Terminal
+        } else {
+            MenuContext::Pane
+        }
+    }
+
     pub fn pane_split_ratio(&self) -> u8 {
         self.pane_split_ratio
     }
@@ -3033,9 +3047,9 @@ mod tests {
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
-    use crate::state::DebugState;
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
+    use crate::state::DebugState;
 
     use super::{
         resolve_prompt_target, AppState, CollisionState, FocusLayer, ModalKind, ModalState,
@@ -3968,7 +3982,7 @@ mod tests {
             .to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Copy");
-        assert_eq!(prompt.value, expected);
+        assert_eq!(prompt.value(), expected);
     }
 
     #[test]
@@ -4064,7 +4078,7 @@ mod tests {
             .to_string();
         let prompt = state.overlay.prompt().expect("prompt should exist");
         assert_eq!(prompt.title, "Move");
-        assert_eq!(prompt.value, expected);
+        assert_eq!(prompt.value(), expected);
     }
 
     #[test]
@@ -4366,7 +4380,10 @@ mod tests {
 
         let prompt = state.overlay.prompt().expect("prompt should reopen");
         assert_eq!(prompt.kind, PromptKind::Rename);
-        assert_eq!(prompt.value, root.join("note-1.txt").display().to_string());
+        assert_eq!(
+            prompt.value(),
+            root.join("note-1.txt").display().to_string()
+        );
         assert!(!state.is_collision_open());
 
         fs::remove_dir_all(root).expect("temp dir should be removed");

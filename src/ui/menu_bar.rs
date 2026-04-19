@@ -4,18 +4,21 @@ use ratatui::widgets::Paragraph;
 use ratatui::{layout::Rect, Frame};
 
 use crate::config::ThemePalette;
-use crate::state::{menu_tabs, AppState};
+use crate::state::{menu_tabs, AppState, MenuContext};
 
 pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
-    let active = state.active_menu().is_none();
-    let top_bar_bg = if active {
+    let ctx = state.menu_context();
+    let bar_is_active = state.active_menu().is_none();
+    let top_bar_bg = if bar_is_active {
         palette.menu_active_bg
     } else {
         palette.menu_bg
     };
     let mut line = Line::default();
-    line.spans.extend(top_bar_logo_spans(active, palette));
-    for tab in menu_tabs(state.is_editor_fullscreen() && state.editor().is_some()) {
+    line.spans
+        .extend(top_bar_logo_spans(bar_is_active, palette));
+    line.spans.extend(context_badge_spans(ctx, state, palette));
+    for tab in menu_tabs(ctx) {
         line.spans.extend(menu_spans(
             tab.label,
             Some(tab.mnemonic),
@@ -26,7 +29,7 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
     line.spans.extend(workspace_switcher_spans(
         state.active_workspace_index(),
         state.workspace_count(),
-        active,
+        bar_is_active,
         palette,
     ));
 
@@ -37,6 +40,51 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
             .add_modifier(Modifier::BOLD),
     );
     frame.render_widget(menu, area);
+}
+
+/// Returns a short badge indicating the current context (editor filename, TERM, etc.).
+fn context_badge_spans<'a>(
+    ctx: MenuContext,
+    state: &AppState,
+    palette: ThemePalette,
+) -> Vec<Span<'a>> {
+    let bg = palette.menu_bg;
+    let badge_style = Style::default()
+        .fg(palette.logo_accent)
+        .bg(bg)
+        .add_modifier(Modifier::BOLD);
+
+    match ctx {
+        MenuContext::Pane => vec![],
+        MenuContext::Terminal => vec![
+            Span::styled(" ● ", badge_style),
+            Span::styled("TERM ", Style::default().fg(palette.menu_fg).bg(bg)),
+        ],
+        MenuContext::TerminalFullscreen => vec![
+            Span::styled(" ◈ ", badge_style),
+            Span::styled("TERMINAL ", Style::default().fg(palette.menu_fg).bg(bg)),
+        ],
+        MenuContext::Editor | MenuContext::EditorFullscreen => {
+            let prefix = if ctx == MenuContext::EditorFullscreen {
+                " ◈ EDITOR "
+            } else {
+                " ◈ "
+            };
+            let filename: String = state
+                .editor()
+                .and_then(|e| e.path.as_ref())
+                .and_then(|p| p.file_name())
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| String::from("[untitled]"));
+            vec![
+                Span::styled(prefix, badge_style),
+                Span::styled(
+                    format!("{filename} "),
+                    Style::default().fg(palette.menu_fg).bg(bg),
+                ),
+            ]
+        }
+    }
 }
 
 pub fn top_bar_logo_spans(active: bool, palette: ThemePalette) -> Vec<Span<'static>> {

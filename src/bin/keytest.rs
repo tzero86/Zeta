@@ -29,11 +29,7 @@ fn main() -> io::Result<()> {
                 continue;
             }
 
-            writeln!(
-                out,
-                "code={:?}  modifiers={:?}\r",
-                k.code, k.modifiers
-            )?;
+            writeln!(out, "code={:?}  modifiers={:?}\r", k.code, k.modifiers)?;
             out.flush()?;
 
             if k.code == KeyCode::Char('c') && k.modifiers == KeyModifiers::CONTROL {

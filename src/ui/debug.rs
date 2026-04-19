@@ -49,14 +49,14 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     // ── Build rows ──────────────────────────────────────────────────────────
     let focus_str = format!("{:?}", state.focus_layer());
     let ratio = state.pane_split_ratio();
-    let cwd = state
-        .panes
-        .active_pane()
-        .cwd
-        .to_string_lossy()
-        .to_string();
+    let cwd = state.panes.active_pane().cwd.to_string_lossy().to_string();
     let cwd_short = if cwd.len() > (inner.width as usize).saturating_sub(10) {
-        format!("…{}", &cwd[cwd.len().saturating_sub((inner.width as usize).saturating_sub(11))..])
+        format!(
+            "…{}",
+            &cwd[cwd
+                .len()
+                .saturating_sub((inner.width as usize).saturating_sub(11))..]
+        )
     } else {
         cwd
     };
@@ -65,7 +65,11 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, state: &AppState) {
         .panes
         .active_pane()
         .selected_path()
-        .map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default())
+        .map(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        })
         .unwrap_or_else(|| "—".into());
 
     let ws_idx = state.active_workspace_index() + 1;
@@ -77,7 +81,12 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut rows: Vec<Line> = vec![
         row(label_style, value_style, "Focus", &focus_str),
         row(label_style, value_style, "Last key", &state.debug.last_key),
-        row(label_style, value_style, "Last action", &state.debug.last_action),
+        row(
+            label_style,
+            value_style,
+            "Last action",
+            &state.debug.last_action,
+        ),
         row(label_style, value_style, "Split ratio", &ratio_str),
         row(label_style, value_style, "Workspace", &ws_str),
         row(label_style, value_style, "CWD", &cwd_short),
@@ -120,12 +129,7 @@ pub fn render_debug_panel(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-fn row<'a>(
-    label_style: Style,
-    value_style: Style,
-    label: &'a str,
-    value: &'a str,
-) -> Line<'a> {
+fn row<'a>(label_style: Style, value_style: Style, label: &'a str, value: &'a str) -> Line<'a> {
     Line::from(vec![
         Span::styled(format!("{label:<12} "), label_style),
         Span::styled(value.to_string(), value_style),

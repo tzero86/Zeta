@@ -207,10 +207,9 @@ impl App {
             }
             AppEvent::Mouse(mouse_event) => {
                 let focus = self.state.focus_layer();
-                let editor_menu_mode =
-                    self.state.is_editor_fullscreen() && self.state.editor().is_some();
+                let menu_ctx = self.state.menu_context();
                 if let Some(action) =
-                    route_mouse_event(mouse_event, &self.layout_cache, focus, editor_menu_mode)
+                    route_mouse_event(mouse_event, &self.layout_cache, focus, menu_ctx)
                 {
                     // Intercept PaneClick to detect double-clicks.
                     let action = if let Action::PaneClick { left_pane, row } = action {
@@ -785,7 +784,7 @@ fn route_mouse_event(
     event: crossterm::event::MouseEvent,
     cache: &LayoutCache,
     focus: FocusLayer,
-    editor_menu_mode: bool,
+    menu_ctx: crate::state::MenuContext,
 ) -> Option<Action> {
     use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -882,7 +881,7 @@ fn route_mouse_event(
             // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
                 if rect_contains(cache.menu_bar, col, row) {
-                    return route_menu_bar_click(col, cache.menu_bar.x, editor_menu_mode);
+                    return route_menu_bar_click(col, cache.menu_bar.x, menu_ctx);
                 }
                 if let Some(popup) = cache.menu_popup {
                     if rect_contains(popup, col, row) {
@@ -907,7 +906,7 @@ fn route_mouse_event(
 
             // Click on menu bar item.
             if rect_contains(cache.menu_bar, col, row) {
-                return route_menu_bar_click(col, cache.menu_bar.x, editor_menu_mode);
+                return route_menu_bar_click(col, cache.menu_bar.x, menu_ctx);
             }
 
             if let Some(md_rect) = cache.markdown_preview_panel {
@@ -1001,9 +1000,13 @@ fn route_mouse_event(
 
 /// Map an x-coordinate in the menu bar to either an `OpenMenu` action or a
 /// workspace switch action.
-fn route_menu_bar_click(col: u16, bar_x: u16, editor_menu_mode: bool) -> Option<Action> {
+fn route_menu_bar_click(
+    col: u16,
+    bar_x: u16,
+    menu_ctx: crate::state::MenuContext,
+) -> Option<Action> {
     let mut cursor = bar_x + 8;
-    for tab in crate::state::menu_tabs(editor_menu_mode) {
+    for tab in crate::state::menu_tabs(menu_ctx) {
         let start = cursor;
         let end = cursor + tab.label.len() as u16 - 1;
         if col >= start && col <= end {
@@ -1140,7 +1143,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::MoveSelectionUp));
     }
@@ -1156,7 +1159,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::MoveSelectionDown));
     }
@@ -1173,7 +1176,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(
             action,
@@ -1196,7 +1199,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(
             action,
@@ -1218,7 +1221,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::OpenMenu(crate::action::MenuId::File)));
     }
@@ -1234,7 +1237,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::SwitchToWorkspace(1)));
     }
@@ -1250,7 +1253,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Pane,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::SwitchToWorkspace(3)));
     }
@@ -1266,7 +1269,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Modal(ModalKind::Dialog),
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::CloseDialog));
     }
@@ -1282,7 +1285,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Preview,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::ScrollPreviewDown));
     }
@@ -1298,7 +1301,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Editor,
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, Some(Action::EditorMoveUp));
     }
@@ -1315,7 +1318,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Modal(ModalKind::Dialog),
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(up, Some(Action::ScrollDialogUp));
 
@@ -1328,7 +1331,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Modal(ModalKind::Dialog),
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(down, Some(Action::ScrollDialogDown));
     }
@@ -1345,7 +1348,7 @@ mod tests {
             },
             &test_cache(),
             FocusLayer::Modal(ModalKind::Prompt),
-            false,
+            crate::state::MenuContext::Pane,
         );
         assert_eq!(action, None);
     }

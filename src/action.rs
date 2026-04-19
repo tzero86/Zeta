@@ -126,6 +126,9 @@ pub enum Action {
     PromptBackspace,
     PromptCancel,
     PromptInput(char),
+    /// Raw key event forwarded to tui-input for full cursor-aware editing
+    /// (Left/Right/Home/End/Delete/Ctrl+A/Ctrl+U/Ctrl+W etc.).
+    PromptKey(crossterm::event::KeyEvent),
     PromptSubmit,
     Refresh,
     SaveEditor,
@@ -459,9 +462,7 @@ impl Action {
             }
             KeyCode::F(8) => Some(Self::OpenDeletePrompt),
             KeyCode::Insert => Some(Self::OpenNewFilePrompt),
-            KeyCode::F(7) if key_event.modifiers == KeyModifiers::SHIFT => {
-                Some(Self::OpenNewDirectoryPrompt)
-            }
+            KeyCode::F(7) => Some(Self::OpenNewDirectoryPrompt),
             KeyCode::F(9) => Some(Self::ToggleDiffMode),
             KeyCode::F(10) => Some(Self::Quit),
             KeyCode::F(12) => Some(Self::ToggleDebugPanel),
@@ -981,12 +982,21 @@ impl Action {
         match key_event.code {
             KeyCode::Esc => Some(Self::PromptCancel),
             KeyCode::Enter => Some(Self::PromptSubmit),
-            KeyCode::Backspace => Some(Self::PromptBackspace),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
-            KeyCode::Char(ch)
-                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            // Navigation and editing keys are forwarded directly to tui-input,
+            // which handles cursor movement, deletion, Ctrl+A/U/W/K etc.
+            KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Backspace
+            | KeyCode::Delete => Some(Self::PromptKey(key_event)),
+            KeyCode::Char(_)
+                if key_event.modifiers.is_empty()
+                    || key_event.modifiers == KeyModifiers::SHIFT
+                    || key_event.modifiers == KeyModifiers::CONTROL =>
             {
-                Some(Self::PromptInput(ch))
+                Some(Self::PromptKey(key_event))
             }
             _ => None,
         }
@@ -1416,9 +1426,17 @@ mod tests {
 
     #[test]
     fn prompt_shortcuts_are_available() {
+        let char_a = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
         assert_eq!(
-            Action::from_prompt_key_event(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE)),
-            Some(Action::PromptInput('a'))
+            Action::from_prompt_key_event(char_a),
+            Some(Action::PromptKey(char_a))
+        );
+        assert_eq!(
+            Action::from_prompt_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE)),
+            Some(Action::PromptKey(KeyEvent::new(
+                KeyCode::Left,
+                KeyModifiers::NONE
+            )))
         );
         assert_eq!(
             Action::from_prompt_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),

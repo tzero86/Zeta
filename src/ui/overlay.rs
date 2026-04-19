@@ -1,4 +1,4 @@
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
@@ -9,7 +9,7 @@ use ratatui::Frame;
 
 use crate::action::MenuId;
 use crate::config::ThemePalette;
-use crate::state::{menu_tabs, CollisionState, DialogState, MenuItem, PromptState};
+use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
     elevated_surface_style, modal_backdrop_style, overlay_footer_style, overlay_key_hint_style,
     overlay_title_style,
@@ -62,11 +62,11 @@ pub fn render_menu_popup(
     items: &[MenuItem],
     selection: usize,
     palette: ThemePalette,
-    editor_mode: bool,
+    menu_ctx: MenuContext,
 ) {
     let mut x = area.x + 1;
     let mut cursor = area.x + 8;
-    for tab in menu_tabs(editor_mode) {
+    for tab in menu_tabs(menu_ctx) {
         if tab.id == menu {
             x = cursor;
             break;
@@ -131,12 +131,12 @@ pub fn render_prompt(
 ) {
     let (width, height) = match prompt.kind {
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => {
-            (area.width.min(76), area.height.min(8))
+            (area.width.min(76), area.height.min(10))
         }
         crate::state::PromptKind::Trash | crate::state::PromptKind::Delete => {
-            (area.width.min(64), area.height.min(6))
+            (area.width.min(64), area.height.min(7))
         }
-        _ => (area.width.min(56), area.height.min(6)),
+        _ => (area.width.min(60), area.height.min(8)),
     };
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
@@ -157,46 +157,99 @@ pub fn render_prompt(
     frame.render_widget(Clear, popup_area);
     frame.render_widget(block, popup_area);
 
-    let body = match prompt.kind {
+    let is_confirmation = prompt.kind.is_confirmation_only();
+
+    // Build description text (source path info + hint).
+    let desc_text = match prompt.kind {
         crate::state::PromptKind::Trash => format!(
-            "Move to trash:\n{}\n\nEnter confirm | Esc cancel",
+            "Move to trash:\n{}\n\nEnter confirm  Esc cancel",
             prompt
                 .source_path
                 .as_ref()
-                .map(|path| path.display().to_string())
+                .map(|p| p.display().to_string())
                 .unwrap_or_else(|| String::from("<missing target>")),
         ),
         crate::state::PromptKind::Delete => format!(
-            "Delete permanently:\n{}\n\nEnter confirm | Esc cancel",
+            "Delete permanently:\n{}\n\nEnter confirm  Esc cancel",
             prompt
                 .source_path
                 .as_ref()
-                .map(|path| path.display().to_string())
+                .map(|p| p.display().to_string())
                 .unwrap_or_else(|| String::from("<missing target>")),
         ),
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => format!(
-            "Source:\n{}\n\nDestination:\n{}\n\nEnter submit | Esc cancel",
+            "Source:\n{}\n\nDestination:  (Enter submit  Esc cancel)",
             prompt
                 .source_path
                 .as_ref()
-                .map(|path| path.display().to_string())
+                .map(|p| p.display().to_string())
                 .unwrap_or_else(|| String::from("<missing source>")),
-            prompt.value,
         ),
         _ => format!(
-            "Path: {}\nValue: {}\nEnter submit | Esc cancel",
-            prompt.base_path.display(),
-            prompt.value
+            "Path: {}\n(Enter submit  Esc cancel)",
+            prompt.base_path.display()
         ),
     };
-    let paragraph = Paragraph::new(body)
-        .style(
-            Style::default()
-                .bg(palette.tools_bg)
-                .fg(palette.text_primary),
-        )
+
+    // Split inner area: description rows on top, input field on bottom (if not confirmation).
+    let (desc_area, input_area) = if is_confirmation {
+        (inner, Rect::default())
+    } else {
+        let input_height = 3_u16; // border top + text + border bottom
+        if inner.height <= input_height {
+            (inner, Rect::default())
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(input_height)])
+                .split(inner);
+            (chunks[0], chunks[1])
+        }
+    };
+
+    // Render description paragraph.
+    let desc_para = Paragraph::new(desc_text)
+        .style(Style::default().fg(palette.text_primary))
         .wrap(Wrap { trim: false });
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(desc_para, desc_area);
+
+    // Render styled input field with cursor.
+    if !is_confirmation && input_area.width > 0 && input_area.height > 0 {
+        let input_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(palette.prompt_border))
+            .style(Style::default().bg(palette.tools_bg));
+        let input_inner = input_block.inner(input_area);
+        frame.render_widget(input_block, input_area);
+
+        let value = prompt.value();
+        // Show only the last N characters that fit in the visible width.
+        let visible_width = input_inner.width as usize;
+        let cursor_pos = prompt.input.visual_cursor();
+        let scroll_offset = if cursor_pos >= visible_width {
+            cursor_pos - visible_width + 1
+        } else {
+            0
+        };
+        let visible_text: String = value
+            .chars()
+            .skip(scroll_offset)
+            .take(visible_width)
+            .collect();
+
+        let input_para = Paragraph::new(visible_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.tools_bg),
+        );
+        frame.render_widget(input_para, input_inner);
+
+        // Position the blinking cursor.
+        let cursor_x =
+            input_inner.x + (cursor_pos.saturating_sub(scroll_offset)).min(visible_width) as u16;
+        let cursor_y = input_inner.y;
+        frame.set_cursor_position((cursor_x, cursor_y));
+    }
 }
 
 pub fn render_dialog(
