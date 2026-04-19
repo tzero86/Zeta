@@ -241,6 +241,8 @@ pub enum Action {
     OpenWithConfirm,
     /// Dismiss the open-with menu without opening anything.
     CloseOpenWithMenu,
+    /// Toggle the floating debug panel (F12).
+    ToggleDebugPanel,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -462,6 +464,7 @@ impl Action {
             }
             KeyCode::F(9) => Some(Self::ToggleDiffMode),
             KeyCode::F(10) => Some(Self::Quit),
+            KeyCode::F(12) => Some(Self::ToggleDebugPanel),
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiffSyncToOther)
             }

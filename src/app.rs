@@ -188,6 +188,10 @@ impl App {
     fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Input(key_event) => {
+                // Record every key press into the debug state (visible via F12 panel).
+                let key_desc = format!("{:?} + {:?}", key_event.code, key_event.modifiers);
+                self.state.debug.record_key(key_desc);
+
                 let focus = self.state.focus_layer();
                 let is_preview_open = self.state.is_preview_panel_open();
                 let is_settings_rebinding = self.state.is_settings_rebinding();
@@ -328,10 +332,11 @@ impl App {
     }
 
     fn dispatch(&mut self, action: Action) -> Result<()> {
+        let action_name = format!("{:?}", action);
         for command in self.state.apply(action)? {
             self.execute_command(command)?;
         }
-
+        self.state.debug.record_action(action_name);
         Ok(())
     }
 

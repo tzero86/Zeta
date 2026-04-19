@@ -16,7 +16,7 @@ pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -101,6 +101,32 @@ impl WorkspaceState {
     }
 }
 
+/// Live debug state updated on every key press and action dispatch.
+/// Rendered by the debug panel when toggled with F12.
+#[derive(Debug, Default)]
+pub struct DebugState {
+    /// Human-readable description of the last received key event.
+    pub last_key: String,
+    /// Debug-formatted name of the last dispatched action.
+    pub last_action: String,
+    /// Rolling log of the last 8 dispatched action names (newest first).
+    pub action_log: VecDeque<String>,
+}
+
+impl DebugState {
+    const LOG_CAPACITY: usize = 8;
+
+    pub fn record_key(&mut self, description: String) {
+        self.last_key = description;
+    }
+
+    pub fn record_action(&mut self, name: String) {
+        self.last_action = name.clone();
+        self.action_log.push_front(name);
+        self.action_log.truncate(Self::LOG_CAPACITY);
+    }
+}
+
 #[derive(Debug)]
 pub struct AppState {
     workspaces: [WorkspaceState; 4],
@@ -115,6 +141,10 @@ pub struct AppState {
     redraw_count: u64,
     startup_time_ms: u128,
     should_quit: bool,
+    /// Whether the floating debug panel is visible (toggled by F12).
+    pub debug_visible: bool,
+    /// Live debug state: last key, last action, action log.
+    pub debug: DebugState,
 }
 
 impl AppState {
@@ -265,6 +295,8 @@ impl AppState {
             redraw_count: 0,
             startup_time_ms: started_at.elapsed().as_millis(),
             should_quit: false,
+            debug_visible: false,
+            debug: DebugState::default(),
         })
     }
 
@@ -697,6 +729,9 @@ impl AppState {
             Action::GrowLeftPane => {
                 self.pane_split_ratio = (self.pane_split_ratio + 5).min(80);
                 self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+            }
+            Action::ToggleDebugPanel => {
+                self.debug_visible = !self.debug_visible;
             }
             Action::OpenOpenWithMenu => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
@@ -2482,6 +2517,10 @@ impl AppState {
         self.redraw_count += 1;
     }
 
+    pub fn redraw_count(&self) -> u64 {
+        self.redraw_count
+    }
+
     pub fn status_line(&self) -> String {
         let mark_count = self.panes.active_pane().marked_count();
         let scan = self
@@ -2994,6 +3033,7 @@ mod tests {
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
     use crate::editor::EditorBuffer;
     use crate::fs::{EntryInfo, EntryKind};
+    use crate::state::DebugState;
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
 
@@ -3364,6 +3404,8 @@ mod tests {
             redraw_count: 0,
             startup_time_ms: 0,
             should_quit: false,
+            debug_visible: false,
+            debug: DebugState::default(),
         }
     }
 

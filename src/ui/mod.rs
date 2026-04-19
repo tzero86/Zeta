@@ -1,5 +1,6 @@
 mod bookmarks;
 mod code_view;
+mod debug;
 mod editor;
 mod finder;
 pub mod markdown;
@@ -365,6 +366,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     );
     frame.render_widget(status, areas[2]);
     render_key_hints(frame, areas[3], state, palette);
+
+    // Debug panel renders last so it always floats above everything else.
+    debug::render_debug_panel(frame, areas[1], state);
 
     LayoutCache {
         menu_bar: areas[0],
