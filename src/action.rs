@@ -513,9 +513,10 @@ impl Action {
             KeyCode::Up if key_event.modifiers == KeyModifiers::SHIFT => {
                 Some(Self::ExtendSelectionUp)
             }
-            // Ctrl+J opens the GoTo prompt (Windows Terminal sometimes intercepts Ctrl+G).
-            // Must come before the unguarded Char('j') arm below.
-            KeyCode::Char('j') if key_event.modifiers == KeyModifiers::CONTROL => {
+            // Ctrl+G opens the GoTo prompt (kept for terminals that forward it).
+            // NOTE: Windows Terminal intercepts Ctrl+G and Ctrl+J (sent as Enter/LF).
+            // Use Alt+G instead — it reliably reaches the app.
+            KeyCode::Char('g') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenGoToPrompt)
             }
             KeyCode::Down | KeyCode::Char('j') => Some(Self::MoveSelectionDown),
@@ -536,9 +537,6 @@ impl Action {
             }
             KeyCode::Char('l') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::ToggleDetailsView)
-            }
-            KeyCode::Char('g') if key_event.modifiers == KeyModifiers::CONTROL => {
-                Some(Self::OpenGoToPrompt)
             }
             KeyCode::Char('r') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::OpenBulkRenamePrompt)
@@ -805,6 +803,9 @@ impl Action {
                 // Crossterm reports Alt+= as Char('+') not Char('=').
                 KeyCode::Char('-') => Some(Self::ShrinkLeftPane),
                 KeyCode::Char('+') => Some(Self::GrowLeftPane),
+                // Alt+G opens the GoTo prompt. Ctrl+G is intercepted by Windows Terminal;
+                // Ctrl+J is also intercepted (sent as Enter/LF). Alt+G is safe.
+                KeyCode::Char('g') | KeyCode::Char('G') => Some(Self::OpenGoToPrompt),
                 _ => None,
             };
         }
