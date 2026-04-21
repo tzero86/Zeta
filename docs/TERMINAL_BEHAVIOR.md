@@ -301,35 +301,37 @@ Planned improvements to terminal integration include:
 
 ## Shell Selection (Windows)
 
-### How Zeta Chooses a Shell
+### Shell Selection Priority
 
-On Windows, ConPTY automatically selects the shell:
+On Windows, Zeta automatically selects the best available shell in this order:
 
-1. **Check for PowerShell**: If PowerShell 7+ (or Windows PowerShell) is available, use it
-2. **Fallback to cmd.exe**: If PowerShell is not found, use the default command interpreter
+1. **PowerShell 7+** (`pwsh.exe`) — if found via `where pwsh.exe`
+2. **Command Prompt** (`cmd.exe`) — via `COMSPEC` environment variable (always available as fallback)
 
-### Force a Different Shell
+**Important**: The `SHELL` environment variable is **not** checked on Windows. Setting `$env:SHELL` will have no effect on which shell Zeta uses.
 
-To use a specific shell, set the `SHELL` environment variable:
+### Using a Different Shell
 
-```powershell
-# In PowerShell: use bash (e.g., from Git Bash or WSL)
-$env:SHELL = "C:\Program Files\Git\bin\bash.exe"
+If you want to use a different shell (like Git Bash, bash from WSL, or another alternative), you have these options:
 
-# Or permanently in your profile:
-Add-Content -Path $PROFILE -Value '$env:SHELL = "C:\Program Files\Git\bin\bash.exe"'
-```
+1. **Run your preferred shell inside the terminal**:
+   ```powershell
+   # Inside Zeta's terminal, simply type the command to launch your shell
+   bash                    # If Git Bash or WSL bash is in PATH
+   wsl                     # To enter Windows Subsystem for Linux
+   ```
 
-### Git Bash (Windows)
+2. **Use Git Bash separately**: Open Git Bash as your shell application, then run Zeta from within it
 
-If you have Git Bash installed:
+3. **Set PowerShell as default**: If you prefer PowerShell, ensure `pwsh.exe` is in your PATH and Zeta will auto-select it (it has priority over `cmd.exe`)
 
-```powershell
-# Temporarily
-$env:SHELL = "C:\Program Files\Git\bin\bash.exe"
+4. **Add bash to PATH**: If you have Git Bash or another bash installation, add its `bin` directory to your system PATH so it's accessible from any shell
 
-# Or add to PowerShell profile for persistence
-```
+### Implementation Note
+
+Currently, custom shell selection is not configurable in Zeta on Windows. If you need the ability to specify a custom shell, consider:
+- Launching your preferred shell and running Zeta from within it
+- Filing a GitHub issue with your use case for future enhancement
 
 ---
 
