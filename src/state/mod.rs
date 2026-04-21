@@ -1,5 +1,5 @@
 mod bookmarks;
-mod dialog;
+pub mod dialog;
 pub mod editor_state;
 mod menu;
 pub mod overlay;
@@ -996,86 +996,76 @@ impl AppState {
                 }
             }
             Action::OpenDeletePrompt => {
-                let marks: Vec<PathBuf> = {
-                    let m = &self.panes.active_pane().marked;
-                    if !m.is_empty() {
-                        let mut v: Vec<PathBuf> = m.iter().cloned().collect();
-                        v.sort();
-                        v
-                    } else {
-                        Vec::new()
-                    }
-                };
-                let cwd = self.panes.active_pane().cwd.clone();
-                if !marks.is_empty() {
-                    let count = marks.len();
-                    let preview = Self::summarize_paths(&marks);
-                    let mut prompt = PromptState::with_value(
-                        PromptKind::Trash,
-                        "Trash Marked Items",
-                        cwd,
-                        None,
-                        String::new(),
-                    );
-                    prompt.source_paths = marks;
-                    self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        format!("confirm trash for {count} marked items: {preview}");
-                } else if let Some(entry) = self.panes.active_pane().selected_entry() {
-                    let entry_name = entry.name.clone();
-                    let entry_path = entry.path.clone();
-                    self.overlay.open_prompt(PromptState::with_value(
-                        PromptKind::Trash,
-                        "Move to Trash",
-                        cwd,
-                        Some(entry_path),
-                        String::new(),
-                    ));
-                    self.status_message = format!("confirm trash for {entry_name}");
-                } else {
-                    self.status_message = String::from("no item selected to trash");
+                let pane = self.panes.active_pane();
+                let marked_items: Vec<_> = pane
+                    .marked
+                    .iter()
+                    .map(|p| p.clone())
+                    .collect();
+
+                if marked_items.is_empty() {
+                    self.status_message = "No items selected to delete".to_string();
+                    return Ok(vec![]);
                 }
+
+                let mut operations = Vec::new();
+                for item in &marked_items {
+                    operations.push(crate::action::FileOperation::Trash {
+                        path: item.clone(),
+                    });
+                }
+
+                let refresh = vec![crate::action::RefreshTarget {
+                    pane: self.panes.focused_pane_id(),
+                    path: pane.cwd.clone(),
+                }];
+
+                let state = crate::state::dialog::DestructiveConfirmState::new(
+                    crate::state::dialog::DestructiveAction::Delete,
+                    &marked_items,
+                    operations[0].clone(),
+                    refresh,
+                );
+                state.operations = operations;
+
+                self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                self.status_message = String::new();
             }
             Action::OpenPermanentDeletePrompt => {
-                let marks: Vec<PathBuf> = {
-                    let m = &self.panes.active_pane().marked;
-                    if !m.is_empty() {
-                        let mut v: Vec<PathBuf> = m.iter().cloned().collect();
-                        v.sort();
-                        v
-                    } else {
-                        Vec::new()
-                    }
-                };
-                let cwd = self.panes.active_pane().cwd.clone();
-                if !marks.is_empty() {
-                    let count = marks.len();
-                    let preview = Self::summarize_paths(&marks);
-                    let mut prompt = PromptState::with_value(
-                        PromptKind::Delete,
-                        "Delete Marked Items Permanently",
-                        cwd,
-                        None,
-                        String::new(),
-                    );
-                    prompt.source_paths = marks;
-                    self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        format!("confirm permanent delete for {count} marked items: {preview}");
-                } else if let Some(entry) = self.panes.active_pane().selected_entry() {
-                    let entry_name = entry.name.clone();
-                    let entry_path = entry.path.clone();
-                    self.overlay.open_prompt(PromptState::with_value(
-                        PromptKind::Delete,
-                        "Delete Permanently",
-                        cwd,
-                        Some(entry_path),
-                        String::new(),
-                    ));
-                    self.status_message = format!("confirm permanent delete for {entry_name}");
-                } else {
-                    self.status_message = String::from("no item selected to delete");
+                let pane = self.panes.active_pane();
+                let marked_items: Vec<_> = pane
+                    .marked
+                    .iter()
+                    .map(|p| p.clone())
+                    .collect();
+
+                if marked_items.is_empty() {
+                    self.status_message = "No items selected to delete".to_string();
+                    return Ok(vec![]);
                 }
+
+                let mut operations = Vec::new();
+                for item in &marked_items {
+                    operations.push(crate::action::FileOperation::Delete {
+                        path: item.clone(),
+                    });
+                }
+
+                let refresh = vec![crate::action::RefreshTarget {
+                    pane: self.panes.focused_pane_id(),
+                    path: pane.cwd.clone(),
+                }];
+
+                let state = crate::state::dialog::DestructiveConfirmState::new(
+                    crate::state::dialog::DestructiveAction::PermanentDelete,
+                    &marked_items,
+                    operations[0].clone(),
+                    refresh,
+                );
+                state.operations = operations;
+
+                self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                self.status_message = String::new();
             }
             Action::OpenMovePrompt => {
                 let marks: Vec<PathBuf> = {
@@ -2416,6 +2406,9 @@ impl AppState {
     }
     pub fn collision(&self) -> Option<&CollisionState> {
         self.overlay.collision()
+    }
+    pub fn destructive_confirm(&self) -> Option<&crate::state::dialog::DestructiveConfirmState> {
+        self.overlay.destructive_confirm()
     }
     pub fn palette(&self) -> Option<&crate::palette::PaletteState> {
         self.overlay.palette()

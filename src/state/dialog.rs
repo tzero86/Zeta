@@ -32,6 +32,7 @@ pub struct DestructiveConfirmState {
     pub item_count: usize,
     pub item_sample: Vec<String>,
     pub operation: Option<crate::action::FileOperation>,
+    pub operations: Vec<crate::action::FileOperation>,
     pub refresh_targets: Vec<crate::action::RefreshTarget>,
 }
 
@@ -53,6 +54,7 @@ impl DestructiveConfirmState {
             item_count,
             item_sample,
             operation: Some(operation),
+            operations: Vec::new(),
             refresh_targets,
         }
     }
