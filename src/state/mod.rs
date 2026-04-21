@@ -2308,7 +2308,7 @@ impl AppState {
     }
 
     /// Derive the current input focus layer from state.
-    /// Priority (highest → lowest): Palette > FileFinder > Collision > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
+    /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
@@ -2318,6 +2318,9 @@ impl AppState {
         }
         if self.is_collision_open() {
             return FocusLayer::Modal(ModalKind::Collision);
+        }
+        if self.destructive_confirm().is_some() {
+            return FocusLayer::Modal(ModalKind::DestructiveConfirm);
         }
         if self.is_prompt_open() {
             return FocusLayer::Modal(ModalKind::Prompt);
