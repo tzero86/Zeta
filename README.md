@@ -63,6 +63,17 @@ Some crates link against system libraries. Install these before running `cargo i
 - Hidden file toggle, sort by name / size / extension / modified date
 - Navigate history (Alt+Left / Alt+Right)
 
+### Integrated Terminal
+- Run shell commands directly in Zeta without switching windows
+- Press `F2` to toggle the integrated terminal panel in the current workspace (or `Ctrl+\` as alternate binding)
+- Runs your native shell: bash, zsh, pwsh, cmd.exe, fish, and others all work
+- Full shell passthrough: Tab completion, all standard keyboard shortcuts work as expected
+- Cross-platform support: Windows (ConPTY), macOS, and Linux all supported
+- Auto-detects best available shell (PowerShell 7+ on Windows, bash/zsh on Unix)
+- Each workspace has its own independent terminal session — switch workspaces to have multiple shell contexts open simultaneously
+
+See [Terminal Behavior Guide](docs/TERMINAL_BEHAVIOR.md) for keyboard mappings, Tab completion troubleshooting, shell detection, and platform-specific tips.
+
 ### SSH/SFTP Remote Filesystems
 - Connect to remote servers via SSH/SFTP directly from the file manager
 - Authenticate using passwords, key files, or SSH Agent integration
