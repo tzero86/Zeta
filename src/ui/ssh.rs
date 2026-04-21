@@ -131,21 +131,21 @@ pub fn render_ssh_connect_dialog(
 
 /// Render the SSH host-trust prompt.
 ///
-/// Shows the host, port, and MD5 fingerprint so the user can verify the server's
-/// identity before connecting. Enter/Y accepts; Esc/N rejects.
+/// Shows the host, port, and both MD5 and SHA256 fingerprints so the user can
+/// verify the server's identity before connecting. Enter/Y accepts; Esc/N rejects.
 pub fn render_ssh_trust_prompt(
     frame: &mut Frame<'_>,
     area: Rect,
     host: &str,
     port: u16,
-    fingerprint: &str,
+    fingerprints: &crate::state::ssh::HostKeyFingerprints,
     palette: &ThemePalette,
 ) {
     use ratatui::layout::Direction;
     use ratatui::widgets::Clear;
 
-    let width = 64.min(area.width.saturating_sub(4));
-    let height = 10.min(area.height.saturating_sub(4));
+    let width = 72.min(area.width.saturating_sub(4));
+    let height = 13.min(area.height.saturating_sub(4));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -169,14 +169,15 @@ pub fn render_ssh_trust_prompt(
         .constraints([
             ratatui::layout::Constraint::Length(1), // blank
             ratatui::layout::Constraint::Length(1), // host:port
-            ratatui::layout::Constraint::Length(1), // fingerprint
+            ratatui::layout::Constraint::Length(1), // SHA256
+            ratatui::layout::Constraint::Length(1), // MD5
             ratatui::layout::Constraint::Length(1), // blank
             ratatui::layout::Constraint::Min(1),    // body
             ratatui::layout::Constraint::Length(1), // footer
         ])
         .split(inner);
 
-    let host_text = format!("  Host:        {}:{}", host, port);
+    let host_text = format!("  Host:    {}:{}", host, port);
     frame.render_widget(
         Paragraph::new(host_text).style(
             Style::default()
@@ -185,14 +186,25 @@ pub fn render_ssh_trust_prompt(
         ),
         chunks[1],
     );
-    let fp_text = format!("  Fingerprint: {}", fingerprint);
+
+    let sha256_text = format!("  {}", fingerprints.sha256);
     frame.render_widget(
-        Paragraph::new(fp_text).style(
+        Paragraph::new(sha256_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .bg(palette.surface_bg),
+        ),
+        chunks[2],
+    );
+
+    let md5_text = format!("  MD5: {}", fingerprints.md5);
+    frame.render_widget(
+        Paragraph::new(md5_text).style(
             Style::default()
                 .fg(palette.text_muted)
                 .bg(palette.surface_bg),
         ),
-        chunks[2],
+        chunks[3],
     );
 
     let body = "  The host key is not in ~/.ssh/known_hosts.\n  Verify the fingerprint with the server administrator.";
@@ -202,10 +214,10 @@ pub fn render_ssh_trust_prompt(
                 .fg(palette.text_primary)
                 .bg(palette.surface_bg),
         ),
-        chunks[4],
+        chunks[5],
     );
 
     let footer = Paragraph::new("Enter/Y=trust and connect  Esc/N=cancel")
         .style(overlay_footer_style(*palette));
-    frame.render_widget(footer, chunks[5]);
+    frame.render_widget(footer, chunks[6]);
 }

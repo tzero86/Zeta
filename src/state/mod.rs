@@ -2108,7 +2108,7 @@ impl AppState {
                 address,
                 auth_method,
                 credential,
-                fingerprint,
+                fingerprints,
             } => {
                 // Parse host and port from the full address string for display.
                 let (host, port) = match address.rsplit_once('@') {
@@ -2121,7 +2121,7 @@ impl AppState {
                 self.overlay.open_ssh_trust_prompt(
                     host,
                     port,
-                    fingerprint,
+                    fingerprints,
                     address,
                     auth_method,
                     credential,

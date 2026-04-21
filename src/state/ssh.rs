@@ -1,5 +1,15 @@
 use serde::{Deserialize, Serialize};
 
+/// SSH host key fingerprints for verification purposes.
+/// Includes both MD5 (for legacy compatibility) and SHA256 (preferred).
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub struct HostKeyFingerprints {
+    /// MD5 fingerprint (legacy format, hex colon-separated)
+    pub md5: String,
+    /// SHA256 fingerprint (preferred, OpenSSH format with "SHA256:" prefix)
+    pub sha256: String,
+}
+
 /// Categorized SSH error kinds for better UX and diagnostics
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum SshErrorKind {
@@ -55,6 +65,8 @@ pub struct SshConnectionState {
     pub focused_field: SshDialogField,
     /// Error from last failed attempt (categorized)
     pub error: Option<SshErrorKind>,
+    /// When true, reject unknown hosts instead of prompting user
+    pub known_hosts_strict: bool,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq, Default)]
@@ -80,6 +92,7 @@ impl Default for SshConnectionState {
             credential: String::new(),
             focused_field: SshDialogField::Address,
             error: None,
+            known_hosts_strict: false,
         }
     }
 }

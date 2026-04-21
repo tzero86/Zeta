@@ -32,7 +32,7 @@ pub enum ModalState {
     SshTrustPrompt {
         host: String,
         port: u16,
-        fingerprint: String,
+        fingerprints: crate::state::ssh::HostKeyFingerprints,
         address: String,
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
@@ -230,7 +230,7 @@ impl OverlayState {
         &mut self,
         host: String,
         port: u16,
-        fingerprint: String,
+        fingerprints: crate::state::ssh::HostKeyFingerprints,
         address: String,
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
@@ -240,7 +240,7 @@ impl OverlayState {
         self.modal = Some(ModalState::SshTrustPrompt {
             host,
             port,
-            fingerprint,
+            fingerprints,
             address,
             auth_method,
             credential,

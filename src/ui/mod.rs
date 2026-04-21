@@ -350,11 +350,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
         host,
         port,
-        fingerprint,
+        fingerprints,
         ..
     }) = &state.overlay.modal
     {
-        render_ssh_trust_prompt(frame, areas[1], host, *port, fingerprint, &palette);
+        render_ssh_trust_prompt(frame, areas[1], host, *port, fingerprints, &palette);
     }
 
     if let Some((items, selection, _target)) = state.overlay.open_with() {

@@ -61,7 +61,9 @@ pub enum SftpRequest {
 #[derive(Debug)]
 enum HostCheckResult {
     Match,
-    UnknownHost { fingerprint: String },
+    UnknownHost {
+        fingerprints: crate::state::ssh::HostKeyFingerprints,
+    },
     Mismatch,
     Failure(String),
 }
@@ -69,7 +71,9 @@ enum HostCheckResult {
 /// Internal outcome type for `connect_sftp`.
 enum SftpConnectOutcome {
     Connected(SessionId, crate::fs::sftp::SftpBackend),
-    UnknownHost { fingerprint: String },
+    UnknownHost {
+        fingerprints: crate::state::ssh::HostKeyFingerprints,
+    },
     Failed(crate::state::ssh::SshErrorKind),
 }
 
@@ -289,7 +293,7 @@ pub enum JobResult {
         address: String,
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
-        fingerprint: String,
+        fingerprints: crate::state::ssh::HostKeyFingerprints,
     },
     /// SSH connection failed with a categorized error.
     SshConnectionFailed {
@@ -903,14 +907,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         address: address_display,
                                     });
                                 }
-                                SftpConnectOutcome::UnknownHost { fingerprint } => {
+                                SftpConnectOutcome::UnknownHost { fingerprints } => {
                                     let _ = result_tx.send(JobResult::SshHostUnknown {
                                         workspace_id,
                                         pane,
                                         address,
                                         auth_method,
                                         credential,
-                                        fingerprint,
+                                        fingerprints,
                                     });
                                 }
                                 SftpConnectOutcome::Failed(error) => {
@@ -1230,12 +1234,34 @@ fn load_preview_from_bytes(
 }
 
 /// Format raw host key bytes as a colon-separated MD5 fingerprint for display.
-fn format_fingerprint(bytes: &[u8]) -> String {
+fn format_md5_fingerprint(bytes: &[u8]) -> String {
     bytes
         .iter()
         .map(|b| format!("{:02x}", b))
         .collect::<Vec<_>>()
         .join(":")
+}
+
+/// Format SHA256 fingerprint in OpenSSH format (SHA256:base64).
+fn format_sha256_fingerprint(bytes: &[u8]) -> String {
+    format!("SHA256:{}", base64_encode(bytes))
+}
+
+/// Get both MD5 and SHA256 fingerprints for a host key.
+fn get_host_key_fingerprints(
+    session: &ssh2::Session,
+) -> Result<crate::state::ssh::HostKeyFingerprints, String> {
+    let md5_bytes = session
+        .host_key_hash(ssh2::HashType::Md5)
+        .ok_or_else(|| "MD5 fingerprint unavailable".to_string())?;
+    let sha256_bytes = session
+        .host_key_hash(ssh2::HashType::Sha256)
+        .ok_or_else(|| "SHA256 fingerprint unavailable".to_string())?;
+
+    Ok(crate::state::ssh::HostKeyFingerprints {
+        md5: format_md5_fingerprint(md5_bytes),
+        sha256: format_sha256_fingerprint(sha256_bytes),
+    })
 }
 
 /// Encode bytes as standard base64 (RFC 4648, with padding).
@@ -1365,12 +1391,16 @@ fn verify_host_key(
     match known_hosts.check_port(host, port, key) {
         ssh2::CheckResult::Match => HostCheckResult::Match,
         ssh2::CheckResult::NotFound => {
-            // Build a human-readable fingerprint from the MD5 hash of the key.
-            let fingerprint = session
-                .host_key_hash(ssh2::HashType::Md5)
-                .map(format_fingerprint)
-                .unwrap_or_else(|| String::from("(fingerprint unavailable)"));
-            HostCheckResult::UnknownHost { fingerprint }
+            let fingerprints = match get_host_key_fingerprints(session) {
+                Ok(fp) => fp,
+                Err(msg) => {
+                    return HostCheckResult::Failure(format!(
+                        "Failed to compute fingerprints: {}",
+                        msg
+                    ))
+                }
+            };
+            HostCheckResult::UnknownHost { fingerprints }
         }
         ssh2::CheckResult::Mismatch => HostCheckResult::Mismatch,
         ssh2::CheckResult::Failure => {
@@ -1452,14 +1482,14 @@ fn connect_sftp(
     let mut should_persist = false;
     match verify_host_key(&host, port, &session, known_hosts_file) {
         HostCheckResult::Match => {}
-        HostCheckResult::UnknownHost { fingerprint: _ } if trust_unknown_host => {
+        HostCheckResult::UnknownHost { fingerprints: _ } if trust_unknown_host => {
             // User accepted the trust prompt — proceed and persist the host key.
             // `persist_host_key` is called after authentication succeeds (below)
             // so we have a live session with the verified key still available.
             should_persist = true;
         }
-        HostCheckResult::UnknownHost { fingerprint } => {
-            return SftpConnectOutcome::UnknownHost { fingerprint };
+        HostCheckResult::UnknownHost { fingerprints } => {
+            return SftpConnectOutcome::UnknownHost { fingerprints };
         }
         HostCheckResult::Mismatch => {
             return SftpConnectOutcome::Failed(SshErrorKind::HostKeyMismatch(

@@ -96,7 +96,7 @@ If SSH Agent fails and no password/key is provided, the connection cannot procee
 | "Authentication failed" | Wrong password or key file | Verify credentials with `ssh user@host` from terminal first |
 | "Host key changed" (red error) | Known host key mismatch — possible security issue | Run `ssh-keygen -R host.example.com` to remove old entry, then retry |
 | "Connection timeout" | Host unreachable or network issue | Check host is online with `ping` or `ssh` from terminal |
-| "Host key not recognized" | New host, need manual verification | Verify the MD5 fingerprint with server admin, then press Enter in the trust prompt |
+| "Host key not recognized" | New host, need manual verification | Verify the fingerprints (SHA256 preferred, MD5 for legacy compatibility) with server admin, then press Enter in the trust prompt |
 | "Permission denied" (local copy issues) | SSH key file has wrong permissions | Run `chmod 600 ~/.ssh/id_rsa` and ensure ownership with `chown $USER ~/.ssh` |
 
 **Key File Permissions:** SSH keys must be readable only by you. If you see "bad permissions" errors, run:
@@ -106,10 +106,35 @@ chmod 600 ~/.ssh/id_rsa
 chown -R $USER ~/.ssh
 ```
 
+#### Host Key Verification
+
+When connecting to a host for the first time, Zeta presents a trust prompt showing the server's host key fingerprints for manual verification. This prevents man-in-the-middle (MITM) attacks by allowing you to confirm the server's identity before trusting its connection.
+
+**Fingerprints displayed:**
+- **SHA256** (preferred, modern format) — `SHA256:` prefix followed by base64-encoded hash
+- **MD5** (legacy format, included for compatibility) — hex colon-separated hash
+
+**Verification workflow:**
+1. When connecting to an unknown host, Zeta shows a dialog with both fingerprints
+2. Contact the server administrator out-of-band (email, phone, etc.) and compare the fingerprints
+3. If they match, press Enter/Y to trust the host and continue
+4. The host key is stored in `~/.ssh/known_hosts` for future connections
+5. If the key changes on a future connection, Zeta will show a red security warning
+
+**Verifying fingerprints manually from the command line:**
+```bash
+# Get SSH server's SHA256 fingerprint
+ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E SHA256
+
+# Get MD5 fingerprint (legacy)
+ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
+```
+
 **Security Test Plan:**
 - **Host Key Verification Failure:** Attempt to connect to a host with an invalid or changed host key in `~/.ssh/known_hosts`. The UI will reject the connection with a red error: `Host key changed! Possible MITM attack. Investigate manually.`
 - **SSH Agent Authentication:** Run `ssh-agent`, add a key via `ssh-add`, and attempt an SSH connection without providing a password or key file. The connection will succeed automatically using the agent's identities.
 - **Agent Unavailable:** Close SSH Agent and attempt connection; Zeta will show an informational message and fall back to password/key file if provided.
+- **Unknown Host Trust Prompt:** Connect to a new SSH server not in `~/.ssh/known_hosts`. Verify both SHA256 and MD5 fingerprints match the server admin's values, then press Enter to trust and connect.
 
 ### Editor
 - Embedded text editor with syntax highlighting (via syntect)
