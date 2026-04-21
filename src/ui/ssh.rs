@@ -61,11 +61,18 @@ pub fn render_ssh_connect_dialog(
     let address_paragraph = Paragraph::new(address_label).style(modal_backdrop_style(*palette));
     frame.render_widget(address_paragraph, chunks[0]);
 
-    // Auth method
+    // Auth method with SSH Agent availability indicator
+    let agent_available = std::env::var("SSH_AUTH_SOCK").is_ok();
+    let agent_status = if agent_available {
+        "[Agent: Available]"
+    } else {
+        "[Agent: Not Available]"
+    };
+
     let auth_text = match state.auth_method {
-        SshAuthMethod::Password => "Auth: [Password] / Key File / Agent".to_string(),
-        SshAuthMethod::KeyFile => "Auth: Password / [Key File] / Agent".to_string(),
-        SshAuthMethod::Agent => "Auth: Password / Key File / [Agent]".to_string(),
+        SshAuthMethod::Password => format!("Auth: [Password] / Key File / Agent {}", agent_status),
+        SshAuthMethod::KeyFile => format!("Auth: Password / [Key File] / Agent {}", agent_status),
+        SshAuthMethod::Agent => format!("Auth: Password / Key File / [Agent] {}", agent_status),
     };
     let auth_paragraph = Paragraph::new(auth_text).style(modal_backdrop_style(*palette));
     frame.render_widget(auth_paragraph, chunks[1]);

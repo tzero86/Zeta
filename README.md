@@ -80,20 +80,37 @@ Before connecting, ensure you have:
 
 #### Authentication Priority
 
-When connecting, Zeta attempts authentication in this order:
+Zeta respects your explicit authentication choice in the dialog:
 
-1. **SSH Agent** — if `SSH_AUTH_SOCK` environment variable is set and agent contains keys
-2. **Password** — if provided in the connect dialog
-3. **Key File** — if path is provided in the connect dialog
+1. **SSH Agent (Recommended)** — Select Agent to use `SSH_AUTH_SOCK` if available. If Agent is unavailable or has no matching keys, connection fails with a clear error (no silent fallback).
+2. **Password** — Select Password to authenticate with a password (Agent is skipped).
+3. **Key File** — Select Key File to authenticate with a private key (Agent is skipped).
 
-If SSH Agent fails and no password/key is provided, the connection cannot proceed.
+**Best Practices:**
+- **SSH Agent is the recommended method** because:
+  - Secure: private keys never leave your SSH Agent process
+  - Convenient: no need to re-enter passwords for every connection
+  - Supports passphrases: Agent caches unlocked keys during your session
+- Set up SSH Agent on your machine:
+  ```bash
+  # Start SSH Agent (usually done in ~/.profile or ~/.bashrc)
+  eval "$(ssh-agent)"
+  # Add your keys to the agent
+  ssh-add ~/.ssh/id_rsa
+  # Verify SSH_AUTH_SOCK is set
+  echo $SSH_AUTH_SOCK
+  ```
+- The SSH Connect dialog now shows "[Agent: Available]" or "[Agent: Not Available]" to help you understand why Agent selection might fail.
+- If Agent selection fails with "No matching identity in SSH Agent", ensure your key is added via `ssh-add ~/.ssh/id_rsa`.
+- **Fallback:** Use Password or Key File if Agent is unavailable, then restart Agent when possible.
 
 #### Troubleshooting SSH/SFTP Connections
 
 | Issue | Diagnosis | Solution |
 |---|---|---|
-| "SSH Agent not available" | SSH Agent is not running or `SSH_AUTH_SOCK` is not set | Run `eval "$(ssh-agent)"` to start agent, or provide a password/key file in the dialog |
-| "Authentication failed" | Wrong password or key file | Verify credentials with `ssh user@host` from terminal first |
+| "SSH Agent not available" | SSH Agent is not running or `SSH_AUTH_SOCK` is not set | Run `eval "$(ssh-agent)"` to start agent, add keys with `ssh-add`, or select Password/Key File instead |
+| "No matching identity in SSH Agent" | Agent is running but doesn't have the key needed for this host | Run `ssh-add ~/.ssh/id_rsa` to add your key, or use Password/Key File instead |
+| "Authentication failed" | Wrong password or key file, or key permissions invalid | Verify credentials with `ssh user@host` from terminal first. For key files, ensure `chmod 600 ~/.ssh/id_rsa` |
 | "Host key changed" (red error) | Known host key mismatch — possible security issue | Run `ssh-keygen -R host.example.com` to remove old entry, then retry |
 | "Connection timeout" | Host unreachable or network issue | Check host is online with `ping` or `ssh` from terminal |
 | "Host key not recognized" | New host, need manual verification | Verify the fingerprints (SHA256 preferred, MD5 for legacy compatibility) with server admin, then press Enter in the trust prompt |

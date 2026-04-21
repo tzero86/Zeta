@@ -1426,6 +1426,11 @@ fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
     Ok((user.to_string(), host.to_string(), port))
 }
 
+/// Detect if SSH Agent is available by checking SSH_AUTH_SOCK environment variable.
+fn has_ssh_agent() -> bool {
+    std::env::var("SSH_AUTH_SOCK").is_ok()
+}
+
 /// Connect to SSH host and create SftpBackend.
 ///
 /// When `trust_unknown_host` is true the connection proceeds even when the host
@@ -1504,59 +1509,53 @@ fn connect_sftp(
         }
     }
 
-    // Attempt SSH Agent authentication first (if available)
-    let mut authenticated = false;
-    let mut agent_failed = false;
-
-    if let Ok(mut agent) = session.agent() {
-        if agent.connect().is_ok() && agent.list_identities().is_ok() {
-            if let Ok(identities) = agent.identities() {
-                for identity in identities {
-                    if agent.userauth(&user, &identity).is_ok() {
-                        authenticated = true;
-                        break;
-                    }
-                }
-            }
-        }
-        let _ = agent.disconnect();
-    } else {
-        // Agent not available or not accessible
-        agent_failed = true;
-    }
-
-    // If agent didn't authenticate (no valid identities), try the requested method or fallback
-    if !authenticated {
-        match auth_method {
-            crate::state::ssh::SshAuthMethod::Agent => {
-                // Agent was requested but failed
+    // Attempt authentication based on user's selected method.
+    // Respect user choice: do NOT silently fall back from selected method to another.
+    match auth_method {
+        crate::state::ssh::SshAuthMethod::Agent => {
+            // User explicitly selected Agent — check availability and fail if unavailable
+            if !has_ssh_agent() {
                 return SftpConnectOutcome::Failed(SshErrorKind::AgentUnavailable(
-                    if agent_failed {
-                        "SSH Agent not running or not accessible (SSH_AUTH_SOCK not set)"
-                            .to_string()
-                    } else {
-                        "SSH Agent has no valid identities".to_string()
-                    },
+                    "SSH Agent not available (SSH_AUTH_SOCK not set)".to_string(),
                 ));
             }
-            crate::state::ssh::SshAuthMethod::Password => {
-                if let Err(e) = session.userauth_password(&user, credential) {
-                    return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(
-                        format!("Password rejected by server: {}", e),
-                    ));
+
+            let mut authenticated = false;
+            if let Ok(mut agent) = session.agent() {
+                if agent.connect().is_ok() && agent.list_identities().is_ok() {
+                    if let Ok(identities) = agent.identities() {
+                        for identity in identities {
+                            if agent.userauth(&user, &identity).is_ok() {
+                                authenticated = true;
+                                break;
+                            }
+                        }
+                    }
                 }
+                let _ = agent.disconnect();
             }
-            crate::state::ssh::SshAuthMethod::KeyFile => {
-                if let Err(e) = session.userauth_pubkey_file(
-                    &user,
-                    None,
-                    std::path::Path::new(credential),
-                    None,
-                ) {
-                    return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(
-                        format!("Key file authentication failed: {} — verify key permissions (chmod 600 ~/.ssh/id_rsa)", e),
-                    ));
-                }
+
+            if !authenticated {
+                return SftpConnectOutcome::Failed(SshErrorKind::AgentUnavailable(
+                    "No matching identity in SSH Agent".to_string(),
+                ));
+            }
+        }
+        crate::state::ssh::SshAuthMethod::Password => {
+            if let Err(e) = session.userauth_password(&user, credential) {
+                return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(format!(
+                    "Password rejected by server: {}",
+                    e
+                )));
+            }
+        }
+        crate::state::ssh::SshAuthMethod::KeyFile => {
+            if let Err(e) =
+                session.userauth_pubkey_file(&user, None, std::path::Path::new(credential), None)
+            {
+                return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(
+                    format!("Key file authentication failed: {} — verify key permissions (chmod 600 ~/.ssh/id_rsa)", e),
+                ));
             }
         }
     }
