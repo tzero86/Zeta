@@ -997,11 +997,7 @@ impl AppState {
             }
             Action::OpenDeletePrompt => {
                 let pane = self.panes.active_pane();
-                let marked_items: Vec<_> = pane
-                    .marked
-                    .iter()
-                    .map(|p| p.clone())
-                    .collect();
+                let marked_items: Vec<_> = pane.marked.iter().map(|p| p.clone()).collect();
 
                 if marked_items.is_empty() {
                     self.status_message = "No items selected to delete".to_string();
@@ -1010,9 +1006,7 @@ impl AppState {
 
                 let mut operations = Vec::new();
                 for item in &marked_items {
-                    operations.push(crate::action::FileOperation::Trash {
-                        path: item.clone(),
-                    });
+                    operations.push(crate::action::FileOperation::Trash { path: item.clone() });
                 }
 
                 let refresh = vec![crate::action::RefreshTarget {
@@ -1027,16 +1021,13 @@ impl AppState {
                     refresh,
                 );
 
-                self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                self.overlay.modal =
+                    Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
                 self.status_message = String::new();
             }
             Action::OpenPermanentDeletePrompt => {
                 let pane = self.panes.active_pane();
-                let marked_items: Vec<_> = pane
-                    .marked
-                    .iter()
-                    .map(|p| p.clone())
-                    .collect();
+                let marked_items: Vec<_> = pane.marked.iter().map(|p| p.clone()).collect();
 
                 if marked_items.is_empty() {
                     self.status_message = "No items selected to delete".to_string();
@@ -1045,9 +1036,7 @@ impl AppState {
 
                 let mut operations = Vec::new();
                 for item in &marked_items {
-                    operations.push(crate::action::FileOperation::Delete {
-                        path: item.clone(),
-                    });
+                    operations.push(crate::action::FileOperation::Delete { path: item.clone() });
                 }
 
                 let refresh = vec![crate::action::RefreshTarget {
@@ -1062,7 +1051,8 @@ impl AppState {
                     refresh,
                 );
 
-                self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                self.overlay.modal =
+                    Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
                 self.status_message = String::new();
             }
             Action::OpenMovePrompt => {
@@ -3058,6 +3048,7 @@ mod tests {
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
         WorkspaceState,
     };
+    use crate::state::dialog::DestructiveAction;
 
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
@@ -3483,13 +3474,16 @@ mod tests {
     #[test]
     fn prompt_submit_dispatches_trash_operation() {
         let mut state = test_state();
+        let path = PathBuf::from("./test.txt");
+        state.panes.left.marked.insert(path);
+        
         state
             .apply(Action::OpenDeletePrompt)
-            .expect("trash prompt should open");
+            .expect("delete modal should open");
 
         let commands = state
-            .apply(Action::PromptSubmit)
-            .expect("submit should succeed");
+            .apply(Action::DestructiveConfirmYes)
+            .expect("confirm should dispatch");
 
         assert!(matches!(
             commands.first(),
@@ -3503,13 +3497,16 @@ mod tests {
     #[test]
     fn prompt_submit_dispatches_permanent_delete_operation() {
         let mut state = test_state();
+        let path = PathBuf::from("./test.txt");
+        state.panes.left.marked.insert(path);
+        
         state
             .apply(Action::OpenPermanentDeletePrompt)
-            .expect("delete prompt should open");
+            .expect("delete modal should open");
 
         let commands = state
-            .apply(Action::PromptSubmit)
-            .expect("submit should succeed");
+            .apply(Action::DestructiveConfirmYes)
+            .expect("confirm should dispatch");
 
         assert!(matches!(
             commands.first(),
@@ -4529,13 +4526,13 @@ mod tests {
 
         state
             .apply(Action::OpenDeletePrompt)
-            .expect("trash prompt should open");
+            .expect("delete modal should open");
 
-        assert!(state.overlay.prompt().is_some());
-        assert!(state.status_message.contains("2 marked items"));
-        assert!(
-            state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt")
-        );
+        assert!(matches!(
+            state.overlay.modal,
+            Some(ModalState::DestructiveConfirm(_))
+        ));
+        assert!(state.status_message.is_empty());
     }
 
     #[test]
@@ -4546,51 +4543,55 @@ mod tests {
 
         state
             .apply(Action::OpenPermanentDeletePrompt)
-            .expect("delete prompt should open");
+            .expect("delete modal should open");
 
-        assert!(state.overlay.prompt().is_some());
-        assert!(state.status_message.contains("2 marked items"));
-        assert!(
-            state.status_message.contains("alpha.txt") || state.status_message.contains("beta.txt")
-        );
+        assert!(matches!(
+            state.overlay.modal,
+            Some(ModalState::DestructiveConfirm(_))
+        ));
+        assert!(state.status_message.is_empty());
     }
 
     #[test]
     fn open_delete_prompt_sets_trash_confirmation_message() {
         let mut state = test_state();
+        let path = PathBuf::from("./test.txt");
+        state.panes.left.marked.insert(path);
 
         state
             .apply(Action::OpenDeletePrompt)
-            .expect("trash prompt should open");
+            .expect("delete modal should open");
 
-        assert!(state.overlay.prompt().is_some());
-        assert_eq!(
-            state.overlay.prompt().map(|prompt| prompt.kind),
-            Some(PromptKind::Trash)
-        );
-        assert_eq!(
-            state.overlay.prompt().map(|prompt| prompt.title),
-            Some("Move to Trash")
-        );
+        assert!(matches!(
+            state.overlay.modal,
+            Some(ModalState::DestructiveConfirm(_))
+        ));
+        if let Some(ModalState::DestructiveConfirm(confirm_state)) = &state.overlay.modal {
+            assert_eq!(confirm_state.action, DestructiveAction::Delete);
+        } else {
+            panic!("Expected DestructiveConfirm modal");
+        }
     }
 
     #[test]
     fn open_permanent_delete_prompt_sets_delete_confirmation_message() {
         let mut state = test_state();
+        let path = PathBuf::from("./test.txt");
+        state.panes.left.marked.insert(path);
 
         state
             .apply(Action::OpenPermanentDeletePrompt)
-            .expect("delete prompt should open");
+            .expect("delete modal should open");
 
-        assert!(state.overlay.prompt().is_some());
-        assert_eq!(
-            state.overlay.prompt().map(|prompt| prompt.kind),
-            Some(PromptKind::Delete)
-        );
-        assert_eq!(
-            state.overlay.prompt().map(|prompt| prompt.title),
-            Some("Delete Permanently")
-        );
+        assert!(matches!(
+            state.overlay.modal,
+            Some(ModalState::DestructiveConfirm(_))
+        ));
+        if let Some(ModalState::DestructiveConfirm(confirm_state)) = &state.overlay.modal {
+            assert_eq!(confirm_state.action, DestructiveAction::PermanentDelete);
+        } else {
+            panic!("Expected DestructiveConfirm modal");
+        }
     }
 
     #[test]
@@ -4670,5 +4671,98 @@ mod tests {
             .expect("theme change should succeed");
 
         assert_eq!(state.theme.preset, "oxide");
+    }
+
+    #[test]
+    fn destructive_confirm_state_renders_correctly() {
+        use crate::action::FileOperation;
+        use crate::state::dialog::{DestructiveAction, DestructiveConfirmState};
+        use std::path::PathBuf;
+
+        let items = vec![
+            PathBuf::from("file1.txt"),
+            PathBuf::from("file2.txt"),
+            PathBuf::from("file3.txt"),
+            PathBuf::from("file4.txt"),
+        ];
+
+        let operation = FileOperation::Delete {
+            path: items[0].clone(),
+        };
+
+        let state =
+            DestructiveConfirmState::new(DestructiveAction::Delete, &items, operation, vec![]);
+
+        let lines = state.lines();
+        assert!(lines.iter().any(|l| l.contains("⚠")));
+        assert!(lines.iter().any(|l| l.contains("Delete")));
+        assert!(lines.iter().any(|l| l.contains("4")));
+        assert!(lines.iter().any(|l| l.contains("file1.txt")));
+        assert!(lines.iter().any(|l| l.contains("... and 1 more")));
+    }
+
+    #[test]
+    fn open_delete_prompt_opens_destructive_confirm_modal() {
+        let mut state = test_state();
+        let paths = vec![PathBuf::from("file1.txt"), PathBuf::from("file2.txt")];
+        for path in &paths {
+            state.panes.active_pane_mut().marked.insert(path.clone());
+        }
+
+        let commands = state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        assert!(matches!(
+            state.overlay.modal,
+            Some(ModalState::DestructiveConfirm(_))
+        ));
+        assert_eq!(commands.len(), 0, "no operations should dispatch yet");
+    }
+
+    #[test]
+    fn destructive_confirm_yes_dispatches_operation() {
+        let mut state = test_state();
+        let paths = vec![PathBuf::from("file1.txt")];
+        state
+            .panes
+            .active_pane_mut()
+            .marked
+            .insert(paths[0].clone());
+
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        let commands = state
+            .apply(Action::DestructiveConfirmYes)
+            .expect("confirm should dispatch");
+
+        assert!(matches!(state.overlay.modal, None));
+        assert!(commands
+            .iter()
+            .any(|cmd| matches!(cmd, Command::RunFileOperation { .. })));
+    }
+
+    #[test]
+    fn destructive_confirm_no_cancels_operation() {
+        let mut state = test_state();
+        let paths = vec![PathBuf::from("file1.txt")];
+        state
+            .panes
+            .active_pane_mut()
+            .marked
+            .insert(paths[0].clone());
+
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        let commands = state
+            .apply(Action::DestructiveConfirmNo)
+            .expect("confirm no should succeed");
+
+        assert!(matches!(state.overlay.modal, None));
+        assert_eq!(commands.len(), 0, "no operations should dispatch on cancel");
     }
 }
