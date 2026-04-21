@@ -94,13 +94,32 @@ pub fn render_ssh_connect_dialog(
 
     // Error message
     if let Some(error) = &state.error {
-        let display_error = if error.contains("failed:") {
-            error.clone()
-        } else {
-            format!("Error: {}", error)
+        let (error_text, error_color) = match error {
+            crate::state::ssh::SshErrorKind::HostKeyMismatch(msg) => (
+                format!("🔒 Host key mismatch: {}", msg),
+                ratatui::style::Color::Red,
+            ),
+            crate::state::ssh::SshErrorKind::ConnectionFailed(msg) => (
+                format!("⚠ Connection error: {}", msg),
+                ratatui::style::Color::Red,
+            ),
+            crate::state::ssh::SshErrorKind::AuthenticationFailed(msg) => (
+                format!("🔐 Auth failed: {} — Try again", msg),
+                ratatui::style::Color::Yellow,
+            ),
+            crate::state::ssh::SshErrorKind::AgentUnavailable(msg) => (
+                format!("ℹ Agent not available: {}", msg),
+                ratatui::style::Color::Cyan,
+            ),
+            crate::state::ssh::SshErrorKind::HostKeyUnknown(msg) => (
+                format!("❓ Unknown host: {}", msg),
+                ratatui::style::Color::Yellow,
+            ),
+            crate::state::ssh::SshErrorKind::Other(msg) => {
+                (format!("Error: {}", msg), ratatui::style::Color::Gray)
+            }
         };
-        let error_paragraph =
-            Paragraph::new(display_error).style(Style::default().fg(ratatui::style::Color::Red));
+        let error_paragraph = Paragraph::new(error_text).style(Style::default().fg(error_color));
         frame.render_widget(error_paragraph, chunks[3]);
     }
 

@@ -70,7 +70,7 @@ enum HostCheckResult {
 enum SftpConnectOutcome {
     Connected(SessionId, crate::fs::sftp::SftpBackend),
     UnknownHost { fingerprint: String },
-    Failed(String),
+    Failed(crate::state::ssh::SshErrorKind),
 }
 
 #[derive(Clone, Debug)]
@@ -290,6 +290,13 @@ pub enum JobResult {
         auth_method: crate::state::ssh::SshAuthMethod,
         credential: String,
         fingerprint: String,
+    },
+    /// SSH connection failed with a categorized error.
+    SshConnectionFailed {
+        workspace_id: usize,
+        pane: PaneId,
+        address: String,
+        error: crate::state::ssh::SshErrorKind,
     },
 }
 
@@ -906,14 +913,12 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         fingerprint,
                                     });
                                 }
-                                SftpConnectOutcome::Failed(msg) => {
-                                    let _ = result_tx.send(JobResult::JobFailed {
+                                SftpConnectOutcome::Failed(error) => {
+                                    let _ = result_tx.send(JobResult::SshConnectionFailed {
                                         workspace_id,
                                         pane,
-                                        path: std::path::PathBuf::new(),
-                                        file_op: None,
-                                        message: msg,
-                                        elapsed_ms: 0,
+                                        address,
+                                        error,
                                     });
                                 }
                             }
@@ -1403,11 +1408,12 @@ fn connect_sftp(
     known_hosts_file: Option<&std::path::Path>,
     trust_unknown_host: bool,
 ) -> SftpConnectOutcome {
+    use crate::state::ssh::SshErrorKind;
     use std::net::TcpStream;
 
     let (user, host, port) = match parse_ssh_address(address) {
         Ok(v) => v,
-        Err(e) => return SftpConnectOutcome::Failed(e),
+        Err(e) => return SftpConnectOutcome::Failed(SshErrorKind::Other(e)),
     };
 
     // Create session ID for tracking
@@ -1416,17 +1422,30 @@ fn connect_sftp(
     // Connect to SSH server
     let tcp = match TcpStream::connect((host.as_str(), port)) {
         Ok(t) => t,
-        Err(e) => return SftpConnectOutcome::Failed(format!("Connection failed: {}", e)),
+        Err(e) => {
+            return SftpConnectOutcome::Failed(SshErrorKind::ConnectionFailed(format!(
+                "Cannot reach {}:{} — {}",
+                host, port, e
+            )))
+        }
     };
 
     let mut session = match ssh2::Session::new() {
         Ok(s) => s,
-        Err(e) => return SftpConnectOutcome::Failed(format!("Failed to create session: {}", e)),
+        Err(e) => {
+            return SftpConnectOutcome::Failed(SshErrorKind::Other(format!(
+                "Failed to create SSH session: {}",
+                e
+            )))
+        }
     };
 
     session.set_tcp_stream(tcp);
     if let Err(e) = session.handshake() {
-        return SftpConnectOutcome::Failed(format!("Handshake failed: {}", e));
+        return SftpConnectOutcome::Failed(SshErrorKind::ConnectionFailed(format!(
+            "SSH handshake failed: {}",
+            e
+        )));
     }
 
     // Verify host key; allow bypass when user has explicitly trusted this session.
@@ -1443,18 +1462,21 @@ fn connect_sftp(
             return SftpConnectOutcome::UnknownHost { fingerprint };
         }
         HostCheckResult::Mismatch => {
-            return SftpConnectOutcome::Failed(
-                "WARNING: Host key changed! Possible MITM attack. Investigate manually."
-                    .to_string(),
-            );
+            return SftpConnectOutcome::Failed(SshErrorKind::HostKeyMismatch(
+                "Possible MITM attack — host key mismatch with ~/.ssh/known_hosts. Investigate manually.".to_string(),
+            ));
         }
         HostCheckResult::Failure(msg) => {
-            return SftpConnectOutcome::Failed(format!("Host verification failed: {}", msg));
+            return SftpConnectOutcome::Failed(SshErrorKind::Other(format!(
+                "Host key verification failed: {}",
+                msg
+            )));
         }
     }
 
-    // Attempt SSH Agent authentication first
+    // Attempt SSH Agent authentication first (if available)
     let mut authenticated = false;
+    let mut agent_failed = false;
 
     if let Ok(mut agent) = session.agent() {
         if agent.connect().is_ok() && agent.list_identities().is_ok() {
@@ -1468,14 +1490,30 @@ fn connect_sftp(
             }
         }
         let _ = agent.disconnect();
+    } else {
+        // Agent not available or not accessible
+        agent_failed = true;
     }
 
-    // Authenticate with fallback if agent failed
+    // If agent didn't authenticate (no valid identities), try the requested method or fallback
     if !authenticated {
         match auth_method {
+            crate::state::ssh::SshAuthMethod::Agent => {
+                // Agent was requested but failed
+                return SftpConnectOutcome::Failed(SshErrorKind::AgentUnavailable(
+                    if agent_failed {
+                        "SSH Agent not running or not accessible (SSH_AUTH_SOCK not set)"
+                            .to_string()
+                    } else {
+                        "SSH Agent has no valid identities".to_string()
+                    },
+                ));
+            }
             crate::state::ssh::SshAuthMethod::Password => {
                 if let Err(e) = session.userauth_password(&user, credential) {
-                    return SftpConnectOutcome::Failed(format!("Authentication failed: {}", e));
+                    return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(
+                        format!("Password rejected by server: {}", e),
+                    ));
                 }
             }
             crate::state::ssh::SshAuthMethod::KeyFile => {
@@ -1485,13 +1523,10 @@ fn connect_sftp(
                     std::path::Path::new(credential),
                     None,
                 ) {
-                    return SftpConnectOutcome::Failed(format!("Key authentication failed: {}", e));
+                    return SftpConnectOutcome::Failed(SshErrorKind::AuthenticationFailed(
+                        format!("Key file authentication failed: {} — verify key permissions (chmod 600 ~/.ssh/id_rsa)", e),
+                    ));
                 }
-            }
-            crate::state::ssh::SshAuthMethod::Agent => {
-                return SftpConnectOutcome::Failed(
-                    "Agent authentication failed and no other credential provided".to_string(),
-                );
             }
         }
     }
@@ -1505,7 +1540,12 @@ fn connect_sftp(
     // Create SFTP backend
     let backend = match crate::fs::sftp::SftpBackend::new(session, std::path::PathBuf::from("/")) {
         Ok(b) => b,
-        Err(e) => return SftpConnectOutcome::Failed(format!("Failed to initialize SFTP: {}", e)),
+        Err(e) => {
+            return SftpConnectOutcome::Failed(SshErrorKind::ConnectionFailed(format!(
+                "Failed to initialize SFTP session: {}",
+                e
+            )))
+        }
     };
 
     SftpConnectOutcome::Connected(session_id, backend)

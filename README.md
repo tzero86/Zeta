@@ -71,9 +71,45 @@ Some crates link against system libraries. Install these before running `cargo i
 - Transparent cross-filesystem support (copy from local to remote or vice versa)
 - Use the SSH Connect dialog (opened via command palette or menu) to initiate a session
 
+#### Connection Requirements
+
+Before connecting, ensure you have:
+- **OpenSSH client** installed (typically included on Linux/macOS; download from [openssh.com](https://www.openssh.com) for Windows)
+- **`known_hosts` file** at `~/.ssh/known_hosts` (created automatically after first SSH connections)
+- **Authentication credentials**: one of password, key file path, or SSH Agent configured
+
+#### Authentication Priority
+
+When connecting, Zeta attempts authentication in this order:
+
+1. **SSH Agent** — if `SSH_AUTH_SOCK` environment variable is set and agent contains keys
+2. **Password** — if provided in the connect dialog
+3. **Key File** — if path is provided in the connect dialog
+
+If SSH Agent fails and no password/key is provided, the connection cannot proceed.
+
+#### Troubleshooting SSH/SFTP Connections
+
+| Issue | Diagnosis | Solution |
+|---|---|---|
+| "SSH Agent not available" | SSH Agent is not running or `SSH_AUTH_SOCK` is not set | Run `eval "$(ssh-agent)"` to start agent, or provide a password/key file in the dialog |
+| "Authentication failed" | Wrong password or key file | Verify credentials with `ssh user@host` from terminal first |
+| "Host key changed" (red error) | Known host key mismatch — possible security issue | Run `ssh-keygen -R host.example.com` to remove old entry, then retry |
+| "Connection timeout" | Host unreachable or network issue | Check host is online with `ping` or `ssh` from terminal |
+| "Host key not recognized" | New host, need manual verification | Verify the MD5 fingerprint with server admin, then press Enter in the trust prompt |
+| "Permission denied" (local copy issues) | SSH key file has wrong permissions | Run `chmod 600 ~/.ssh/id_rsa` and ensure ownership with `chown $USER ~/.ssh` |
+
+**Key File Permissions:** SSH keys must be readable only by you. If you see "bad permissions" errors, run:
+```bash
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_rsa
+chown -R $USER ~/.ssh
+```
+
 **Security Test Plan:**
-- **Host Key Verification Failure:** Attempt to connect to a host with an invalid or changed host key in `~/.ssh/known_hosts`. The UI will reject the connection with: `WARNING: Host key changed! Please investigate manually.`
+- **Host Key Verification Failure:** Attempt to connect to a host with an invalid or changed host key in `~/.ssh/known_hosts`. The UI will reject the connection with a red error: `Host key changed! Possible MITM attack. Investigate manually.`
 - **SSH Agent Authentication:** Run `ssh-agent`, add a key via `ssh-add`, and attempt an SSH connection without providing a password or key file. The connection will succeed automatically using the agent's identities.
+- **Agent Unavailable:** Close SSH Agent and attempt connection; Zeta will show an informational message and fall back to password/key file if provided.
 
 ### Editor
 - Embedded text editor with syntax highlighting (via syntect)

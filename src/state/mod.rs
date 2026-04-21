@@ -1783,7 +1783,8 @@ impl AppState {
             | JobResult::DirSizeCalculated { workspace_id, .. } => Some(*workspace_id),
             JobResult::DirectoryChanged { .. } | JobResult::ConfigChanged => None,
             JobResult::SshConnected { workspace_id, .. }
-            | JobResult::SshHostUnknown { workspace_id, .. } => Some(*workspace_id),
+            | JobResult::SshHostUnknown { workspace_id, .. }
+            | JobResult::SshConnectionFailed { workspace_id, .. } => Some(*workspace_id),
         };
 
         let previous_workspace = self.active_workspace_idx;
@@ -2143,6 +2144,16 @@ impl AppState {
                 self.panes.pane_mut(pane).cwd = home;
                 self.overlay.close_all();
                 self.status_message = format!("connected to {}", address);
+            }
+            JobResult::SshConnectionFailed {
+                workspace_id: _,
+                pane: _,
+                address,
+                error,
+            } => {
+                // Error is displayed in the SSH dialog; show status message
+                self.status_message =
+                    format!("SSH connection failed: {} - {}", address, error.message());
             }
         }
 
