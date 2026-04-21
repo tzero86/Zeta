@@ -1043,30 +1043,6 @@ impl AppState {
                     Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
                 self.status_message = String::new();
             }
-            Action::OpenOverwritePrompt => {
-                let pane = self.panes.active_pane();
-                let marked_items: Vec<_> = pane.marked.iter().cloned().collect();
-
-                if marked_items.is_empty() {
-                    self.status_message = "No items selected for overwrite".to_string();
-                    return Ok(vec![]);
-                }
-
-                let refresh = vec![crate::action::RefreshTarget {
-                    pane: self.panes.focused_pane_id(),
-                    path: pane.cwd.clone(),
-                }];
-
-                let state = crate::state::dialog::DestructiveConfirmState::new(
-                    crate::state::dialog::DestructiveAction::Overwrite,
-                    &marked_items,
-                    refresh,
-                );
-
-                self.overlay.modal =
-                    Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
-                self.status_message = String::new();
-            }
             Action::OpenMovePrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;

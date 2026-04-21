@@ -13,7 +13,6 @@ use super::PromptState;
 pub enum DestructiveAction {
     Delete,
     PermanentDelete,
-    Overwrite,
 }
 
 impl DestructiveAction {
@@ -21,7 +20,6 @@ impl DestructiveAction {
         match self {
             Self::Delete => "Delete",
             Self::PermanentDelete => "Delete Permanently",
-            Self::Overwrite => "Overwrite",
         }
     }
 }
@@ -51,13 +49,12 @@ impl DestructiveConfirmState {
         let operations = items
             .iter()
             .map(|item| match action {
-                DestructiveAction::Delete => crate::action::FileOperation::Trash {
-                    path: item.clone(),
-                },
-                DestructiveAction::PermanentDelete => crate::action::FileOperation::Delete {
-                    path: item.clone(),
-                },
-                DestructiveAction::Overwrite => unreachable!("Overwrite not yet supported"),
+                DestructiveAction::Delete => {
+                    crate::action::FileOperation::Trash { path: item.clone() }
+                }
+                DestructiveAction::PermanentDelete => {
+                    crate::action::FileOperation::Delete { path: item.clone() }
+                }
             })
             .collect();
 
