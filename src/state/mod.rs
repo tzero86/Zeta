@@ -1026,7 +1026,6 @@ impl AppState {
                     operations[0].clone(),
                     refresh,
                 );
-                state.operations = operations;
 
                 self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
                 self.status_message = String::new();
@@ -1062,7 +1061,6 @@ impl AppState {
                     operations[0].clone(),
                     refresh,
                 );
-                state.operations = operations;
 
                 self.overlay.modal = Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
                 self.status_message = String::new();

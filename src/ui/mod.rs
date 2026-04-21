@@ -31,8 +31,8 @@ use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
-    menu_popup_width, render_collision_dialog, render_dialog, render_menu_popup,
-    render_open_with_popup, render_prompt,
+    menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
+    render_menu_popup, render_open_with_popup, render_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -319,6 +319,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some(collision) = state.collision() {
         render_collision_dialog(frame, areas[1], collision, palette);
+    }
+
+    if let Some(destructive_state) = state.destructive_confirm() {
+        render_destructive_confirm(frame, areas[1], destructive_state, palette);
     }
 
     if let Some(palette_state) = state.palette() {

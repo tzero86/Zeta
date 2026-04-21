@@ -412,6 +412,77 @@ pub fn render_collision_dialog(
     frame.render_widget(paragraph, inner);
 }
 
+pub fn render_destructive_confirm(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::state::dialog::DestructiveConfirmState,
+    palette: ThemePalette,
+) {
+    let lines = state.lines();
+    let width = area.width.min(72);
+    let height = (lines.len() as u16 + 2).min(area.height.saturating_sub(2).max(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
+
+    // Background
+    render_modal_backdrop(frame, area, popup_area, palette);
+    frame.render_widget(Clear, popup_area);
+
+    // Modal border
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(
+            Style::default()
+                .fg(palette.prompt_border)
+                .add_modifier(Modifier::BOLD),
+        )
+        .title(" Destructive Action ")
+        .style(Style::default().bg(palette.prompt_bg));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Content
+    let styled_lines: Vec<Line> = lines
+        .iter()
+        .map(|line| {
+            if line.starts_with("Y/") || line.starts_with("N/") {
+                let key_hint_style = Style::default()
+                    .fg(palette.key_hint_fg)
+                    .add_modifier(Modifier::BOLD);
+                if let Some((key, _)) = line.split_once(char::is_whitespace) {
+                    let rest = &line[key.len()..].trim_start();
+                    Line::from(vec![
+                        Span::styled(key.to_string(), key_hint_style),
+                        Span::raw("  "),
+                        Span::styled(rest.to_string(), Style::default().fg(palette.text_primary)),
+                    ])
+                } else {
+                    Line::styled(line.clone(), key_hint_style)
+                }
+            } else if line.starts_with("⚠") {
+                Line::styled(
+                    line.clone(),
+                    Style::default()
+                        .fg(palette.prompt_border)
+                        .add_modifier(Modifier::BOLD),
+                )
+            } else {
+                Line::styled(line.clone(), Style::default().fg(palette.text_primary))
+            }
+        })
+        .collect();
+
+    let paragraph = Paragraph::new(styled_lines).style(Style::default().bg(palette.prompt_bg));
+    frame.render_widget(paragraph, inner);
+}
+
 #[allow(dead_code)]
 pub fn render_footer_hint(frame: &mut Frame<'_>, area: Rect, text: &str, palette: ThemePalette) {
     frame.render_widget(
