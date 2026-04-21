@@ -55,11 +55,12 @@ impl PreviewState {
     }
 
     pub fn preview_command_due(&mut self) -> Option<Command> {
-        let (path, due_at) = self.pending_request.as_ref()?.clone();
-        if Instant::now() < due_at {
+        // Check expiry without taking ownership — only clone the Instant, not the PathBuf.
+        if Instant::now() < self.pending_request.as_ref()?.1 {
             return None;
         }
-        self.pending_request = None;
+        // Deadline passed: take the pending request (avoids PathBuf clone).
+        let (path, _) = self.pending_request.take()?;
         Some(Command::PreviewFile { path })
     }
 

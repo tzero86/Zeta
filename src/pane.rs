@@ -389,6 +389,7 @@ impl PaneState {
         self.cwd.parent().map(PathBuf::from)
     }
 
+    #[cfg(test)]
     pub fn sorted_entries(&self) -> Vec<&EntryInfo> {
         let mut entries: Vec<&EntryInfo> = self.entries.iter().collect();
         match self.sort_mode {

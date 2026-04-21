@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ratatui::style::{Color, Modifier};
 
 #[cfg(test)]
@@ -6,9 +8,14 @@ use crate::highlight::{normalize_preview_text, HighlightedLine};
 
 /// A read-only scrollable view of syntax-highlighted file content.
 /// Used by the preview panel. Scroll state is owned here.
+///
+/// `lines` is wrapped in `Arc<[_]>` so that `ViewBuffer::clone()` is O(1) —
+/// the highlighted content is immutable after construction, and the preview
+/// cache can hold a shared reference without paying a full deep-copy on every
+/// cache hit during navigation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ViewBuffer {
-    pub lines: Vec<HighlightedLine>,
+    pub lines: Arc<[HighlightedLine]>,
     pub scroll_row: usize,
     pub total_lines: usize,
     /// Raw Markdown source. When `Some`, the buffer represents a markdown
@@ -24,7 +31,7 @@ impl ViewBuffer {
     /// integration can be dropped in with a one-line change.
     pub fn from_markdown(source: String) -> Self {
         Self {
-            lines: Vec::new(),
+            lines: Arc::from([]),
             scroll_row: 0,
             total_lines: 0,
             markdown_source: Some(source),
@@ -50,7 +57,7 @@ impl ViewBuffer {
     pub fn from_highlighted(lines: Vec<HighlightedLine>) -> Self {
         let total_lines = lines.len();
         Self {
-            lines,
+            lines: lines.into(), // Vec<HighlightedLine> → Arc<[HighlightedLine]>, O(1) clone
             scroll_row: 0,
             total_lines,
             markdown_source: None,
@@ -66,7 +73,7 @@ impl ViewBuffer {
             .collect();
         let total_lines = lines.len();
         Self {
-            lines,
+            lines: lines.into(), // Vec → Arc<[_]>
             scroll_row: 0,
             total_lines,
             markdown_source: None,

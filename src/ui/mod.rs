@@ -272,7 +272,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                     filename: &filename,
                     is_focused: state.is_preview_focused(),
                     palette,
-                    cheap_mode: cheap_tools_mode && !state.is_preview_focused(),
+                    // cheap_mode is intentionally disabled for the preview panel.
+                    // The highlighting work is done in the background worker; rendering
+                    // already-highlighted spans as colored ratatui Spans costs less than
+                    // the string-building that cheap_mode performs per frame.
+                    cheap_mode: false,
                 },
             );
         }

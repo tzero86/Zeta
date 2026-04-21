@@ -168,12 +168,11 @@ fn build_row_spans(
     let mut visible_cols = 0usize;
 
     for (fg_color, modifier, text) in tokens {
-        let token_chars: Vec<char> = text.chars().collect();
-        let token_char_len = token_chars.len();
-        let token_display_width: usize = token_chars
-            .iter()
-            .map(|ch| UnicodeWidthChar::width(*ch).unwrap_or(0))
-            .sum();
+        // Compute char count and display width in one pass — no Vec<char> allocation.
+        let (token_char_len, token_display_width) =
+            text.chars().fold((0usize, 0usize), |(nc, dw), ch| {
+                (nc + 1, dw + UnicodeWidthChar::width(ch).unwrap_or(0))
+            });
         let token_end_display = raw_cols + token_display_width;
 
         if token_end_display <= scroll_col {
@@ -189,8 +188,8 @@ fn build_row_spans(
         let mut pending_text = String::new();
         let mut pending_bg: Option<Color> = None;
 
-        for ch in &token_chars {
-            let ch_width = UnicodeWidthChar::width(*ch).unwrap_or(0);
+        for ch in text.chars() {
+            let ch_width = UnicodeWidthChar::width(ch).unwrap_or(0);
 
             // Skip chars still to the left of the scroll window (display-width skip).
             if skipped_display < skip_display {
@@ -226,7 +225,7 @@ fn build_row_spans(
                 ));
             }
             pending_bg = char_bg;
-            pending_text.push(*ch);
+            pending_text.push(ch);
             visible_cols += ch_width;
             raw_cols += ch_width;
             char_col += 1;

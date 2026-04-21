@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -278,7 +280,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         let mark_prefix = if is_marked { "* " } else { "  " };
         let (git_char, git_colour) = match git_status {
             Some(s) => (s.symbol(), s.colour()),
-            None => (' ', palette.text_muted),
+            None => (" ", palette.text_muted),
         };
         // Fixed right: 9 (size) + 1 (gap) + 16 (date) = 26
         let right_fixed = 26usize;
@@ -295,14 +297,14 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         let spacer_width = available_width
             .saturating_sub(left_fixed + display_width(&name) + right_fixed)
             .max(0);
-        let size_str = match (entry.kind, entry.size_bytes) {
-            (EntryKind::Directory, Some(b)) => format!("{:>9}", human_size(b)),
-            (EntryKind::Directory, None) => format!("{:>9}", "dir"),
-            (EntryKind::Symlink, _) => format!("{:>9}", "link"),
-            (EntryKind::Archive, _) => format!("{:>9}", "archive"),
-            (EntryKind::Other, _) => format!("{:>9}", "other"),
-            (EntryKind::File, Some(b)) => format!("{:>9}", human_size(b)),
-            (EntryKind::File, None) => format!("{:>9}", "file"),
+        let size_str: Cow<'static, str> = match (entry.kind, entry.size_bytes) {
+            (EntryKind::Directory, Some(b)) => Cow::Owned(format!("{:>9}", human_size(b))),
+            (EntryKind::Directory, None) => Cow::Borrowed("      dir"),
+            (EntryKind::Symlink, _) => Cow::Borrowed("     link"),
+            (EntryKind::Archive, _) => Cow::Borrowed("  archive"),
+            (EntryKind::Other, _) => Cow::Borrowed("    other"),
+            (EntryKind::File, Some(b)) => Cow::Owned(format!("{:>9}", human_size(b))),
+            (EntryKind::File, None) => Cow::Borrowed("     file"),
         };
         let date_str = entry
             .modified
@@ -314,9 +316,9 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
             row_styles.name
         };
         return ListItem::new(Line::from(vec![
-            Span::styled(mark_prefix.to_string(), row_styles.mark),
+            Span::styled(mark_prefix, row_styles.mark),
             Span::styled(format!("{icon_slot} "), row_styles.icon),
-            Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+            Span::styled(git_char, Style::default().fg(git_colour)),
             Span::raw(" "),
             Span::styled(name, name_style),
             Span::raw(" ".repeat(spacer_width)),
@@ -329,6 +331,8 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     let guide = if is_last { "  " } else { "│ " };
     let branch = if is_last { "└" } else { "├" };
     // icon already bound above
+    // Tree-view branch connector: always one of two static strings, no format!() needed.
+    let branch_span: &'static str = if is_last { "\u{2514} " } else { "\u{251c} " };
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = display_name.unwrap_or_else(|| match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
@@ -349,7 +353,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
                                                    // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
-        None => (' ', palette.text_muted),
+        None => (" ", palette.text_muted),
     };
     let meta_width = display_width(&meta);
     let content_width = available_width;
@@ -367,10 +371,10 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
 
     ListItem::new(Line::from(vec![
         Span::styled(guide, row_styles.guide),
-        Span::styled(format!("{} ", branch), row_styles.branch),
-        Span::styled(mark_prefix.to_string(), row_styles.mark),
+        Span::styled(branch_span, row_styles.branch),
+        Span::styled(mark_prefix, row_styles.mark),
         Span::styled(format!("{} ", icon_slot), row_styles.icon),
-        Span::styled(git_char.to_string(), Style::default().fg(git_colour)),
+        Span::styled(git_char, Style::default().fg(git_colour)),
         Span::raw(" "),
         Span::styled(
             name,
@@ -478,22 +482,22 @@ pub fn truncate_text(value: &str, max_width: usize) -> String {
     format!("{}..", truncated)
 }
 
-pub fn format_entry_meta(entry: &EntryInfo) -> String {
+pub fn format_entry_meta(entry: &EntryInfo) -> Cow<'static, str> {
     match entry.kind {
         EntryKind::Directory => match entry.size_bytes {
-            Some(size) => format!("dir {}", human_size(size)),
-            None => String::from("dir"),
+            Some(size) => Cow::Owned(format!("dir {}", human_size(size))),
+            None => Cow::Borrowed("dir"),
         },
-        EntryKind::Symlink => String::from("link"),
-        EntryKind::Archive => String::from("archive"),
-        EntryKind::Other => String::from("other"),
+        EntryKind::Symlink => Cow::Borrowed("link"),
+        EntryKind::Archive => Cow::Borrowed("archive"),
+        EntryKind::Other => Cow::Borrowed("other"),
         EntryKind::File => {
             let ext = entry
                 .path
                 .extension()
                 .and_then(|value| value.to_str())
                 .map(|value| value.to_ascii_lowercase());
-            let kind = match ext.as_deref() {
+            let kind: &'static str = match ext.as_deref() {
                 Some("rs") => "rust",
                 Some("md") => "markdown",
                 Some("toml") => "config",
@@ -504,8 +508,8 @@ pub fn format_entry_meta(entry: &EntryInfo) -> String {
                 Some(_) | None => "file",
             };
             match entry.size_bytes {
-                Some(size) => format!("{} {}", kind, human_size(size)),
-                None => String::from(kind),
+                Some(size) => Cow::Owned(format!("{} {}", kind, human_size(size))),
+                None => Cow::Borrowed(kind),
             }
         }
     }
