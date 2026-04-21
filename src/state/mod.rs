@@ -4698,8 +4698,7 @@ mod tests {
             PathBuf::from("file4.txt"),
         ];
 
-        let state =
-            DestructiveConfirmState::new(DestructiveAction::Delete, &items, vec![]);
+        let state = DestructiveConfirmState::new(DestructiveAction::Delete, &items, vec![]);
 
         let lines = state.lines();
         assert!(lines.iter().any(|l| l.contains("⚠")));
@@ -4786,7 +4785,7 @@ mod tests {
             .apply(Action::DestructiveConfirmYes)
             .expect("confirm should dispatch");
 
-        assert!(matches!(state.overlay.modal, None));
+        assert!(state.overlay.modal.is_none());
         let file_ops: Vec<_> = commands
             .iter()
             .filter(|cmd| matches!(cmd, Command::RunFileOperation { .. }))
