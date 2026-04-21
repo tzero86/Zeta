@@ -803,17 +803,18 @@ impl AppState {
                             } else {
                                 format!("{command} {target_str}")
                             };
-                            let mut parts = expanded.split_whitespace();
-                            if let Some(prog) = parts.next() {
-                                let args: Vec<&str> = parts.collect();
-                                match std::process::Command::new(prog).args(&args).spawn() {
-                                    Ok(_) => {
-                                        self.status_message =
-                                            format!("opened {} with {name}", target.display());
-                                    }
-                                    Err(e) => {
-                                        self.status_message = format!("could not open file: {e}");
-                                    }
+                            // Use shell to properly parse arguments (preserves spaces in paths)
+                            match std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(&expanded)
+                                .spawn()
+                            {
+                                Ok(_) => {
+                                    self.status_message =
+                                        format!("opened {} with {name}", target.display());
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("could not open file: {e}");
                                 }
                             }
                         }
@@ -997,9 +998,16 @@ impl AppState {
             }
             Action::OpenDeletePrompt => {
                 let pane = self.panes.active_pane();
-                let marked_items: Vec<_> = pane.marked.iter().cloned().collect();
+                let mut items_to_delete: Vec<_> = pane.marked.iter().cloned().collect();
 
-                if marked_items.is_empty() {
+                // Fallback: if no marked items, use currently selected entry
+                if items_to_delete.is_empty() {
+                    if let Some(entry) = pane.selected_entry() {
+                        items_to_delete.push(entry.path.clone());
+                    }
+                }
+
+                if items_to_delete.is_empty() {
                     self.status_message = "No items selected to delete".to_string();
                     return Ok(vec![]);
                 }
@@ -1011,7 +1019,7 @@ impl AppState {
 
                 let state = crate::state::dialog::DestructiveConfirmState::new(
                     crate::state::dialog::DestructiveAction::Delete,
-                    &marked_items,
+                    &items_to_delete,
                     refresh,
                 );
 
@@ -1021,9 +1029,16 @@ impl AppState {
             }
             Action::OpenPermanentDeletePrompt => {
                 let pane = self.panes.active_pane();
-                let marked_items: Vec<_> = pane.marked.iter().cloned().collect();
+                let mut items_to_delete: Vec<_> = pane.marked.iter().cloned().collect();
 
-                if marked_items.is_empty() {
+                // Fallback: if no marked items, use currently selected entry
+                if items_to_delete.is_empty() {
+                    if let Some(entry) = pane.selected_entry() {
+                        items_to_delete.push(entry.path.clone());
+                    }
+                }
+
+                if items_to_delete.is_empty() {
                     self.status_message = "No items selected to delete".to_string();
                     return Ok(vec![]);
                 }
@@ -1035,7 +1050,7 @@ impl AppState {
 
                 let state = crate::state::dialog::DestructiveConfirmState::new(
                     crate::state::dialog::DestructiveAction::PermanentDelete,
-                    &marked_items,
+                    &items_to_delete,
                     refresh,
                 );
 
