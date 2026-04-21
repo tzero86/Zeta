@@ -9,6 +9,82 @@ use super::prompt::prompt_base_path;
 use super::PromptKind;
 use super::PromptState;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DestructiveAction {
+    Delete,
+    PermanentDelete,
+    Overwrite,
+}
+
+impl DestructiveAction {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Delete => "Delete",
+            Self::PermanentDelete => "Delete Permanently",
+            Self::Overwrite => "Overwrite",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DestructiveConfirmState {
+    pub action: DestructiveAction,
+    pub item_count: usize,
+    pub item_sample: Vec<String>,
+    pub operation: Option<crate::action::FileOperation>,
+    pub refresh_targets: Vec<crate::action::RefreshTarget>,
+}
+
+impl DestructiveConfirmState {
+    pub fn new(
+        action: DestructiveAction,
+        items: &[std::path::PathBuf],
+        operation: crate::action::FileOperation,
+        refresh_targets: Vec<crate::action::RefreshTarget>,
+    ) -> Self {
+        let item_count = items.len();
+        let item_sample = items
+            .iter()
+            .take(3)
+            .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            .collect();
+        Self {
+            action,
+            item_count,
+            item_sample,
+            operation: Some(operation),
+            refresh_targets,
+        }
+    }
+
+    pub fn lines(&self) -> Vec<String> {
+        let mut lines = vec![
+            String::from("⚠ WARNING: This action cannot be undone"),
+            format!("Action: {}", self.action.label()),
+            format!("Items: {}", self.item_count),
+            String::new(),
+        ];
+
+        if !self.item_sample.is_empty() {
+            lines.push(String::from("Sample:"));
+            for item in &self.item_sample {
+                lines.push(format!("  • {}", item));
+            }
+            if self.item_count > 3 {
+                lines.push(format!("  ... and {} more", self.item_count - 3));
+            }
+            lines.push(String::new());
+        }
+
+        lines.extend(vec![
+            String::from("Y/Enter  Confirm"),
+            String::from("N/Esc    Cancel"),
+        ]);
+
+        lines
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DialogState {
     pub title: &'static str,
