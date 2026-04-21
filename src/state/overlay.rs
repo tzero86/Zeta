@@ -128,9 +128,7 @@ impl OverlayState {
         }
     }
 
-    pub fn destructive_confirm(
-        &self,
-    ) -> Option<&crate::state::dialog::DestructiveConfirmState> {
+    pub fn destructive_confirm(&self) -> Option<&crate::state::dialog::DestructiveConfirmState> {
         match &self.modal {
             Some(ModalState::DestructiveConfirm(d)) => Some(d),
             _ => None,
