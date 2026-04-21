@@ -1034,6 +1034,18 @@ impl Action {
             _ => None,
         }
     }
+
+    pub fn from_destructive_confirm_key_event(key_event: KeyEvent) -> Option<Self> {
+        match (key_event.code, key_event.modifiers) {
+            (KeyCode::Char('y') | KeyCode::Char('Y'), _) | (KeyCode::Enter, _) => {
+                Some(Action::DestructiveConfirmYes)
+            }
+            (KeyCode::Char('n') | KeyCode::Char('N'), _) | (KeyCode::Esc, _) => {
+                Some(Action::DestructiveConfirmNo)
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

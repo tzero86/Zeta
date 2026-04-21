@@ -739,6 +739,9 @@ fn route_key_event(
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),
         FocusLayer::Modal(ModalKind::Collision) => Action::from_collision_key_event(key_event),
+        FocusLayer::Modal(ModalKind::DestructiveConfirm) => {
+            Action::from_destructive_confirm_key_event(key_event)
+        }
         FocusLayer::Modal(ModalKind::Prompt) => Action::from_prompt_key_event(key_event),
         FocusLayer::Modal(ModalKind::Dialog) => Action::from_dialog_key_event(key_event),
         FocusLayer::Modal(ModalKind::Menu) => Action::from_menu_key_event(key_event, keymap),

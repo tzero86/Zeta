@@ -61,6 +61,7 @@ pub enum ModalKind {
     SshConnect,
     SshTrustPrompt,
     OpenWith,
+    DestructiveConfirm,
 }
 
 /// Structured application-level error type.
