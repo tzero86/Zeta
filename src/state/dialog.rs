@@ -31,7 +31,6 @@ pub struct DestructiveConfirmState {
     pub action: DestructiveAction,
     pub item_count: usize,
     pub item_sample: Vec<String>,
-    pub operation: Option<crate::action::FileOperation>,
     pub operations: Vec<crate::action::FileOperation>,
     pub refresh_targets: Vec<crate::action::RefreshTarget>,
 }
@@ -40,7 +39,6 @@ impl DestructiveConfirmState {
     pub fn new(
         action: DestructiveAction,
         items: &[std::path::PathBuf],
-        operation: crate::action::FileOperation,
         refresh_targets: Vec<crate::action::RefreshTarget>,
     ) -> Self {
         let item_count = items.len();
@@ -49,12 +47,25 @@ impl DestructiveConfirmState {
             .take(3)
             .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
             .collect();
+
+        let operations = items
+            .iter()
+            .map(|item| match action {
+                DestructiveAction::Delete => crate::action::FileOperation::Trash {
+                    path: item.clone(),
+                },
+                DestructiveAction::PermanentDelete => crate::action::FileOperation::Delete {
+                    path: item.clone(),
+                },
+                DestructiveAction::Overwrite => unreachable!("Overwrite not yet supported"),
+            })
+            .collect();
+
         Self {
             action,
             item_count,
             item_sample,
-            operation: Some(operation),
-            operations: Vec::new(),
+            operations,
             refresh_targets,
         }
     }

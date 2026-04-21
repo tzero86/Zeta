@@ -1004,11 +1004,6 @@ impl AppState {
                     return Ok(vec![]);
                 }
 
-                let mut operations = Vec::new();
-                for item in &marked_items {
-                    operations.push(crate::action::FileOperation::Trash { path: item.clone() });
-                }
-
                 let refresh = vec![crate::action::RefreshTarget {
                     pane: self.panes.focused_pane_id(),
                     path: pane.cwd.clone(),
@@ -1017,7 +1012,6 @@ impl AppState {
                 let state = crate::state::dialog::DestructiveConfirmState::new(
                     crate::state::dialog::DestructiveAction::Delete,
                     &marked_items,
-                    operations[0].clone(),
                     refresh,
                 );
 
@@ -1034,11 +1028,6 @@ impl AppState {
                     return Ok(vec![]);
                 }
 
-                let mut operations = Vec::new();
-                for item in &marked_items {
-                    operations.push(crate::action::FileOperation::Delete { path: item.clone() });
-                }
-
                 let refresh = vec![crate::action::RefreshTarget {
                     pane: self.panes.focused_pane_id(),
                     path: pane.cwd.clone(),
@@ -1047,7 +1036,6 @@ impl AppState {
                 let state = crate::state::dialog::DestructiveConfirmState::new(
                     crate::state::dialog::DestructiveAction::PermanentDelete,
                     &marked_items,
-                    operations[0].clone(),
                     refresh,
                 );
 
@@ -4676,7 +4664,6 @@ mod tests {
 
     #[test]
     fn destructive_confirm_state_renders_correctly() {
-        use crate::action::FileOperation;
         use crate::state::dialog::{DestructiveAction, DestructiveConfirmState};
         use std::path::PathBuf;
 
@@ -4687,12 +4674,8 @@ mod tests {
             PathBuf::from("file4.txt"),
         ];
 
-        let operation = FileOperation::Delete {
-            path: items[0].clone(),
-        };
-
         let state =
-            DestructiveConfirmState::new(DestructiveAction::Delete, &items, operation, vec![]);
+            DestructiveConfirmState::new(DestructiveAction::Delete, &items, vec![]);
 
         let lines = state.lines();
         assert!(lines.iter().any(|l| l.contains("⚠")));
@@ -4757,5 +4740,37 @@ mod tests {
 
         assert!(state.overlay.modal.is_none());
         assert_eq!(commands.len(), 0, "no operations should dispatch on cancel");
+    }
+
+    #[test]
+    fn destructive_confirm_yes_deletes_all_marked_items() {
+        let mut state = test_state();
+        let paths = vec![
+            PathBuf::from("file1.txt"),
+            PathBuf::from("file2.txt"),
+            PathBuf::from("file3.txt"),
+        ];
+        for path in &paths {
+            state.panes.active_pane_mut().marked.insert(path.clone());
+        }
+
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        let commands = state
+            .apply(Action::DestructiveConfirmYes)
+            .expect("confirm should dispatch");
+
+        assert!(matches!(state.overlay.modal, None));
+        let file_ops: Vec<_> = commands
+            .iter()
+            .filter(|cmd| matches!(cmd, Command::RunFileOperation { .. }))
+            .collect();
+        assert_eq!(
+            file_ops.len(),
+            3,
+            "should dispatch 3 operations for 3 marked items"
+        );
     }
 }

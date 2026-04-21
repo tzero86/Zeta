@@ -339,10 +339,10 @@ impl OverlayState {
             // ── Destructive Confirm ──────────────────────────────────────────
             Action::DestructiveConfirmYes => {
                 if let Some(ModalState::DestructiveConfirm(state)) = self.modal.take() {
-                    if let Some(operation) = state.operation {
+                    for operation in state.operations {
                         commands.push(crate::action::Command::RunFileOperation {
                             operation,
-                            refresh: state.refresh_targets,
+                            refresh: state.refresh_targets.clone(),
                             collision: crate::action::CollisionPolicy::Fail,
                         });
                     }
