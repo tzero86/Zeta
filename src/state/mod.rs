@@ -4775,4 +4775,31 @@ mod tests {
             "should dispatch 3 operations for 3 marked items"
         );
     }
+
+    #[test]
+    fn destructive_confirm_modal_key_routing() {
+        let mut state = test_state();
+        state
+            .panes
+            .active_pane_mut()
+            .marked
+            .insert(PathBuf::from("file.txt"));
+
+        state
+            .apply(Action::OpenDeletePrompt)
+            .expect("modal should open");
+
+        // Verify focus layer is correct for key routing
+        assert_eq!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::DestructiveConfirm),
+            "focus should be on destructive confirm modal when open"
+        );
+
+        // Verify modal is actually set
+        assert!(
+            matches!(state.overlay.modal, Some(ModalState::DestructiveConfirm(_))),
+            "destructive confirm state should be in overlay"
+        );
+    }
 }
