@@ -100,6 +100,7 @@ pub enum Action {
     OpenCopyPrompt,
     OpenDeletePrompt,
     OpenPermanentDeletePrompt,
+    OpenOverwritePrompt,
     OpenHelpDialog,
     OpenMovePrompt,
     OpenMenu(MenuId),
