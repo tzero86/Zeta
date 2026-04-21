@@ -667,7 +667,12 @@ impl Action {
     }
 
     pub fn from_terminal_key_event(key_event: KeyEvent) -> Option<Self> {
-        // Toggle key: F2 or Ctrl+T or Ctrl+\
+        // ============================================================================
+        // APP-LEVEL OVERRIDES: These keys are handled by the app, not passed to shell
+        // ============================================================================
+
+        // F2 and Ctrl+\ toggle the terminal panel on/off. These are app-level shortcuts
+        // and must not be sent to the shell.
         if key_event.code == KeyCode::F(2)
             || (key_event.code == KeyCode::Char('\\')
                 && key_event.modifiers == KeyModifiers::CONTROL)
@@ -675,42 +680,68 @@ impl Action {
             return Some(Self::ToggleTerminal);
         }
 
-        // F11 toggles the terminal panel into/out of fullscreen.
+        // F11 toggles between terminal as a normal pane and fullscreen mode.
+        // This is an app-level feature and must not reach the shell.
         if key_event.code == KeyCode::F(11) {
             return Some(Self::ToggleTerminalFullscreen);
         }
 
-        // Map some common keys to terminal sequences
+        // ============================================================================
+        // SHELL PASSTHROUGH: All other keys are converted to terminal sequences
+        // ============================================================================
+        // These mappings follow standard terminal control codes:
+        // - Printable chars: sent as-is (UTF-8 encoded)
+        // - Ctrl+<char>: sent as control codes (ASCII 1-31)
+        // - Arrow/special keys: sent as ANSI escape sequences
+        // - Platform-specific adjustments (e.g., line endings)
+
         match key_event.code {
             KeyCode::Char(c) => {
+                // Control modifier: send as ASCII control code (1-31)
                 if key_event.modifiers.contains(KeyModifiers::CONTROL) {
+                    // Ctrl+a through Ctrl+z map to ASCII 1-26
                     if c.is_ascii_lowercase() {
                         return Some(Self::TerminalInput(vec![c as u8 - b'a' + 1]));
                     }
+                    // Ctrl+A through Ctrl+Z also map to ASCII 1-26 (case-insensitive)
                     if c.is_ascii_uppercase() {
                         return Some(Self::TerminalInput(vec![c as u8 - b'A' + 1]));
                     }
+                    // Ctrl+special: map bracket/caret/underscore to ASCII 27-31
                     match c {
-                        '[' => return Some(Self::TerminalInput(vec![27])),
-                        '\\' => return Some(Self::TerminalInput(vec![28])),
-                        ']' => return Some(Self::TerminalInput(vec![29])),
-                        '^' => return Some(Self::TerminalInput(vec![30])),
-                        '_' => return Some(Self::TerminalInput(vec![31])),
+                        '[' => return Some(Self::TerminalInput(vec![27])), // Ctrl+[ = ESC
+                        '\\' => return Some(Self::TerminalInput(vec![28])), // Ctrl+\
+                        ']' => return Some(Self::TerminalInput(vec![29])), // Ctrl+]
+                        '^' => return Some(Self::TerminalInput(vec![30])), // Ctrl+^
+                        '_' => return Some(Self::TerminalInput(vec![31])), // Ctrl+_
                         _ => {}
                     }
                 }
+                // Unmodified printable char: send UTF-8 bytes directly to shell
                 Some(Self::TerminalInput(c.to_string().into_bytes()))
             }
+            // Enter key: sent as CR (Unix) or CRLF (Windows per terminal conventions)
             KeyCode::Enter => {
                 if cfg!(windows) {
+                    // Windows line ending convention: carriage return + line feed
                     Some(Self::TerminalInput(vec![b'\r', b'\n']))
                 } else {
+                    // Unix convention: carriage return only
                     Some(Self::TerminalInput(vec![b'\r']))
                 }
             }
+            // Backspace: sent as DEL (ASCII 127). Most shells map DEL to delete-char.
             KeyCode::Backspace => Some(Self::TerminalInput(vec![127])),
+            // Tab (ASCII 9): shell completion trigger. Note: Tab behavior depends on shell
+            // config, not our code. If completion doesn't work, check:
+            //   (1) shell is bash/zsh/pwsh (not sh which has limited completion)
+            //   (2) completion packages installed (.bash_completion, .zshrc config, etc.)
+            //   (3) terminal width allows completion menu to render (may truncate if too narrow)
             KeyCode::Tab => Some(Self::TerminalInput(vec![b'\t'])),
+            // Escape: sent as ESC (ASCII 27). Used by vim, less, and many TUI programs.
             KeyCode::Esc => Some(Self::TerminalInput(vec![27])),
+            // Arrow keys: sent as ANSI escape sequences (VT100 standard)
+            // Format: ESC [ {A|B|C|D} where A=up, B=down, C=right, D=left
             KeyCode::Up => Some(Self::TerminalInput(vec![27, b'[', b'A'])),
             KeyCode::Down => Some(Self::TerminalInput(vec![27, b'[', b'B'])),
             KeyCode::Right => Some(Self::TerminalInput(vec![27, b'[', b'C'])),
