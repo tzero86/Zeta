@@ -24,6 +24,7 @@ pub enum ModalState {
     Prompt(PromptState),
     Dialog(DialogState),
     Collision(CollisionState),
+    DestructiveConfirm(crate::state::dialog::DestructiveConfirmState),
     Palette(PaletteState),
     Settings(SettingsState),
     Bookmarks(BookmarksState),
@@ -325,6 +326,22 @@ impl OverlayState {
                 }
             }
             Action::CollisionSkip => {
+                self.close_all();
+            }
+
+            // ── Destructive Confirm ──────────────────────────────────────────
+            Action::DestructiveConfirmYes => {
+                if let Some(ModalState::DestructiveConfirm(state)) = self.modal.take() {
+                    if let Some(operation) = state.operation {
+                        commands.push(crate::action::Command::RunFileOperation {
+                            operation,
+                            refresh: state.refresh_targets,
+                            collision: crate::action::CollisionPolicy::Fail,
+                        });
+                    }
+                }
+            }
+            Action::DestructiveConfirmNo => {
                 self.close_all();
             }
 

@@ -24,6 +24,8 @@ pub enum Action {
     CollisionOverwrite,
     CollisionRename,
     CollisionSkip,
+    DestructiveConfirmYes,
+    DestructiveConfirmNo,
     CloseDialog,
     CloseMenu,
     CloseBookmarks,
