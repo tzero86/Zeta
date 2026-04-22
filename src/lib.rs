@@ -16,6 +16,7 @@ pub mod preview;
 pub mod pty;
 pub mod session;
 pub mod state;
+pub mod testing;
 pub mod ui;
 pub mod utils;
 
