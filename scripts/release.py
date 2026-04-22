@@ -289,9 +289,12 @@ def main() -> None:
         )
 
     # --- Detect whether gh CLI is available (needed for PR-based push) -------
-    gh_available = subprocess.run(
-        ["gh", "--version"], capture_output=True
-    ).returncode == 0
+    try:
+        gh_available = subprocess.run(
+            ["gh", "--version"], capture_output=True
+        ).returncode == 0
+    except FileNotFoundError:
+        gh_available = False
 
     # --- Execute --------------------------------------------------------
     header("Executing")
