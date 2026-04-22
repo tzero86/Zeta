@@ -322,7 +322,8 @@ def main() -> None:
 
     # 1. Switch to a release branch so the version bump goes through a PR.
     #    The tag is pushed directly after merge -- tags bypass branch protection.
-    base_branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    #    Always target main, regardless of which branch the script is run from.
+    base_branch = "main"
     step(f"Creating release branch {release_branch}")
     git("checkout", "-b", release_branch)
 
