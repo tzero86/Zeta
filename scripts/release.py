@@ -289,9 +289,12 @@ def main() -> None:
         )
 
     # --- Detect whether gh CLI is available (needed for PR-based push) -------
-    gh_available = subprocess.run(
-        ["gh", "--version"], capture_output=True
-    ).returncode == 0
+    try:
+        gh_available = subprocess.run(
+            ["gh", "--version"], capture_output=True
+        ).returncode == 0
+    except FileNotFoundError:
+        gh_available = False
 
     # --- Execute --------------------------------------------------------
     header("Executing")
@@ -319,7 +322,8 @@ def main() -> None:
 
     # 1. Switch to a release branch so the version bump goes through a PR.
     #    The tag is pushed directly after merge -- tags bypass branch protection.
-    base_branch = git("rev-parse", "--abbrev-ref", "HEAD")
+    #    Always target main, regardless of which branch the script is run from.
+    base_branch = "main"
     step(f"Creating release branch {release_branch}")
     git("checkout", "-b", release_branch)
 
