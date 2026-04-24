@@ -1015,11 +1015,13 @@ impl AppState {
                 
                 if !marks.is_empty() {
                     // Batch operation: trash multiple marked items
+                    // Set source_path to first item for display (renderer shows this, not source_paths)
+                    let display_path = marks.first().cloned();
                     let mut prompt = PromptState::with_value(
                         PromptKind::Trash,
                         "Trash Marked Items",
                         self.panes.active_pane().cwd.clone(),
-                        None,
+                        display_path,
                         String::new(),
                     );
                     prompt.source_paths = marks;
@@ -1060,11 +1062,13 @@ impl AppState {
                 
                 if !marks.is_empty() {
                     // Batch operation: permanently delete multiple marked items
+                    // Set source_path to first item for display (renderer shows this, not source_paths)
+                    let display_path = marks.first().cloned();
                     let mut prompt = PromptState::with_value(
                         PromptKind::Delete,
                         "Delete Permanently Marked Items",
                         self.panes.active_pane().cwd.clone(),
-                        None,
+                        display_path,
                         String::new(),
                     );
                     prompt.source_paths = marks;
