@@ -4736,6 +4736,34 @@ mod tests {
     }
 
     #[test]
+    fn open_delete_prompt_with_single_marked_item_opens_destructive_confirm() {
+        let mut state = test_state();
+        let path = PathBuf::from("myfile.txt");
+        state.panes.active_pane_mut().marked.insert(path);
+
+        let commands = state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        // CRITICAL: Must be DestructiveConfirm, NOT Prompt modal
+        match &state.overlay.modal {
+            Some(ModalState::DestructiveConfirm(confirm)) => {
+                assert_eq!(confirm.item_count, 1, "Should have 1 item to delete");
+                assert_eq!(confirm.item_sample.len(), 1);
+                assert_eq!(confirm.item_sample[0], "myfile.txt");
+            }
+            Some(ModalState::Prompt(prompt)) => {
+                panic!(
+                    "BUG: Got Prompt modal instead of DestructiveConfirm. Kind: {:?}, Title: {}",
+                    prompt.kind, prompt.title
+                );
+            }
+            other => panic!("Got unexpected modal type: {:?}", other),
+        }
+        assert_eq!(commands.len(), 0, "no operations should dispatch yet");
+    }
+
+    #[test]
     fn destructive_confirm_yes_dispatches_operation() {
         let mut state = test_state();
         let path = PathBuf::from("file1.txt");
