@@ -1002,66 +1002,98 @@ impl AppState {
                 }
             }
             Action::OpenDeletePrompt => {
-                let pane = self.panes.active_pane();
-                let mut items_to_delete: Vec<_> = pane.marked.iter().cloned().collect();
-
-                // Fallback: if no marked items, use currently selected entry
-                if items_to_delete.is_empty() {
-                    if let Some(entry) = pane.selected_entry() {
-                        items_to_delete.push(entry.path.clone());
+                let marks: Vec<PathBuf> = {
+                    let m = &self.panes.active_pane().marked;
+                    if !m.is_empty() {
+                        let mut v: Vec<PathBuf> = m.iter().cloned().collect();
+                        v.sort();
+                        v
+                    } else {
+                        Vec::new()
                     }
-                }
+                };
+                
+                if !marks.is_empty() {
+                    // Batch operation: trash multiple marked items
+                    // Set source_path to first item for display (renderer shows this, not source_paths)
+                    let display_path = marks.first().cloned();
+                    let mut prompt = PromptState::with_value(
+                        PromptKind::Trash,
+                        "Trash Marked Items",
+                        self.panes.active_pane().cwd.clone(),
+                        display_path,
+                        String::new(),
+                    );
+                    prompt.source_paths = marks;
+                    self.overlay.open_prompt(prompt);
+                    self.status_message =
+                        String::from("Press Enter to confirm, or Esc to cancel");
+                } else if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    // Single item: use destructive confirm dialog
+                    let refresh = vec![crate::action::RefreshTarget {
+                        pane: self.panes.focused_pane_id(),
+                        path: self.panes.active_pane().cwd.clone(),
+                    }];
 
-                if items_to_delete.is_empty() {
+                    let state = crate::state::dialog::DestructiveConfirmState::new(
+                        crate::state::dialog::DestructiveAction::Delete,
+                        &[entry.path.clone()],
+                        refresh,
+                    );
+
+                    self.overlay.modal =
+                        Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                    self.status_message = String::new();
+                } else {
                     self.status_message = "No items selected to delete".to_string();
-                    return Ok(vec![]);
                 }
-
-                let refresh = vec![crate::action::RefreshTarget {
-                    pane: self.panes.focused_pane_id(),
-                    path: pane.cwd.clone(),
-                }];
-
-                let state = crate::state::dialog::DestructiveConfirmState::new(
-                    crate::state::dialog::DestructiveAction::Delete,
-                    &items_to_delete,
-                    refresh,
-                );
-
-                self.overlay.modal =
-                    Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
-                self.status_message = String::new();
             }
             Action::OpenPermanentDeletePrompt => {
-                let pane = self.panes.active_pane();
-                let mut items_to_delete: Vec<_> = pane.marked.iter().cloned().collect();
-
-                // Fallback: if no marked items, use currently selected entry
-                if items_to_delete.is_empty() {
-                    if let Some(entry) = pane.selected_entry() {
-                        items_to_delete.push(entry.path.clone());
+                let marks: Vec<PathBuf> = {
+                    let m = &self.panes.active_pane().marked;
+                    if !m.is_empty() {
+                        let mut v: Vec<PathBuf> = m.iter().cloned().collect();
+                        v.sort();
+                        v
+                    } else {
+                        Vec::new()
                     }
-                }
+                };
+                
+                if !marks.is_empty() {
+                    // Batch operation: permanently delete multiple marked items
+                    // Set source_path to first item for display (renderer shows this, not source_paths)
+                    let display_path = marks.first().cloned();
+                    let mut prompt = PromptState::with_value(
+                        PromptKind::Delete,
+                        "Delete Permanently Marked Items",
+                        self.panes.active_pane().cwd.clone(),
+                        display_path,
+                        String::new(),
+                    );
+                    prompt.source_paths = marks;
+                    self.overlay.open_prompt(prompt);
+                    self.status_message =
+                        String::from("Press Enter to confirm, or Esc to cancel");
+                } else if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    // Single item: use destructive confirm dialog
+                    let refresh = vec![crate::action::RefreshTarget {
+                        pane: self.panes.focused_pane_id(),
+                        path: self.panes.active_pane().cwd.clone(),
+                    }];
 
-                if items_to_delete.is_empty() {
+                    let state = crate::state::dialog::DestructiveConfirmState::new(
+                        crate::state::dialog::DestructiveAction::PermanentDelete,
+                        &[entry.path.clone()],
+                        refresh,
+                    );
+
+                    self.overlay.modal =
+                        Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
+                    self.status_message = String::new();
+                } else {
                     self.status_message = "No items selected to delete".to_string();
-                    return Ok(vec![]);
                 }
-
-                let refresh = vec![crate::action::RefreshTarget {
-                    pane: self.panes.focused_pane_id(),
-                    path: pane.cwd.clone(),
-                }];
-
-                let state = crate::state::dialog::DestructiveConfirmState::new(
-                    crate::state::dialog::DestructiveAction::PermanentDelete,
-                    &items_to_delete,
-                    refresh,
-                );
-
-                self.overlay.modal =
-                    Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
-                self.status_message = String::new();
             }
             Action::OpenMovePrompt => {
                 let marks: Vec<PathBuf> = {
@@ -3503,7 +3535,7 @@ mod tests {
             .expect("delete modal should open");
 
         let commands = state
-            .apply(Action::DestructiveConfirmYes)
+            .apply(Action::PromptSubmit)
             .expect("confirm should dispatch");
 
         assert!(matches!(
@@ -3526,7 +3558,7 @@ mod tests {
             .expect("delete modal should open");
 
         let commands = state
-            .apply(Action::DestructiveConfirmYes)
+            .apply(Action::PromptSubmit)
             .expect("confirm should dispatch");
 
         assert!(matches!(
@@ -4549,11 +4581,16 @@ mod tests {
             .apply(Action::OpenDeletePrompt)
             .expect("delete modal should open");
 
-        assert!(matches!(
-            state.overlay.modal,
-            Some(ModalState::DestructiveConfirm(_))
-        ));
-        assert!(state.status_message.is_empty());
+        // Marked items should open batch Trash PromptState
+        match &state.overlay.modal {
+            Some(ModalState::Prompt(prompt)) => {
+                assert_eq!(prompt.kind, PromptKind::Trash);
+                assert_eq!(prompt.title, "Trash Marked Items");
+                assert_eq!(prompt.source_paths.len(), 2);
+            }
+            _ => panic!("Expected Prompt modal for batch delete"),
+        }
+        assert!(!state.status_message.is_empty());
     }
 
     #[test]
@@ -4566,11 +4603,16 @@ mod tests {
             .apply(Action::OpenPermanentDeletePrompt)
             .expect("delete modal should open");
 
-        assert!(matches!(
-            state.overlay.modal,
-            Some(ModalState::DestructiveConfirm(_))
-        ));
-        assert!(state.status_message.is_empty());
+        // Marked items should open batch Delete PromptState
+        match &state.overlay.modal {
+            Some(ModalState::Prompt(prompt)) => {
+                assert_eq!(prompt.kind, PromptKind::Delete);
+                assert_eq!(prompt.title, "Delete Permanently Marked Items");
+                assert_eq!(prompt.source_paths.len(), 2);
+            }
+            _ => panic!("Expected Prompt modal for batch permanent delete"),
+        }
+        assert!(!state.status_message.is_empty());
     }
 
     #[test]
@@ -4583,14 +4625,14 @@ mod tests {
             .apply(Action::OpenDeletePrompt)
             .expect("delete modal should open");
 
-        assert!(matches!(
-            state.overlay.modal,
-            Some(ModalState::DestructiveConfirm(_))
-        ));
-        if let Some(ModalState::DestructiveConfirm(confirm_state)) = &state.overlay.modal {
-            assert_eq!(confirm_state.action, DestructiveAction::Delete);
-        } else {
-            panic!("Expected DestructiveConfirm modal");
+        // Marked items should open batch Trash PromptState
+        match &state.overlay.modal {
+            Some(ModalState::Prompt(prompt)) => {
+                assert_eq!(prompt.kind, PromptKind::Trash);
+                assert_eq!(prompt.title, "Trash Marked Items");
+                assert_eq!(prompt.source_paths.len(), 1);
+            }
+            _ => panic!("Expected Prompt modal for batch delete"),
         }
     }
 
@@ -4604,14 +4646,14 @@ mod tests {
             .apply(Action::OpenPermanentDeletePrompt)
             .expect("delete modal should open");
 
-        assert!(matches!(
-            state.overlay.modal,
-            Some(ModalState::DestructiveConfirm(_))
-        ));
-        if let Some(ModalState::DestructiveConfirm(confirm_state)) = &state.overlay.modal {
-            assert_eq!(confirm_state.action, DestructiveAction::PermanentDelete);
-        } else {
-            panic!("Expected DestructiveConfirm modal");
+        // Marked items should open batch Delete PromptState
+        match &state.overlay.modal {
+            Some(ModalState::Prompt(prompt)) => {
+                assert_eq!(prompt.kind, PromptKind::Delete);
+                assert_eq!(prompt.title, "Delete Permanently Marked Items");
+                assert_eq!(prompt.source_paths.len(), 1);
+            }
+            _ => panic!("Expected Prompt modal for batch permanent delete"),
         }
     }
 
@@ -4719,10 +4761,8 @@ mod tests {
     #[test]
     fn open_delete_prompt_opens_destructive_confirm_modal() {
         let mut state = test_state();
-        let paths = vec![PathBuf::from("file1.txt"), PathBuf::from("file2.txt")];
-        for path in &paths {
-            state.panes.active_pane_mut().marked.insert(path.clone());
-        }
+        // test_state() has a "note.txt" entry already - don't mark it, just delete the selected one
+        // The first entry is already selected (selection: 0)
 
         let commands = state
             .apply(Action::OpenDeletePrompt)
@@ -4736,10 +4776,35 @@ mod tests {
     }
 
     #[test]
+    fn open_delete_prompt_with_single_marked_item_opens_destructive_confirm() {
+        let mut state = test_state();
+        let path = PathBuf::from("myfile.txt");
+        state.panes.active_pane_mut().marked.insert(path);
+
+        let commands = state
+            .apply(Action::OpenDeletePrompt)
+            .expect("open delete prompt should succeed");
+
+        // Single marked item should open batch Trash PromptState (consistent with Copy/Move)
+        match &state.overlay.modal {
+            Some(ModalState::Prompt(prompt)) => {
+                assert_eq!(prompt.kind, PromptKind::Trash);
+                assert_eq!(prompt.title, "Trash Marked Items");
+                assert_eq!(prompt.source_paths.len(), 1);
+                assert_eq!(prompt.source_paths[0], PathBuf::from("myfile.txt"));
+            }
+            Some(ModalState::DestructiveConfirm(_)) => {
+                panic!("Got DestructiveConfirm instead of expected Trash Prompt for marked item");
+            }
+            other => panic!("Got unexpected modal type: {:?}", other),
+        }
+        assert_eq!(commands.len(), 0, "no operations should dispatch yet");
+    }
+
+    #[test]
     fn destructive_confirm_yes_dispatches_operation() {
         let mut state = test_state();
-        let path = PathBuf::from("file1.txt");
-        state.panes.active_pane_mut().marked.insert(path);
+        // test_state() has a "note.txt" entry already - don't mark it, just delete the selected one
 
         state
             .apply(Action::OpenDeletePrompt)
@@ -4758,8 +4823,7 @@ mod tests {
     #[test]
     fn destructive_confirm_no_cancels_operation() {
         let mut state = test_state();
-        let path = PathBuf::from("file1.txt");
-        state.panes.active_pane_mut().marked.insert(path);
+        // test_state() has a "note.txt" entry already - don't mark it, just delete the selected one
 
         state
             .apply(Action::OpenDeletePrompt)
@@ -4789,9 +4853,19 @@ mod tests {
             .apply(Action::OpenDeletePrompt)
             .expect("open delete prompt should succeed");
 
+        // Should have opened batch Trash PromptState
+        let is_trash_prompt = match &state.overlay.modal {
+            Some(ModalState::Prompt(p)) => {
+                p.kind == PromptKind::Trash && p.source_paths.len() == 3
+            }
+            _ => false,
+        };
+        assert!(is_trash_prompt, "Expected Trash PromptState with 3 source_paths");
+
+        // Submit the trash prompt to dispatch operations
         let commands = state
-            .apply(Action::DestructiveConfirmYes)
-            .expect("confirm should dispatch");
+            .apply(Action::PromptSubmit)
+            .expect("submit should dispatch");
 
         assert!(state.overlay.modal.is_none());
         let file_ops: Vec<_> = commands
@@ -4808,11 +4882,7 @@ mod tests {
     #[test]
     fn destructive_confirm_modal_key_routing() {
         let mut state = test_state();
-        state
-            .panes
-            .active_pane_mut()
-            .marked
-            .insert(PathBuf::from("file.txt"));
+        // test_state() has a "note.txt" entry already - don't mark it
 
         state
             .apply(Action::OpenDeletePrompt)
