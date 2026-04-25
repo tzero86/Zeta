@@ -19,7 +19,7 @@ pub use preview_state::PreviewState;
 use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
 
-use chrono::Local;
+use chrono::{FixedOffset, Utc};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -45,7 +45,65 @@ pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState, SettingsTab};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
 
-/// Structured data for the four status bar zones.
+// ---------------------------------------------------------------------------
+// Local clock helpers
+// ---------------------------------------------------------------------------
+
+static UTC_OFFSET_MINUTES: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
+/// Detect the wall-clock UTC offset (in minutes east of UTC).
+///
+/// On a properly configured Linux system `chrono::Local` gives the right answer.
+/// On WSL the system timezone is often left as UTC; in that case we query
+/// Windows via PowerShell (one-time startup cost, then cached).
+fn detect_utc_offset_minutes() -> i32 {
+    // Fast path: /etc/localtime is configured correctly.
+    use chrono::Offset;
+    let secs = chrono::Local::now().offset().fix().local_minus_utc();
+    if secs != 0 {
+        return secs / 60;
+    }
+
+    // WSL fallback: spawn a tiny PowerShell command to read the Windows timezone.
+    #[cfg(target_os = "linux")]
+    {
+        let is_wsl = std::env::var("WSL_DISTRO_NAME").is_ok()
+            || std::path::Path::new("/proc/sys/fs/binfmt_misc/WSLInterop").exists();
+        if is_wsl {
+            for exe in ["pwsh.exe", "powershell.exe"] {
+                if let Ok(out) = std::process::Command::new(exe)
+                    .args([
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "[int][System.TimeZoneInfo]::Local.GetUtcOffset((Get-Date)).TotalMinutes",
+                    ])
+                    .output()
+                {
+                    if let Ok(s) = std::str::from_utf8(&out.stdout) {
+                        if let Ok(m) = s.trim().parse::<i32>() {
+                            return m;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    0 // fall back to UTC
+}
+
+fn local_clock_string() -> String {
+    let mins = *UTC_OFFSET_MINUTES.get_or_init(detect_utc_offset_minutes);
+    let offset = FixedOffset::east_opt(mins * 60)
+        .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+    Utc::now()
+        .with_timezone(&offset)
+        .format("%-m/%-d/%y - %-I:%M%p")
+        .to_string()
+}
+
+
 #[derive(Clone, Debug)]
 pub struct StatusZones {
     pub git_branch: Option<String>,
@@ -247,6 +305,9 @@ impl AppState {
     }
 
     pub fn bootstrap(loaded_config: LoadedConfig, started_at: Instant) -> Result<Self> {
+        // Detect local timezone once up-front so the first render doesn't block.
+        UTC_OFFSET_MINUTES.get_or_init(detect_utc_offset_minutes);
+
         let cwd = fs::current_dir()?;
         let secondary = cwd
             .parent()
@@ -2827,7 +2888,7 @@ impl AppState {
             self.workspace_count()
         );
 
-        let clock = format!(" {} ", Local::now().format("%H:%M"));
+        let clock = local_clock_string();
 
         StatusZones {
             git_branch,

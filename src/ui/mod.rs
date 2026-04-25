@@ -483,21 +483,39 @@ fn render_status_bar(
                 .bg(palette.status_workspace_bg)
                 .add_modifier(Modifier::BOLD),
         ));
-        spans.push(Span::styled(
-            "│",
-            Style::default()
-                .fg(palette.text_muted)
-                .bg(palette.status_bg),
-        ));
-        spans.push(Span::styled(
-            zones.clock.clone(),
-            Style::default()
-                .fg(palette.text_subtext)
-                .bg(palette.status_bg),
-        ));
+        // Clock is rendered right-aligned in a separate area below.
     }
 
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    if zones.progress.is_some() {
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    } else {
+        let clock_text = format!(" {} ", zones.clock);
+        let right_width = (clock_text.chars().count() + 1) as u16; // +1 for │ divider
+        let [body_area, clock_area] = Layout::horizontal([
+            Constraint::Min(0),
+            Constraint::Length(right_width),
+        ])
+        .areas(area);
+        frame.render_widget(Paragraph::new(Line::from(spans)), body_area);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    "│",
+                    Style::default()
+                        .fg(palette.text_muted)
+                        .bg(palette.status_bg),
+                ),
+                Span::styled(
+                    clock_text,
+                    Style::default()
+                        .fg(palette.accent_mauve)
+                        .bg(palette.status_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])),
+            clock_area,
+        );
+    }
 }
 
 fn format_size(bytes: u64) -> String {
