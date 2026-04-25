@@ -2560,6 +2560,13 @@ impl AppState {
         if self.panes.active_pane().filter_active {
             return FocusLayer::PaneFilter;
         }
+        if self.git_diff_active {
+            return if self.git_diff_focus_content {
+                FocusLayer::GitDiffContent
+            } else {
+                FocusLayer::GitDiffFileList
+            };
+        }
         if self.is_markdown_preview_focused() {
             return FocusLayer::MarkdownPreview;
         }
@@ -2568,13 +2575,6 @@ impl AppState {
         }
         if self.is_preview_focused() {
             return FocusLayer::Preview;
-        }
-        if self.git_diff_active {
-            return if self.git_diff_focus_content {
-                FocusLayer::GitDiffContent
-            } else {
-                FocusLayer::GitDiffFileList
-            };
         }
         FocusLayer::Pane
     }
@@ -3550,6 +3550,44 @@ mod tests {
         state.git_diff_active = true;
         state.git_diff_focus_content = true;
         assert_eq!(state.focus_layer(), FocusLayer::GitDiffContent);
+    }
+
+    #[test]
+    fn git_diff_takes_priority_over_editor_when_both_active() {
+        let mut state = test_state();
+        // Open an editor buffer so is_editor_focused() would return true normally
+        state.editor.buffer = Some(crate::editor::EditorBuffer::from_text(
+            PathBuf::from("test.txt"),
+            String::from("test content"),
+        ));
+        state.panes.focus = PaneFocus::Left;
+        // Activate git diff mode
+        state.git_diff_active = true;
+        state.git_diff_focus_content = false;
+        // Git diff should take priority
+        assert_eq!(state.focus_layer(), FocusLayer::GitDiffFileList);
+    }
+
+    #[test]
+    fn git_diff_file_list_and_content_toggle_correctly() {
+        let mut state = test_state();
+        state.git_diff_active = true;
+
+        state.git_diff_focus_content = false;
+        assert_eq!(state.focus_layer(), FocusLayer::GitDiffFileList);
+
+        state.git_diff_focus_content = true;
+        assert_eq!(state.focus_layer(), FocusLayer::GitDiffContent);
+    }
+
+    #[test]
+    fn git_diff_inactive_does_not_affect_normal_focus() {
+        let mut state = test_state();
+        state.git_diff_active = false;
+        // Should NOT return git diff layers
+        let layer = state.focus_layer();
+        assert!(layer != FocusLayer::GitDiffFileList);
+        assert!(layer != FocusLayer::GitDiffContent);
     }
 
     #[test]
