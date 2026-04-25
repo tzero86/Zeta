@@ -1608,12 +1608,13 @@ impl AppState {
                 self.panes.active_pane_mut().extend_selection_up();
             }
             Action::ToggleDetailsView => {
-                let pane = self.panes.active_pane_mut();
-                pane.details_view = !pane.details_view;
-                self.status_message = if self.panes.active_pane().details_view {
-                    String::from("details view on")
+                let new_state = !self.panes.active_pane().details_view;
+                self.panes.left.details_view = new_state;
+                self.panes.right.details_view = new_state;
+                self.status_message = if new_state {
+                    String::from("details view on (both panes)")
                 } else {
-                    String::from("details view off")
+                    String::from("details view off (both panes)")
                 };
             }
             Action::BeginInlineRename => {

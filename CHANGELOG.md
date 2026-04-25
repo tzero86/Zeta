@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tree-view connectors invisible in NerdFont mode**: Tree connectors (├ └ │) silently disappeared when icon mode was NerdFont because terminals like Warp + FiraCode NF activate font fallback for the entire row when PUA glyphs (U+E000–U+F8FF) are present, and the fallback face often lacks the light box-drawing glyphs. Switched to the heavy variants (┣ ┗ ┃) in NerdFont mode so the NerdFont itself supplies them, restoring the indented-tree affordance. Other modes are unchanged.
 - **Diagnostic binary `zeta-font-test`**: Added under `src/bin/` to print NerdFont PUA glyphs alongside reference Unicode chars so users can verify their terminal's font face actually supports NerdFont before chasing a phantom Zeta bug.
 - **Toggle Details View missing from command palette**: The `Ctrl+L` action existed in the View menu and the keymap but was absent from the command palette (`Ctrl+B`), making it invisible to discovery. Added under "View / Layout" with the `Ctrl+L` hint.
+- **Toggle Details View only affecting one pane**: `Action::ToggleDetailsView` mutated only the active pane, leaving the other pane out of sync. The action now toggles both panes together so the user gets a consistent dual-pane view with one shortcut.
 
 ## [0.5.0] - 2025-05-01
 
