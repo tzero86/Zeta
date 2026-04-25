@@ -312,6 +312,56 @@ fn classify(x: char, y: char) -> FileStatus {
     FileStatus::Modified
 }
 
+/// Parse `git diff HEAD --numstat` output into a map of path → (added, removed).
+/// Pure function — no subprocess calls.
+#[allow(dead_code)]
+pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
+    let mut map = HashMap::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let added = parts[0].parse::<usize>().unwrap_or(0);
+        let removed = parts[1].parse::<usize>().unwrap_or(0);
+        let path = parts[2].trim().to_string();
+        if !path.is_empty() {
+            map.insert(path, (added, removed));
+        }
+    }
+    map
+}
+
+/// Parse the stdout of `git diff` (unified format) into a vec of typed lines.
+/// Pure function — no subprocess calls.
+#[allow(dead_code)]
+pub(crate) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
+    output
+        .lines()
+        .map(|line| {
+            let kind = if line.starts_with("diff ")
+                || line.starts_with("index ")
+                || line.starts_with("--- ")
+                || line.starts_with("+++ ")
+            {
+                DiffLineKind::FileHeader
+            } else if line.starts_with("@@") {
+                DiffLineKind::HunkHeader
+            } else if line.starts_with('+') {
+                DiffLineKind::Added
+            } else if line.starts_with('-') {
+                DiffLineKind::Removed
+            } else {
+                DiffLineKind::Context
+            };
+            DiffLine {
+                kind,
+                content: line.to_string(),
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -450,5 +500,75 @@ mod tests {
         assert_eq!(f.removed, 2);
         assert_eq!(f.status, FileStatus::Modified);
         assert_eq!(f.path, PathBuf::from("src/main.rs"));
+    }
+
+    #[test]
+    fn parse_numstat_parses_modified_file() {
+        let out = "12\t3\tsrc/git.rs\n";
+        let map = parse_numstat(out);
+        assert_eq!(map.get("src/git.rs"), Some(&(12usize, 3usize)));
+    }
+
+    #[test]
+    fn parse_numstat_binary_file_gives_zeros() {
+        // git outputs "-\t-\tfile.bin" for binary files
+        let out = "-\t-\tassets/logo.png\n";
+        let map = parse_numstat(out);
+        assert_eq!(map.get("assets/logo.png"), Some(&(0usize, 0usize)));
+    }
+
+    #[test]
+    fn parse_numstat_empty_gives_empty_map() {
+        assert!(parse_numstat("").is_empty());
+    }
+
+    #[test]
+    fn parse_unified_diff_added_line() {
+        let out = "+    let x = 1;\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].kind, DiffLineKind::Added);
+    }
+
+    #[test]
+    fn parse_unified_diff_removed_line() {
+        let out = "-    let x = 0;\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::Removed);
+    }
+
+    #[test]
+    fn parse_unified_diff_hunk_header() {
+        let out = "@@ -1,4 +1,5 @@ fn main() {\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::HunkHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_file_header() {
+        let out = "diff --git a/src/main.rs b/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_context_line() {
+        let out = " fn existing_function() {\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::Context);
+    }
+
+    #[test]
+    fn parse_unified_diff_triple_plus_is_file_header() {
+        let out = "+++ b/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_triple_minus_is_file_header() {
+        let out = "--- a/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
     }
 }
