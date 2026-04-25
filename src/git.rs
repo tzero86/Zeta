@@ -420,9 +420,22 @@ mod tests {
     }
 
     #[test]
-    fn diff_line_kind_variants_are_distinct() {
-        assert_ne!(DiffLineKind::Added, DiffLineKind::Removed);
-        assert_ne!(DiffLineKind::HunkHeader, DiffLineKind::Context);
+    fn diff_line_kind_covers_all_variants() {
+        for kind in [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::HunkHeader,
+            DiffLineKind::FileHeader,
+        ] {
+            let _ = match kind {
+                DiffLineKind::Added => "+",
+                DiffLineKind::Removed => "-",
+                DiffLineKind::Context => " ",
+                DiffLineKind::HunkHeader => "@",
+                DiffLineKind::FileHeader => "~",
+            };
+        }
     }
 
     #[test]
@@ -436,5 +449,6 @@ mod tests {
         assert_eq!(f.added, 5);
         assert_eq!(f.removed, 2);
         assert_eq!(f.status, FileStatus::Modified);
+        assert_eq!(f.path, PathBuf::from("src/main.rs"));
     }
 }
