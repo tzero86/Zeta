@@ -67,13 +67,11 @@ pub fn render_diff_file_list(f: &mut Frame, area: Rect, state: &AppState) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    let list = List::new(items)
-        .block(block)
-        .highlight_style(
-            Style::default()
-                .bg(palette.selection_bg)
-                .add_modifier(Modifier::BOLD),
-        );
+    let list = List::new(items).block(block).highlight_style(
+        Style::default()
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD),
+    );
 
     f.render_stateful_widget(list, area, &mut list_state);
 }
