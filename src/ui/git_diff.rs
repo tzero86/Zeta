@@ -92,10 +92,13 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     };
 
     let inner_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = state.git_diff_lines.len().saturating_sub(inner_height);
+    let effective_scroll = state.git_diff_scroll.min(max_scroll);
+
     let lines: Vec<Line> = state
         .git_diff_lines
         .iter()
-        .skip(state.git_diff_scroll)
+        .skip(effective_scroll)
         .take(inner_height)
         .map(|dl| diff_line_to_ratatui(dl, palette))
         .collect();
