@@ -1,0 +1,129 @@
+<h2>Modal Depth & Elevation</h2>
+<p class="subtitle">How should modals feel when they appear over the app? This is about creating a convincing sense of "floating on top" in a terminal that only has background colors — no real shadows.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="shadow-offset" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:12px;font-family:monospace;font-size:11px;color:#cdd6f4;position:relative;min-height:160px">
+        <!-- dimmed app behind -->
+        <div style="opacity:0.35;line-height:1.7">
+          <div style="display:flex;gap:6px">
+            <div style="flex:1;color:#45475a">
+              <div> 󰉋 src/         dir   Apr 24</div>
+              <div> 󰏗 Cargo.toml  1.2K  Apr 23</div>
+              <div> 󰍔 main.rs     4.8K  Apr 24</div>
+              <div> 󰍔 lib.rs       12K  Apr 22</div>
+            </div>
+            <div style="flex:1;color:#45475a">
+              <div> 󰌘 README.md   3.1K  Apr 24</div>
+              <div> 󰁯 archive.gz  88K   Apr 20</div>
+              <div> 󰌹 link → tgt   —    Apr 18</div>
+            </div>
+          </div>
+        </div>
+        <!-- shadow layer -->
+        <div style="position:absolute;top:38px;left:58px;width:200px;background:#11111b;padding:10px 12px;border:1px solid #313244;color:#585b70;font-size:11px;line-height:1.6">
+          &nbsp;
+        </div>
+        <!-- modal on top -->
+        <div style="position:absolute;top:32px;left:52px;width:200px;background:#181825;padding:10px 12px;border:1px solid #89b4fa">
+          <div style="color:#89b4fa;border-bottom:1px solid #313244;padding-bottom:4px;margin-bottom:6px">╭─ Move to Trash ───────╮</div>
+          <div style="color:#cdd6f4"> 󰍔 main.rs</div>
+          <div style="color:#cdd6f4"> 󰍔 lib.rs</div>
+          <div style="color:#6c7086;margin-top:6px;font-size:10px">2 items selected</div>
+          <div style="text-align:right;margin-top:6px">
+            <span style="color:#a6e3a1">Enter</span><span style="color:#6c7086"> confirm · </span><span style="color:#f38ba8">Esc</span><span style="color:#6c7086"> cancel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Shadow Offset</h3>
+      <p>A 1-cell offset "shadow" block behind the modal using a darker background. Classic TUI depth trick. Crisp, convincing, minimal cost.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="full-dim" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:12px;font-family:monospace;font-size:11px;color:#cdd6f4;position:relative;min-height:160px">
+        <!-- full screen dim -->
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,0.6);z-index:1"></div>
+        <!-- dimmed app behind -->
+        <div style="opacity:0.2;line-height:1.7">
+          <div style="display:flex;gap:6px">
+            <div style="flex:1;color:#45475a">
+              <div> 󰉋 src/         dir   Apr 24</div>
+              <div> 󰏗 Cargo.toml  1.2K  Apr 23</div>
+              <div> 󰍔 main.rs     4.8K  Apr 24</div>
+              <div> 󰍔 lib.rs       12K  Apr 22</div>
+            </div>
+            <div style="flex:1;color:#45475a">
+              <div> 󰌘 README.md   3.1K  Apr 24</div>
+              <div> 󰁯 archive.gz  88K   Apr 20</div>
+              <div> 󰌹 link → tgt   —    Apr 18</div>
+            </div>
+          </div>
+        </div>
+        <!-- modal on top -->
+        <div style="position:absolute;top:32px;left:50%;transform:translateX(-50%);width:210px;background:#181825;padding:10px 14px;border:1px solid #89b4fa;z-index:2">
+          <div style="color:#89b4fa;border-bottom:1px solid #313244;padding-bottom:4px;margin-bottom:6px">╭─ Move to Trash ───────╮</div>
+          <div style="color:#cdd6f4"> 󰍔 main.rs</div>
+          <div style="color:#cdd6f4"> 󰍔 lib.rs</div>
+          <div style="color:#6c7086;margin-top:6px;font-size:10px">2 items selected</div>
+          <div style="text-align:right;margin-top:6px">
+            <span style="color:#a6e3a1">Enter</span><span style="color:#6c7086"> confirm · </span><span style="color:#f38ba8">Esc</span><span style="color:#6c7086"> cancel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Full Dim + Float</h3>
+      <p>Entire background dims to a near-black overlay, modal floats centered with a bright border. Maximum focus — nothing competes with the modal.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="halo-glow" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:12px;font-family:monospace;font-size:11px;color:#cdd6f4;position:relative;min-height:160px">
+        <!-- dimmed app behind -->
+        <div style="opacity:0.3;line-height:1.7">
+          <div style="display:flex;gap:6px">
+            <div style="flex:1;color:#45475a">
+              <div> 󰉋 src/         dir   Apr 24</div>
+              <div> 󰏗 Cargo.toml  1.2K  Apr 23</div>
+              <div> 󰍔 main.rs     4.8K  Apr 24</div>
+              <div> 󰍔 lib.rs       12K  Apr 22</div>
+            </div>
+            <div style="flex:1;color:#45475a">
+              <div> 󰌘 README.md   3.1K  Apr 24</div>
+              <div> 󰁯 archive.gz  88K   Apr 20</div>
+              <div> 󰌹 link → tgt   —    Apr 18</div>
+            </div>
+          </div>
+        </div>
+        <!-- halo -->
+        <div style="position:absolute;top:24px;left:44px;width:224px;background:#1e1e2e;padding:16px;border:2px solid #313244;color:#313244"></div>
+        <!-- modal -->
+        <div style="position:absolute;top:30px;left:50px;width:210px;background:#181825;padding:10px 14px;border:1px solid #89b4fa;outline:4px solid #11111b">
+          <div style="color:#89b4fa;border-bottom:1px solid #313244;padding-bottom:4px;margin-bottom:6px">╭─ Move to Trash ───────╮</div>
+          <div style="color:#cdd6f4"> 󰍔 main.rs</div>
+          <div style="color:#cdd6f4"> 󰍔 lib.rs</div>
+          <div style="color:#6c7086;margin-top:6px;font-size:10px">2 items selected</div>
+          <div style="text-align:right;margin-top:6px">
+            <span style="color:#a6e3a1">Enter</span><span style="color:#6c7086"> confirm · </span><span style="color:#f38ba8">Esc</span><span style="color:#6c7086"> cancel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Halo + Dim Zone</h3>
+      <p>A "halo" ring of slightly lighter cells surrounds the modal, with the surrounding app dimmed. Softer depth — feels elevated without being jarring.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:10px">
+  <p class="subtitle">💡 Options A and C can be combined — shadow offset <em>and</em> a surrounding halo. Let me know if you'd like to see that hybrid.</p>
+</div>

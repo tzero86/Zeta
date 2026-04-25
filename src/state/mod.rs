@@ -2205,14 +2205,14 @@ impl AppState {
                 let next = match current {
                     IconMode::Unicode => IconMode::Ascii,
                     IconMode::Ascii => IconMode::Unicode,
-                    IconMode::Custom => IconMode::Unicode,
+                    IconMode::NerdFont => IconMode::Unicode,
                 };
                 self.icon_mode = next;
                 self.config.icon_mode = next;
                 self.status_message = match next {
                     IconMode::Unicode => String::from("icons set to unicode"),
                     IconMode::Ascii => String::from("icons set to ASCII"),
-                    IconMode::Custom => String::from("icons set to custom"),
+                    IconMode::NerdFont => String::from("icons set to NerdFont"),
                 };
                 let _ = self.config.save(Path::new(&self.config_path));
             }
@@ -2697,7 +2697,7 @@ impl AppState {
                 value: match self.icon_mode {
                     IconMode::Unicode => String::from("unicode"),
                     IconMode::Ascii => String::from("ascii"),
-                    IconMode::Custom => String::from("custom"),
+                    IconMode::NerdFont => String::from("nerdfont"),
                 },
                 hint: "Space",
                 field: SettingsField::IconMode(self.icon_mode),

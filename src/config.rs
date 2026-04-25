@@ -131,7 +131,8 @@ pub enum IconMode {
     #[default]
     Unicode,
     Ascii,
-    Custom,
+    #[serde(alias = "custom")]
+    NerdFont,
 }
 
 impl AppConfig {
@@ -1141,7 +1142,7 @@ mod tests {
 
         let config: AppConfig = toml::from_str(raw).expect("config should parse");
 
-        assert_eq!(config.icon_mode, IconMode::Custom);
+        assert_eq!(config.icon_mode, IconMode::NerdFont);
     }
 
     #[test]

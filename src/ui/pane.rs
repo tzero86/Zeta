@@ -10,7 +10,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::config::{IconMode, ThemePalette};
 use crate::fs::{EntryInfo, EntryKind};
 use crate::git::{FileStatus, RepoStatus};
-use crate::icon::icon_for_kind;
+use crate::icon::icon_for_entry;
 use crate::pane::PaneState;
 use crate::state::AppState;
 
@@ -271,7 +271,11 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         details_view,
         display_name,
     } = args;
-    let icon = icon_for_kind(entry.kind, icon_mode);
+    let icon = icon_for_entry(
+        entry.kind,
+        entry.path.extension().and_then(|e| e.to_str()),
+        icon_mode,
+    );
     // --- Details view: flat columns (mark | icon | git | name | size | date) ---
     if details_view {
         let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
@@ -449,7 +453,7 @@ pub fn pane_row_styles(
 
 pub fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
     match icon_mode {
-        IconMode::Unicode | IconMode::Custom => format!("{icon}  "),
+        IconMode::Unicode | IconMode::NerdFont => format!("{icon}  "),
         IconMode::Ascii => icon.to_string(),
     }
 }

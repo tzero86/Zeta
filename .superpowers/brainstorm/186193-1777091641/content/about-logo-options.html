@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>[Z]eta — About Logo Options</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #181825; --overlay: #313244; --crust: #11111b;
+    --text: #cdd6f4; --subtext: #a6adc8; --muted: #6c7086;
+    --blue: #89b4fa; --lavender: #b4befe; --mauve: #cba6f7;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af; --teal: #94e2d5;
+    --peach: #fab387;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 20px; color: var(--mauve); margin-bottom: 4px; }
+  .subtitle { color: var(--subtext); font-size: 13px; margin-bottom: 28px; }
+
+  .section-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 16px;
+  }
+
+  .logo-row { display: flex; flex-direction: column; gap: 28px; margin-bottom: 32px; }
+
+  /* TUI frame */
+  .term-frame {
+    background: var(--surface); border: 1px solid var(--overlay);
+    border-radius: 6px; overflow: hidden; font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size: 12px;
+  }
+  .term-backdrop {
+    background: rgba(17,17,27,0.72); padding: 16px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-box {
+    background: #24273a; border: 1px solid var(--mauve);
+    border-radius: 4px; width: 480px; overflow: hidden;
+    box-shadow: 0 0 0 1px rgba(203,166,247,0.12), 0 0 28px rgba(203,166,247,0.07);
+  }
+  .modal-title {
+    background: var(--overlay); color: var(--mauve); font-weight: 700;
+    font-size: 12px; padding: 5px 10px; text-align: center;
+    border-bottom: 1px solid rgba(203,166,247,0.25);
+  }
+  .modal-body { padding: 10px 14px; line-height: 1.65; }
+
+  /* ASCII logo block */
+  .logo-pre {
+    font-family: 'Cascadia Code','Fira Code','Consolas',monospace;
+    font-size: 11.5px; line-height: 1.25; white-space: pre;
+    margin-bottom: 6px; text-align: center;
+  }
+  .z-bracket { color: var(--mauve); }
+  .z-fill    { color: var(--mauve); opacity: 0.8; }
+  .eta-text  { color: var(--text); }
+  .tagline { color: var(--subtext); font-size: 10px; text-align: center; margin-bottom: 10px; font-family: 'Cascadia Code',monospace; }
+
+  /* Info grid */
+  .sec-hdr {
+    color: var(--mauve); font-weight: 700; font-size: 11px; letter-spacing: 0.8px;
+    text-transform: uppercase; margin: 8px 0 4px; padding-bottom: 2px;
+    border-bottom: 1px solid rgba(203,166,247,0.2); font-family: 'Cascadia Code',monospace;
+  }
+  .info-grid { display: grid; grid-template-columns: 76px 1fr; gap: 2px 8px; font-size: 11px; font-family: 'Cascadia Code',monospace; }
+  .info-key { color: var(--subtext); }
+  .info-val { color: var(--text); }
+  .version-badge {
+    display: inline-block; background: rgba(166,227,161,0.15); color: var(--green);
+    border: 1px solid rgba(166,227,161,0.3); font-size: 10px; padding: 1px 6px;
+    border-radius: 8px; font-weight: 700; margin-right: 4px;
+  }
+  .version-badge.beta {
+    background: rgba(250,179,135,0.15); color: var(--peach); border-color: rgba(250,179,135,0.3);
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .chip {
+    background: var(--overlay); color: var(--subtext); font-size: 10px;
+    padding: 2px 6px; border-radius: 3px; border: 1px solid rgba(108,112,134,0.3);
+    font-family: 'Cascadia Code',monospace;
+  }
+  .scroll-hint { color: var(--muted); font-size: 10px; text-align: right; padding: 4px 0 2px; font-family: 'Cascadia Code',monospace; }
+
+  .design-label { font-size: 12px; font-weight: 700; color: var(--blue); margin-bottom: 8px; }
+  .rec { display:inline-block;background:rgba(137,180,250,0.15);color:var(--blue);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:700;}
+</style>
+</head>
+<body>
+
+<h1>[Z]eta About — Logo Variants</h1>
+<p class="subtitle">Three retro ASCII banner styles for the About modal. [Z] in accent color, eta in primary text.</p>
+
+<div class="logo-row">
+
+<!-- ── LOGO 1: ANSI Block (Shadow style) ── -->
+<div>
+<div class="design-label">1 — ANSI Block Shadow <span class="rec">SOLID &amp; READABLE</span></div>
+<div class="term-frame">
+  <div class="term-backdrop">
+    <div class="modal-box">
+      <div class="modal-title">  About  </div>
+      <div class="modal-body">
+        <div class="logo-pre"><span class="z-bracket">╔═══╗</span><span class="eta-text">  ███████╗ ████████╗  █████╗ </span>
+<span class="z-bracket">║</span><span class="z-fill"> █ </span><span class="z-bracket">║</span><span class="eta-text">  ██╔════╝    ██╔══╝ ██╔══██╗</span>
+<span class="z-bracket">║</span><span class="z-fill"> █ </span><span class="z-bracket">║</span><span class="eta-text">  █████╗      ██║    ███████║</span>
+<span class="z-bracket">║</span><span class="z-fill"> █ </span><span class="z-bracket">║</span><span class="eta-text">  ██╔══╝      ██║    ██╔══██║</span>
+<span class="z-bracket">╚═══╝</span><span class="eta-text">  ███████╗    ██║    ██║  ██║</span>
+<span class="z-bracket"> [Z] </span><span class="eta-text">  ╚══════╝    ╚═╝    ╚═╝  ╚═╝</span></div>
+        <div class="tagline">── keyboard-first dual-pane file manager ──</div>
+        <div class="info-grid">
+          <span class="info-key">Version</span><span class="info-val"><span class="version-badge">v0.4.2</span><span class="version-badge beta">Beta</span></span>
+          <span class="info-key">Author</span><span class="info-val">tzero86</span>
+          <span class="info-key">Theme</span><span class="info-val" style="color:var(--blue)">zeta dark</span>
+          <span class="info-key">Icons</span><span class="info-val">NerdFont</span>
+          <span class="info-key">Config</span><span class="info-val" style="color:var(--subtext);font-size:10px">~/.config/zeta/config.toml</span>
+        </div>
+        <div class="sec-hdr" style="margin-top:8px">Features</div>
+        <div class="chips">
+          <span class="chip">Dual panes</span><span class="chip">4 Workspaces</span>
+          <span class="chip">SSH/SFTP</span><span class="chip">Archives</span>
+          <span class="chip">Diff mode</span><span class="chip">Editor</span>
+          <span class="chip">Sessions</span><span class="chip">Mouse</span>
+        </div>
+        <div class="scroll-hint">Esc · Enter  close</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ── LOGO 2: Classic NFO slash-pipe ── -->
+<div>
+<div class="design-label">2 — Classic NFO / Warez-era <span class="rec">MOST RETRO</span></div>
+<div class="term-frame">
+  <div class="term-backdrop">
+    <div class="modal-box">
+      <div class="modal-title">  About  </div>
+      <div class="modal-body">
+        <div class="logo-pre"><span class="z-bracket">  _|¯¯¯|_  </span><span class="eta-text">  _____  ______ ____  </span>
+<span class="z-bracket"> | [   ] | </span><span class="eta-text"> |  ___||__  __||    | </span>
+<span class="z-bracket"> | [ Z ] | </span><span class="eta-text"> | |__    | |  |  _/ </span>
+<span class="z-bracket"> | [   ] | </span><span class="eta-text"> |  __|   | |  | |   </span>
+<span class="z-bracket"> |_[___]_| </span><span class="eta-text"> |_____| _|_|_ |_|   </span>
+<span class="z-bracket">   [ Z ]   </span><span class="eta-text">   e       t    a    </span></div>
+        <div class="tagline">-= keyboard-first dual-pane file manager =-</div>
+        <div class="info-grid">
+          <span class="info-key">Version</span><span class="info-val"><span class="version-badge">v0.4.2</span><span class="version-badge beta">Beta</span></span>
+          <span class="info-key">Author</span><span class="info-val">tzero86</span>
+          <span class="info-key">Theme</span><span class="info-val" style="color:var(--blue)">zeta dark</span>
+          <span class="info-key">Icons</span><span class="info-val">NerdFont</span>
+          <span class="info-key">Config</span><span class="info-val" style="color:var(--subtext);font-size:10px">~/.config/zeta/config.toml</span>
+        </div>
+        <div class="sec-hdr" style="margin-top:8px">Features</div>
+        <div class="chips">
+          <span class="chip">Dual panes</span><span class="chip">4 Workspaces</span>
+          <span class="chip">SSH/SFTP</span><span class="chip">Archives</span>
+          <span class="chip">Diff mode</span><span class="chip">Editor</span>
+          <span class="chip">Sessions</span><span class="chip">Mouse</span>
+        </div>
+        <div class="scroll-hint">Esc · Enter  close</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ── LOGO 3: Half-block demoscene ── -->
+<div>
+<div class="design-label">3 — Half-block Demoscene / BBS-door <span class="rec">MOST STRIKING</span></div>
+<div class="term-frame">
+  <div class="term-backdrop">
+    <div class="modal-box">
+      <div class="modal-title">  About  </div>
+      <div class="modal-body">
+        <div class="logo-pre"><span class="z-bracket">▄▄▄▄▄</span><span class="eta-text">  ▄▄▄▄▄▄  ▄▄▄▄▄▄▄ ▄▄▄▄  ▄▄</span>
+<span class="z-bracket">█  ███</span><span class="eta-text">  ██▀▀▀▀  ╔══██══╗ ██▀▀█▄██</span>
+<span class="z-bracket">█ ▄▄██</span><span class="eta-text">  ██████  ║  ██  ║ ██  ▀███</span>
+<span class="z-bracket">██▀▀  </span><span class="eta-text">  ██▄▄▄▄  ║  ██  ║ ██   ▀██</span>
+<span class="z-bracket">█████▄</span><span class="eta-text">  ▀▀▀▀▀▀  ╚══╝╚══╝ ▀▀    ▀▀</span>
+<span class="z-bracket"> [Z]  </span><span class="eta-text">     e        t       a    </span></div>
+        <div class="tagline">·· keyboard-first dual-pane file manager ··</div>
+        <div class="info-grid">
+          <span class="info-key">Version</span><span class="info-val"><span class="version-badge">v0.4.2</span><span class="version-badge beta">Beta</span></span>
+          <span class="info-key">Author</span><span class="info-val">tzero86</span>
+          <span class="info-key">Theme</span><span class="info-val" style="color:var(--blue)">zeta dark</span>
+          <span class="info-key">Icons</span><span class="info-val">NerdFont</span>
+          <span class="info-key">Config</span><span class="info-val" style="color:var(--subtext);font-size:10px">~/.config/zeta/config.toml</span>
+        </div>
+        <div class="sec-hdr" style="margin-top:8px">Features</div>
+        <div class="chips">
+          <span class="chip">Dual panes</span><span class="chip">4 Workspaces</span>
+          <span class="chip">SSH/SFTP</span><span class="chip">Archives</span>
+          <span class="chip">Diff mode</span><span class="chip">Editor</span>
+          <span class="chip">Sessions</span><span class="chip">Mouse</span>
+        </div>
+        <div class="scroll-hint">Esc · Enter  close</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ── LOGO 4: Pipe-and-underscore "clean NFO" ── -->
+<div>
+<div class="design-label">4 — Pipe &amp; Underscore "clean NFO"</div>
+<div class="term-frame">
+  <div class="term-backdrop">
+    <div class="modal-box">
+      <div class="modal-title">  About  </div>
+      <div class="modal-body">
+        <div class="logo-pre"><span class="z-bracket">  _______ </span><span class="eta-text">  _____  ____  ____  </span>
+<span class="z-bracket"> [      ]</span><span class="eta-text"> |  ___||_  _||  _ | </span>
+<span class="z-bracket"> [  ZZ  ]</span><span class="eta-text"> |  __|   | |  | |_| </span>
+<span class="z-bracket"> [ ZZ   ]</span><span class="eta-text"> |  |     | |  |  _  </span>
+<span class="z-bracket"> [______]</span><span class="eta-text"> |_____|  |_|  |_| |_|</span>
+<span class="z-bracket">   [Z]   </span><span class="eta-text">    e      t     a   </span></div>
+        <div class="tagline">── keyboard-first dual-pane file manager ──</div>
+        <div class="info-grid">
+          <span class="info-key">Version</span><span class="info-val"><span class="version-badge">v0.4.2</span><span class="version-badge beta">Beta</span></span>
+          <span class="info-key">Author</span><span class="info-val">tzero86</span>
+          <span class="info-key">Theme</span><span class="info-val" style="color:var(--blue)">zeta dark</span>
+          <span class="info-key">Icons</span><span class="info-val">NerdFont</span>
+          <span class="info-key">Config</span><span class="info-val" style="color:var(--subtext);font-size:10px">~/.config/zeta/config.toml</span>
+        </div>
+        <div class="sec-hdr" style="margin-top:8px">Features</div>
+        <div class="chips">
+          <span class="chip">Dual panes</span><span class="chip">4 Workspaces</span>
+          <span class="chip">SSH/SFTP</span><span class="chip">Archives</span>
+          <span class="chip">Diff mode</span><span class="chip">Editor</span>
+          <span class="chip">Sessions</span><span class="chip">Mouse</span>
+        </div>
+        <div class="scroll-hint">Esc · Enter  close</div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+</div>
+</body>
+</html>

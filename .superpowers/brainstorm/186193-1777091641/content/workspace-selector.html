@@ -1,0 +1,95 @@
+<h2>Workspace Selector</h2>
+<p class="subtitle">Currently shown as <code>[1] [2] [3] [4]</code> on the right end of the menu bar. How should it look in the new design?</p>
+
+<div class="options">
+
+  <div class="option" data-choice="pill-tabs" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Pill Tabs (right-anchored)</h3>
+      <p>Each workspace is a small pill/badge. Active one filled with accent color, inactive ones are outlined. Clean, minimal, easy to scan.</p>
+      <div style="font-family:monospace;font-size:11px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="color:#45475a;margin:0 6px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span style="flex:1"></span>
+          <!-- pill tabs -->
+          <span style="background:#89b4fa;color:#1e1e2e;padding:0 6px;border-radius:2px;font-weight:bold;margin-right:2px">1</span>
+          <span style="color:#45475a;padding:0 5px;border:1px solid #45475a;border-radius:2px;margin-right:2px">2</span>
+          <span style="color:#45475a;padding:0 5px;border:1px solid #45475a;border-radius:2px;margin-right:2px">3</span>
+          <span style="color:#45475a;padding:0 5px;border:1px solid #45475a;border-radius:2px;margin-right:4px">4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="named-tabs" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Named Tabs with CWD hint</h3>
+      <p>Active workspace shows its current working directory (truncated). Inactive ones show just the number. Gives instant context about what's in each workspace.</p>
+      <div style="font-family:monospace;font-size:11px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="color:#45475a;margin:0 6px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span style="flex:1"></span>
+          <!-- named workspace -->
+          <span style="background:#313244;color:#cdd6f4;padding:0 6px;border-top:1px solid #89b4fa;font-weight:bold;margin-right:2px">1:~/projects</span>
+          <span style="color:#45475a;padding:0 5px;margin-right:2px">2</span>
+          <span style="color:#45475a;padding:0 5px;margin-right:2px">3</span>
+          <span style="color:#45475a;padding:0 5px;margin-right:4px">4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="dot-indicator" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Dot Indicators</h3>
+      <p>Ultra-compact. Active workspace = filled dot with number, inactive = hollow dot. Saves horizontal space, good for narrow terminals or when many workspaces are open.</p>
+      <div style="font-family:monospace;font-size:11px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="color:#45475a;margin:0 6px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span style="flex:1"></span>
+          <span style="color:#89b4fa;margin-right:1px">●1</span>
+          <span style="color:#45475a;margin-right:1px">○2</span>
+          <span style="color:#45475a;margin-right:1px">○3</span>
+          <span style="color:#45475a;margin-right:4px">○4</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="keep-brackets" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Refined Brackets (keep current shape)</h3>
+      <p>Keep <code>[1] [2] [3] [4]</code> but with better styling: active gets accent color fill + bold, inactive are muted. Familiar, minimal change.</p>
+      <div style="font-family:monospace;font-size:11px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="color:#45475a;margin:0 6px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span style="flex:1"></span>
+          <span style="background:#89b4fa;color:#1e1e2e;font-weight:bold;margin-right:3px">[1]</span>
+          <span style="color:#45475a;margin-right:3px">[2]</span>
+          <span style="color:#45475a;margin-right:3px">[3]</span>
+          <span style="color:#45475a;margin-right:4px">[4]</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
