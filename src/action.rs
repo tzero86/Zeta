@@ -1116,12 +1116,18 @@ impl Action {
     /// Map a key event when the git diff file list has focus.
     pub fn from_git_diff_file_list_key_event(key: &KeyEvent) -> Option<Action> {
         match key {
-            KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
-                Some(Action::GitDiffSelectPrev)
-            }
-            KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
-                Some(Action::GitDiffSelectNext)
-            }
+            KeyEvent { code: KeyCode::Up, .. }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffSelectPrev),
+            KeyEvent { code: KeyCode::Down, .. }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffSelectNext),
             KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffPageUp),
             KeyEvent { code: KeyCode::PageDown, .. } => Some(Action::GitDiffPageDown),
             KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
@@ -1132,16 +1138,25 @@ impl Action {
     /// Map a key event when the git diff content pane has focus.
     pub fn from_git_diff_content_key_event(key: &KeyEvent) -> Option<Action> {
         match key {
-            KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
-                Some(Action::GitDiffScrollUp)
-            }
-            KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
-                Some(Action::GitDiffScrollDown)
-            }
+            KeyEvent { code: KeyCode::Up, .. }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffScrollUp),
+            KeyEvent { code: KeyCode::Down, .. }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffScrollDown),
             KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffContentPageUp),
-            KeyEvent { code: KeyCode::PageDown, .. } | KeyEvent { code: KeyCode::Char('d'), .. } => {
-                Some(Action::GitDiffContentPageDown)
-            }
+            KeyEvent { code: KeyCode::PageDown, .. }
+            | KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffContentPageDown),
             KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
             _ => None,
         }
@@ -1617,5 +1632,41 @@ mod tests {
             Action::from_git_diff_content_key_event(&key),
             Some(Action::GitDiffToggleFocus)
         );
+    }
+
+    #[test]
+    fn git_diff_content_plain_d_returns_page_down() {
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffContentPageDown)
+        );
+    }
+
+    #[test]
+    fn git_diff_content_ctrl_d_returns_none() {
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert_eq!(Action::from_git_diff_content_key_event(&key), None);
+    }
+
+    #[test]
+    fn git_diff_file_list_vim_keys() {
+        let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&k),
+            Some(Action::GitDiffSelectPrev)
+        );
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&j),
+            Some(Action::GitDiffSelectNext)
+        );
+    }
+
+    #[test]
+    fn git_diff_unknown_key_returns_none() {
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert_eq!(Action::from_git_diff_file_list_key_event(&key), None);
+        assert_eq!(Action::from_git_diff_content_key_event(&key), None);
     }
 }

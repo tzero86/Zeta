@@ -802,12 +802,10 @@ fn route_key_event(
             Action::from_editor_key_event(key_event, keymap)
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
-        FocusLayer::GitDiffFileList => {
-            Action::from_git_diff_file_list_key_event(&key_event)
-        }
-        FocusLayer::GitDiffContent => {
-            Action::from_git_diff_content_key_event(&key_event)
-        }
+        FocusLayer::GitDiffFileList => Action::from_git_diff_file_list_key_event(&key_event)
+            .or_else(|| Action::from_pane_key_event(key_event, keymap)),
+        FocusLayer::GitDiffContent => Action::from_git_diff_content_key_event(&key_event)
+            .or_else(|| Action::from_pane_key_event(key_event, keymap)),
         FocusLayer::Pane => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
