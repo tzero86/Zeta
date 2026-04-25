@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Toggle Details View missing from command palette**: The `Ctrl+L` action existed in the View menu and the keymap but was absent from the command palette (`Ctrl+B`), making it invisible to discovery. Added under "View / Layout" with the `Ctrl+L` hint.
 - **Toggle Details View only affecting one pane**: `Action::ToggleDetailsView` mutated only the active pane, leaving the other pane out of sync. The action now toggles both panes together so the user gets a consistent dual-pane view with one shortcut.
 - **Toggle Details View status message ambiguous**: The status message after `Ctrl+L` read "details view on/off (both panes)" which was ambiguous — it was unclear whether "off" meant the view was just disabled or was currently in a disabled state. Reworded to "rich columns: enabled/hidden (both panes)" to clearly describe the resulting state.
+- **Git column header misaligned with data rows**: In Rich Columns view the header showed `Name | Size | Modified | Git` with "Git" at the far right, but the actual git status indicator (●, M, ?) rendered between the icon and the filename. The header now correctly places `G` (git status column) between the icon column and `Name`, matching the data row layout exactly.
+
+### Added
+- **Live clock in status bar**: The status bar now shows the current local time (`HH:MM`) as the rightmost zone, separated from the workspace indicator by a divider. The clock ticks live every second — the app's idle poll loop detects when the wall-clock second advances and triggers a redraw without requiring a keypress.
 
 ## [0.5.0] - 2025-05-01
 

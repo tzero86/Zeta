@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 arboard = "3"
+chrono = "0.4"
 crossbeam-channel = "0.5"
 crossterm = "0.28"
 dirs = "5"

@@ -483,6 +483,18 @@ fn render_status_bar(
                 .bg(palette.status_workspace_bg)
                 .add_modifier(Modifier::BOLD),
         ));
+        spans.push(Span::styled(
+            "│",
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.status_bg),
+        ));
+        spans.push(Span::styled(
+            zones.clock.clone(),
+            Style::default()
+                .fg(palette.text_subtext)
+                .bg(palette.status_bg),
+        ));
     }
 
     frame.render_widget(Paragraph::new(Line::from(spans)), area);

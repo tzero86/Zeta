@@ -618,17 +618,19 @@ pub fn human_size(size: u64) -> String {
 fn render_column_headers(frame: &mut Frame<'_>, area: Rect, palette: ThemePalette) {
     use crate::ui::styles::pane_column_header_style;
     let w = area.width as usize;
-    let right_fixed = 30usize; // 9 (size) + 1 + 16 (date) + 1 + 3 (git)
-    let left_fixed = 5usize; // 2 (mark) + 2 (icon+space) + 1
+    // Layout mirrors the data row exactly (Unicode icon slot = 2 cols):
+    //   2 (mark) + 2 (icon) + 1 (sp) + 1 (G) + 1 (sp) = 7 left
+    //   9 (size) + 1 (sp) + 16 (date) + 1 (pad) = 27 right
+    let right_fixed = 27usize;
+    let left_fixed = 7usize;
     let name_width = w.saturating_sub(left_fixed + right_fixed).max(4);
     let header = format!(
-        "  {icon:<2}{name:<name_width$}{size:>9} {date:<16} {git:<3}",
+        "  {icon:<2} G {name:<name_width$}{size:>9} {date:<16} ",
         icon = "",
         name = "Name",
         name_width = name_width,
         size = "Size",
         date = "Modified",
-        git = "Git",
     );
     let para = Paragraph::new(header).style(pane_column_header_style(palette));
     frame.render_widget(para, area);

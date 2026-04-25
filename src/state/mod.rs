@@ -18,6 +18,8 @@ pub use preview_state::PreviewState;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
+
+use chrono::Local;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -52,6 +54,7 @@ pub struct StatusZones {
     pub marks: Option<MarksInfo>,
     pub progress: Option<FileOpProgress>,
     pub workspace: String,
+    pub clock: String,
 }
 
 #[derive(Clone, Debug)]
@@ -2824,6 +2827,8 @@ impl AppState {
             self.workspace_count()
         );
 
+        let clock = format!(" {} ", Local::now().format("%H:%M"));
+
         StatusZones {
             git_branch,
             entry_detail,
@@ -2831,6 +2836,7 @@ impl AppState {
             marks,
             progress,
             workspace,
+            clock,
         }
     }
 

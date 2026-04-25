@@ -38,6 +38,8 @@ pub struct App {
     last_pane_click: Option<(bool, usize, std::time::Instant)>, // (left_pane, row, time)
     /// Absolute path to the loaded config file; watched for live reload.
     config_path: std::path::PathBuf,
+    /// Last second value displayed in the clock; used to trigger a redraw each second.
+    last_clock_second: u8,
 }
 
 impl App {
@@ -62,6 +64,7 @@ impl App {
             layout_cache: LayoutCache::default(),
             last_pane_click: None,
             config_path,
+            last_clock_second: 255, // force redraw on first tick
         };
 
         for command in app.state.initial_commands() {
@@ -178,8 +181,17 @@ impl App {
             // Idle tick: dispatch a debounced preview request if one is due.
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
-                // No immediate redraw needed — the job result will set the flag
-                // when the preview worker completes.
+            }
+            // Trigger a redraw whenever the wall-clock second advances so the status
+            // bar clock stays live even when the user isn't pressing keys.
+            let current_second = (std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs()
+                % 60) as u8;
+            if current_second != self.last_clock_second {
+                self.last_clock_second = current_second;
+                self.state.set_needs_redraw();
             }
             return Ok(());
         }
