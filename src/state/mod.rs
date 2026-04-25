@@ -1012,7 +1012,7 @@ impl AppState {
                         Vec::new()
                     }
                 };
-                
+
                 if !marks.is_empty() {
                     // Batch operation: trash multiple marked items
                     // Set source_path to first item for display (renderer shows this, not source_paths)
@@ -1026,8 +1026,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("Press Enter to confirm, or Esc to cancel");
+                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -1059,7 +1058,7 @@ impl AppState {
                         Vec::new()
                     }
                 };
-                
+
                 if !marks.is_empty() {
                     // Batch operation: permanently delete multiple marked items
                     // Set source_path to first item for display (renderer shows this, not source_paths)
@@ -1073,8 +1072,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("Press Enter to confirm, or Esc to cancel");
+                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -4857,12 +4855,13 @@ mod tests {
 
         // Should have opened batch Trash PromptState
         let is_trash_prompt = match &state.overlay.modal {
-            Some(ModalState::Prompt(p)) => {
-                p.kind == PromptKind::Trash && p.source_paths.len() == 3
-            }
+            Some(ModalState::Prompt(p)) => p.kind == PromptKind::Trash && p.source_paths.len() == 3,
             _ => false,
         };
-        assert!(is_trash_prompt, "Expected Trash PromptState with 3 source_paths");
+        assert!(
+            is_trash_prompt,
+            "Expected Trash PromptState with 3 source_paths"
+        );
 
         // Submit the trash prompt to dispatch operations
         let commands = state

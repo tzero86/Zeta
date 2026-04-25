@@ -425,44 +425,44 @@ impl ThemePalette {
 
     fn catppuccin_mocha() -> Self {
         Self {
-            menu_bg: Color::Rgb(24, 24, 37),           // mantle
-            menu_fg: Color::Rgb(205, 214, 244),         // text
-            menu_active_bg: Color::Rgb(49, 50, 68),     // surface0/overlay
-            menu_mnemonic_fg: Color::Rgb(203, 166, 247), // mauve
-            border_focus: Color::Rgb(137, 180, 250),    // blue
+            menu_bg: Color::Rgb(24, 24, 37),                // mantle
+            menu_fg: Color::Rgb(205, 214, 244),             // text
+            menu_active_bg: Color::Rgb(49, 50, 68),         // surface0/overlay
+            menu_mnemonic_fg: Color::Rgb(203, 166, 247),    // mauve
+            border_focus: Color::Rgb(137, 180, 250),        // blue
             border_editor_focus: Color::Rgb(250, 179, 135), // peach
-            selection_bg: Color::Rgb(69, 71, 90),       // surface1
-            selection_fg: Color::Rgb(205, 214, 244),    // text
-            surface_bg: Color::Rgb(30, 30, 46),         // base
-            tools_bg: Color::Rgb(24, 24, 37),           // mantle
-            prompt_bg: Color::Rgb(17, 17, 27),          // crust
-            prompt_border: Color::Rgb(137, 180, 250),   // blue
-            text_primary: Color::Rgb(205, 214, 244),    // text
-            text_muted: Color::Rgb(108, 112, 134),      // overlay0
-            directory_fg: Color::Rgb(137, 180, 250),    // blue
-            symlink_fg: Color::Rgb(148, 226, 213),      // teal
-            file_fg: Color::Rgb(186, 194, 222),         // subtext1
-            status_bg: Color::Rgb(49, 50, 68),          // surface0
-            status_fg: Color::Rgb(205, 214, 244),       // text
-            logo_accent: Color::Rgb(203, 166, 247),     // mauve
-            key_hint_fg: Color::Rgb(249, 226, 175),     // yellow
+            selection_bg: Color::Rgb(69, 71, 90),           // surface1
+            selection_fg: Color::Rgb(205, 214, 244),        // text
+            surface_bg: Color::Rgb(30, 30, 46),             // base
+            tools_bg: Color::Rgb(24, 24, 37),               // mantle
+            prompt_bg: Color::Rgb(17, 17, 27),              // crust
+            prompt_border: Color::Rgb(137, 180, 250),       // blue
+            text_primary: Color::Rgb(205, 214, 244),        // text
+            text_muted: Color::Rgb(108, 112, 134),          // overlay0
+            directory_fg: Color::Rgb(137, 180, 250),        // blue
+            symlink_fg: Color::Rgb(148, 226, 213),          // teal
+            file_fg: Color::Rgb(186, 194, 222),             // subtext1
+            status_bg: Color::Rgb(49, 50, 68),              // surface0
+            status_fg: Color::Rgb(205, 214, 244),           // text
+            logo_accent: Color::Rgb(203, 166, 247),         // mauve
+            key_hint_fg: Color::Rgb(249, 226, 175),         // yellow
             syntect_theme: "Dracula",
             search_match_bg: Color::Rgb(75, 68, 30),
             search_match_active_bg: Color::Rgb(160, 140, 30),
             text_sel_bg: Color::Rgb(40, 55, 100),
             // New accent tokens
-            text_subtext: Color::Rgb(186, 194, 222),    // subtext1
-            accent_mauve: Color::Rgb(203, 166, 247),    // mauve
-            accent_teal: Color::Rgb(148, 226, 213),     // teal
-            accent_green: Color::Rgb(166, 227, 161),    // green
-            accent_yellow: Color::Rgb(249, 226, 175),   // yellow
-            accent_peach: Color::Rgb(250, 179, 135),    // peach
-            accent_red: Color::Rgb(243, 139, 168),      // red
-            modal_halo: Color::Rgb(49, 50, 68),         // surface0/overlay
-            pane_filter_bg: Color::Rgb(33, 36, 58),     // blue tint over base
+            text_subtext: Color::Rgb(186, 194, 222), // subtext1
+            accent_mauve: Color::Rgb(203, 166, 247), // mauve
+            accent_teal: Color::Rgb(148, 226, 213),  // teal
+            accent_green: Color::Rgb(166, 227, 161), // green
+            accent_yellow: Color::Rgb(249, 226, 175), // yellow
+            accent_peach: Color::Rgb(250, 179, 135), // peach
+            accent_red: Color::Rgb(243, 139, 168),   // red
+            modal_halo: Color::Rgb(49, 50, 68),      // surface0/overlay
+            pane_filter_bg: Color::Rgb(33, 36, 58),  // blue tint over base
             pane_filter_border: Color::Rgb(60, 80, 130), // blue 30% over base
-            status_git_bg: Color::Rgb(35, 37, 62),      // blue tint
-            status_entry_bg: Color::Rgb(36, 33, 58),    // mauve tint
+            status_git_bg: Color::Rgb(35, 37, 62),   // blue tint
+            status_entry_bg: Color::Rgb(36, 33, 58), // mauve tint
             status_workspace_bg: Color::Rgb(46, 36, 70), // strong mauve
         }
     }

@@ -93,9 +93,7 @@ pub fn section_divider_style(palette: ThemePalette) -> Style {
 }
 
 pub fn panel_title_focused_style(accent: Color) -> Style {
-    Style::default()
-        .fg(accent)
-        .add_modifier(Modifier::BOLD)
+    Style::default().fg(accent).add_modifier(Modifier::BOLD)
 }
 
 pub fn panel_title_unfocused_style(palette: ThemePalette) -> Style {

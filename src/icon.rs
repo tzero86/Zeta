@@ -29,22 +29,24 @@ fn nerdfont_icon(kind: EntryKind, extension: Option<&str>) -> &'static str {
         EntryKind::Symlink => "\u{f481}",
         EntryKind::Archive => "\u{f410}",
         EntryKind::Other => "\u{f128}",
-        EntryKind::File => {
-            match extension.map(|e| e.to_ascii_lowercase()).as_deref() {
-                Some("rs") => "\u{e7a8}",
-                Some("toml") | Some("yaml") | Some("yml") | Some("json") => "\u{e615}",
-                Some("md") | Some("mdx") => "\u{f48a}",
-                Some("sh") | Some("bash") | Some("zsh") | Some("fish") => "\u{f489}",
-                Some("py") => "\u{e606}",
-                Some("js") | Some("ts") | Some("jsx") | Some("tsx") => "\u{e74e}",
-                Some("go") => "\u{e626}",
-                Some("c") | Some("cpp") | Some("h") | Some("hpp") => "\u{e61e}",
-                Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("webp") => "\u{f1c5}",
-                Some("zip") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") | Some("7z") => "\u{f410}",
-                Some("lock") => "\u{f023}",
-                _ => "\u{f15b}",
+        EntryKind::File => match extension.map(|e| e.to_ascii_lowercase()).as_deref() {
+            Some("rs") => "\u{e7a8}",
+            Some("toml") | Some("yaml") | Some("yml") | Some("json") => "\u{e615}",
+            Some("md") | Some("mdx") => "\u{f48a}",
+            Some("sh") | Some("bash") | Some("zsh") | Some("fish") => "\u{f489}",
+            Some("py") => "\u{e606}",
+            Some("js") | Some("ts") | Some("jsx") | Some("tsx") => "\u{e74e}",
+            Some("go") => "\u{e626}",
+            Some("c") | Some("cpp") | Some("h") | Some("hpp") => "\u{e61e}",
+            Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("svg") | Some("webp") => {
+                "\u{f1c5}"
             }
-        }
+            Some("zip") | Some("tar") | Some("gz") | Some("bz2") | Some("xz") | Some("7z") => {
+                "\u{f410}"
+            }
+            Some("lock") => "\u{f023}",
+            _ => "\u{f15b}",
+        },
     }
 }
 
