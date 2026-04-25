@@ -235,6 +235,16 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
 
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 
+    // NerdFont PUA glyphs (U+E000–U+F8FF) render as double-wide in terminals with
+    // NerdFont configured, but unicode-width reports them as width=1. Ratatui writes
+    // the next cell's content at column x+1, which is the right half of the double-wide
+    // glyph — destroying it and making the icon invisible.
+    // Fix: after rendering the list, mark the cell immediately following each NerdFont
+    // glyph as skip=true so ratatui won't write to it during terminal flush.
+    if icon_mode == IconMode::NerdFont {
+        fix_nerd_font_cells(frame.buffer_mut(), list_area);
+    }
+
     if let Some(header_area) = header_area {
         render_column_headers(frame, header_area, palette);
     }
@@ -528,6 +538,52 @@ pub fn icon_slot_width(icon: &str, icon_mode: IconMode) -> usize {
 
 pub fn display_width(value: &str) -> usize {
     UnicodeWidthStr::width(value)
+}
+
+/// Returns `true` for characters in NerdFont's Private Use Area ranges.
+/// These glyphs are rendered as double-wide by NerdFont-configured terminals
+/// but reported as width=1 by unicode-width — requiring special treatment.
+fn is_nerd_font_char(c: char) -> bool {
+    let cp = c as u32;
+    matches!(cp, 0xE000..=0xF8FF | 0x100000..=0x10FFFF)
+}
+
+/// After rendering a list into `area`, mark the cell immediately following each
+/// NerdFont PUA glyph as `skip = true`.
+///
+/// Without this, ratatui's buffer flush writes the next logical cell (a space) at
+/// terminal column `x+1`, which is the right half of the double-wide glyph →
+/// the terminal erases the whole glyph, leaving an invisible blank.
+///
+/// With `skip = true`, ratatui won't emit any cursor-positioning+write for that
+/// cell, so the terminal's double-wide glyph remains intact.
+fn fix_nerd_font_cells(buf: &mut ratatui::buffer::Buffer, area: Rect) {
+    for y in area.y..area.y + area.height {
+        let mut x = area.x;
+        while x + 1 < area.x + area.width {
+            let is_nf = buf
+                .cell((x, y))
+                .and_then(|c| c.symbol().chars().next())
+                .map(is_nerd_font_char)
+                .unwrap_or(false);
+            if is_nf {
+                // Inherit background from the glyph so there's no colour glitch.
+                if let Some(glyph_cell) = buf.cell((x, y)) {
+                    let bg = glyph_cell.bg;
+                    let fg = glyph_cell.fg;
+                    if let Some(cont) = buf.cell_mut((x + 1, y)) {
+                        cont.set_symbol(" ")
+                            .set_bg(bg)
+                            .set_fg(fg)
+                            .set_skip(true);
+                    }
+                }
+                x += 2;
+            } else {
+                x += 1;
+            }
+        }
+    }
 }
 
 pub fn truncate_text(value: &str, max_width: usize) -> String {
