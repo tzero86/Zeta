@@ -50,6 +50,32 @@ impl FileStatus {
     }
 }
 
+/// A file that has pending git changes, shown in the diff viewer file list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GitDiffFile {
+    pub path: PathBuf,
+    pub status: FileStatus,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// The semantic kind of a single line in a unified diff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiffLineKind {
+    Added,
+    Removed,
+    Context,
+    HunkHeader,
+    FileHeader,
+}
+
+/// A single parsed line from a unified diff.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub content: String,
+}
+
 /// Snapshot of `git status` for one repository.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepoStatus {
@@ -391,5 +417,24 @@ mod tests {
             status.status_for(Path::new("/repo/src/lib.rs")),
             Some(FileStatus::Modified)
         );
+    }
+
+    #[test]
+    fn diff_line_kind_variants_are_distinct() {
+        assert_ne!(DiffLineKind::Added, DiffLineKind::Removed);
+        assert_ne!(DiffLineKind::HunkHeader, DiffLineKind::Context);
+    }
+
+    #[test]
+    fn git_diff_file_fields_are_accessible() {
+        let f = GitDiffFile {
+            path: PathBuf::from("src/main.rs"),
+            status: FileStatus::Modified,
+            added: 5,
+            removed: 2,
+        };
+        assert_eq!(f.added, 5);
+        assert_eq!(f.removed, 2);
+        assert_eq!(f.status, FileStatus::Modified);
     }
 }
