@@ -132,15 +132,17 @@ pub fn render_file_finder(
                 } else {
                     let mut rem = filename;
                     while !rem.is_empty() {
-                        if let Some(pos) = rem.to_lowercase().find(&query_lower) {
-                            if pos > 0 {
-                                spans.push(Span::styled(rem[..pos].to_string(), base));
+                        if let Some((before, matched, after)) =
+                            crate::ui::highlight::split_at_match(rem, &query_lower)
+                        {
+                            if !before.is_empty() {
+                                spans.push(Span::styled(before.to_string(), base));
                             }
                             spans.push(Span::styled(
-                                rem[pos..pos + query_lower.len()].to_string(),
+                                matched.to_string(),
                                 finder_match_highlight_style(palette),
                             ));
-                            rem = &rem[pos + query_lower.len()..];
+                            rem = after;
                         } else {
                             spans.push(Span::styled(rem.to_string(), base));
                             break;

@@ -3,6 +3,7 @@ mod code_view;
 mod debug;
 mod editor;
 mod finder;
+pub(crate) mod highlight;
 pub mod markdown;
 mod menu_bar;
 mod overlay;

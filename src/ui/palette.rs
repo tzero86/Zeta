@@ -149,27 +149,22 @@ pub fn render_command_palette(
                     label_spans.push(Span::styled(label_text.clone() + &padding, label_style));
                 } else {
                     let mut remaining = label_text.as_str();
-                    let mut out = String::new();
                     while !remaining.is_empty() {
-                        if let Some(pos) = remaining.to_lowercase().find(&query_lower) {
-                            if pos > 0 {
-                                out.push_str(&remaining[..pos]);
-                                label_spans
-                                    .push(Span::styled(std::mem::take(&mut out), label_style));
+                        if let Some((before, matched, after)) =
+                            crate::ui::highlight::split_at_match(remaining, &query_lower)
+                        {
+                            if !before.is_empty() {
+                                label_spans.push(Span::styled(before.to_string(), label_style));
                             }
-                            let matched = &remaining[pos..pos + query_lower.len()];
                             label_spans.push(Span::styled(
                                 matched.to_string(),
                                 match_highlight_style(palette),
                             ));
-                            remaining = &remaining[pos + query_lower.len()..];
+                            remaining = after;
                         } else {
-                            out.push_str(remaining);
+                            label_spans.push(Span::styled(remaining.to_string(), label_style));
                             break;
                         }
-                    }
-                    if !out.is_empty() {
-                        label_spans.push(Span::styled(out, label_style));
                     }
                     label_spans.push(Span::styled(padding, label_style));
                 }
