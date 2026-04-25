@@ -95,14 +95,13 @@ fn detect_utc_offset_minutes() -> i32 {
 
 fn local_clock_string() -> String {
     let mins = *UTC_OFFSET_MINUTES.get_or_init(detect_utc_offset_minutes);
-    let offset = FixedOffset::east_opt(mins * 60)
-        .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+    let offset =
+        FixedOffset::east_opt(mins * 60).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
     Utc::now()
         .with_timezone(&offset)
         .format("%-m/%-d/%y - %-I:%M%p")
         .to_string()
 }
-
 
 #[derive(Clone, Debug)]
 pub struct StatusZones {
@@ -160,6 +159,12 @@ pub struct WorkspaceState {
     pane_split_ratio: u8,
     pub diff_mode: bool,
     pub diff_map: std::collections::HashMap<String, crate::diff::DiffStatus>,
+    pub git_diff_active: bool,
+    pub git_diff_files: Vec<crate::git::GitDiffFile>,
+    pub git_diff_selected: usize,
+    pub git_diff_lines: Vec<crate::git::DiffLine>,
+    pub git_diff_scroll: usize,
+    pub git_diff_focus_content: bool,   // false = FileList focused, true = DiffContent focused
     /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
     pending_batch: Option<PendingBatchOperation>,
 }
@@ -182,6 +187,12 @@ impl WorkspaceState {
             diff_mode: false,
             pane_split_ratio: 50,
             diff_map: std::collections::HashMap::new(),
+            git_diff_active: false,
+            git_diff_files: Vec::new(),
+            git_diff_selected: 0,
+            git_diff_lines: Vec::new(),
+            git_diff_scroll: 0,
+            git_diff_focus_content: false,
             pending_batch: None,
         }
     }
@@ -2558,6 +2569,13 @@ impl AppState {
         if self.is_preview_focused() {
             return FocusLayer::Preview;
         }
+        if self.git_diff_active {
+            return if self.git_diff_focus_content {
+                FocusLayer::GitDiffContent
+            } else {
+                FocusLayer::GitDiffFileList
+            };
+        }
         FocusLayer::Pane
     }
 
@@ -3516,6 +3534,22 @@ mod tests {
         state.open_editor(editor);
         state.apply(Action::FocusMarkdownPreview).unwrap();
         assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
+    }
+
+    #[test]
+    fn focus_layer_returns_git_diff_file_list_when_active() {
+        let mut state = test_state();
+        state.git_diff_active = true;
+        state.git_diff_focus_content = false;
+        assert_eq!(state.focus_layer(), FocusLayer::GitDiffFileList);
+    }
+
+    #[test]
+    fn focus_layer_returns_git_diff_content_when_content_focused() {
+        let mut state = test_state();
+        state.git_diff_active = true;
+        state.git_diff_focus_content = true;
+        assert_eq!(state.focus_layer(), FocusLayer::GitDiffContent);
     }
 
     #[test]

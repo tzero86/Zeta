@@ -43,6 +43,10 @@ pub enum FocusLayer {
     MarkdownPreview,
     /// The embedded terminal emulator is focused.
     Terminal,
+    /// The git diff viewer file list pane has focus.
+    GitDiffFileList,
+    /// The git diff viewer diff content pane has focus.
+    GitDiffContent,
     /// A modal overlay is open; only modal-specific keys are processed.
     Modal(ModalKind),
 }

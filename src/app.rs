@@ -802,6 +802,14 @@ fn route_key_event(
             Action::from_editor_key_event(key_event, keymap)
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
+        FocusLayer::GitDiffFileList => {
+            // TODO: implement git diff file list key handling in later task
+            None
+        }
+        FocusLayer::GitDiffContent => {
+            // TODO: implement git diff content key handling in later task
+            None
+        }
         FocusLayer::Pane => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
