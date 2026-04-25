@@ -90,37 +90,41 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     let max_scroll = state.git_diff_lines.len().saturating_sub(inner_height);
     let effective_scroll = state.git_diff_scroll.min(max_scroll);
 
-    // Pass 1: walk the FULL git_diff_lines list, tracking line counters
+    // Pass 1: walk the FULL git_diff_lines list, tracking line counters.
+    // Produce a single display line number per row:
+    //   Removed → old line number  (position in the old file)
+    //   Added   → new line number  (position in the new file)
+    //   Context → new line number  (canonical file position)
+    //   Headers → None
     let mut old_line: u32 = 0;
     let mut new_line: u32 = 0;
 
-    let numbered: Vec<(Option<u32>, Option<u32>, &DiffLine)> = state
+    let numbered: Vec<(Option<u32>, &DiffLine)> = state
         .git_diff_lines
         .iter()
         .map(|dl| {
             use DiffLineKind::*;
             match dl.kind {
                 HunkHeader => {
-                    // Parse "@@ -OLD_START,... +NEW_START,... @@" to reset counters
                     if let Some((old_start, new_start)) = parse_hunk_header(&dl.content) {
                         old_line = old_start.saturating_sub(1);
                         new_line = new_start.saturating_sub(1);
                     }
-                    (None, None, dl)
+                    (None, dl)
                 }
-                FileHeader => (None, None, dl),
+                FileHeader => (None, dl),
                 Added => {
                     new_line += 1;
-                    (None, Some(new_line), dl)
+                    (Some(new_line), dl)
                 }
                 Removed => {
                     old_line += 1;
-                    (Some(old_line), None, dl)
+                    (Some(old_line), dl)
                 }
                 Context => {
                     old_line += 1;
                     new_line += 1;
-                    (Some(old_line), Some(new_line), dl)
+                    (Some(new_line), dl)
                 }
             }
         })
@@ -129,17 +133,17 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     // Compute the minimum digit width needed to display the largest line number.
     let max_line_num = numbered
         .iter()
-        .flat_map(|(old, new, _)| old.iter().chain(new.iter()).copied())
+        .flat_map(|(n, _)| n.iter().copied())
         .max()
         .unwrap_or(1);
     let digit_width = format!("{max_line_num}").len().max(1);
 
-    // Pass 2: skip to effective_scroll, take inner_height, render each triple
+    // Pass 2: skip to effective_scroll, take inner_height, render each pair.
     let lines: Vec<Line> = numbered
         .iter()
         .skip(effective_scroll)
         .take(inner_height)
-        .map(|(old, new, dl)| render_line_with_gutter(*old, *new, dl, palette, digit_width))
+        .map(|(num, dl)| render_line_with_gutter(*num, dl, palette, digit_width))
         .collect();
 
     let title = state
@@ -180,8 +184,7 @@ fn parse_hunk_header(content: &str) -> Option<(u32, u32)> {
 }
 
 fn render_line_with_gutter(
-    old: Option<u32>,
-    new: Option<u32>,
+    line_num: Option<u32>,
     dl: &DiffLine,
     palette: ThemePalette,
     digit_width: usize,
@@ -191,11 +194,7 @@ fn render_line_with_gutter(
     let gutter_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
     let sep_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
 
-    let old_str = match old {
-        Some(n) => format!("{n:>digit_width$}"),
-        None => " ".repeat(digit_width),
-    };
-    let new_str = match new {
+    let num_str = match line_num {
         Some(n) => format!("{n:>digit_width$}"),
         None => " ".repeat(digit_width),
     };
@@ -211,9 +210,7 @@ fn render_line_with_gutter(
     };
 
     Line::from(vec![
-        Span::styled(old_str, gutter_style),
-        Span::styled(" ", sep_style),
-        Span::styled(new_str, gutter_style),
+        Span::styled(num_str, gutter_style),
         Span::styled(" │ ", sep_style),
         Span::styled(dl.content.clone(), line_style),
     ])
