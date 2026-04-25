@@ -514,6 +514,16 @@ impl PaneState {
         self.filtered_len()
     }
 
+    pub fn filtered_count(&self) -> usize {
+        if !self.filter_active || self.filter_query.is_empty() {
+            return self.filtered_len();
+        }
+        self.entries
+            .iter()
+            .filter(|e| crate::utils::glob_match::matches(&self.filter_query, &e.name))
+            .count()
+    }
+
     fn filtered_len(&self) -> usize {
         self.ensure_cache();
         self.filtered_indices.borrow().len()

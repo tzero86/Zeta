@@ -43,6 +43,7 @@ struct RenderItemArgs<'a> {
     details_view: bool,
     /// Optional display-name override (used by inline rename on the selected row).
     display_name: Option<String>,
+    is_filtered_out: bool,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -164,6 +165,17 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     } else {
         (inner, None)
     };
+
+    let (header_area, list_area) = if pane.details_view && list_area.height > 2 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(list_area);
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, list_area)
+    };
+
     let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
     let selected_visible = pane.visible_selection(visible_height);
@@ -186,6 +198,9 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                 } else {
                     None
                 };
+                let is_filtered_out = pane.filter_active
+                    && !pane.filter_query.is_empty()
+                    && !crate::utils::glob_match::matches(&pane.filter_query, &entry.name);
                 render_item(RenderItemArgs {
                     entry,
                     is_focused,
@@ -198,6 +213,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                     diff_colour,
                     details_view: pane.details_view,
                     display_name,
+                    is_filtered_out,
                 })
             })
             .collect()
@@ -219,13 +235,32 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
 
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 
+    if let Some(header_area) = header_area {
+        render_column_headers(frame, header_area, palette);
+    }
+
     if let Some(filter_area) = filter_area {
-        let filter = Paragraph::new(format!(" Filter: {}_", pane.filter_query)).style(
-            Style::default()
-                .fg(palette.text_primary)
-                .bg(palette.selection_bg),
-        );
-        frame.render_widget(filter, filter_area);
+        use crate::ui::styles::pane_filter_strip_style;
+        let match_count = pane.filtered_count();
+        let query_display = format!(" ⌕  {}│", pane.filter_query);
+        let count_display = format!(" {} matches  Esc clear", match_count);
+        let query_width = query_display.chars().count();
+        let count_width = count_display.chars().count();
+        let pad = (filter_area.width as usize).saturating_sub(query_width + count_width);
+        let line = Line::from(vec![
+            Span::styled(
+                query_display,
+                pane_filter_strip_style(palette).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ".repeat(pad), pane_filter_strip_style(palette)),
+            Span::styled(
+                count_display,
+                Style::default()
+                    .fg(palette.accent_green)
+                    .bg(palette.pane_filter_bg),
+            ),
+        ]);
+        frame.render_widget(Paragraph::new(line), filter_area);
     }
 }
 
@@ -270,12 +305,21 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         diff_colour,
         details_view,
         display_name,
+        is_filtered_out,
     } = args;
     let icon = icon_for_entry(
         entry.kind,
         entry.path.extension().and_then(|e| e.to_str()),
         icon_mode,
     );
+    // Return dimmed text if this entry is filtered out
+    if is_filtered_out {
+        let name = entry.name.clone();
+        return ListItem::new(Line::from(Span::styled(
+            format!("  {} {}", icon, name),
+            Style::default().fg(palette.text_muted),
+        )));
+    }
     // --- Details view: flat columns (mark | icon | git | name | size | date) ---
     if details_view {
         let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
@@ -534,6 +578,25 @@ pub fn human_size(size: u64) -> String {
     }
 }
 
+fn render_column_headers(frame: &mut Frame<'_>, area: Rect, palette: ThemePalette) {
+    use crate::ui::styles::pane_column_header_style;
+    let w = area.width as usize;
+    let right_fixed = 30usize; // 9 (size) + 1 + 16 (date) + 1 + 3 (git)
+    let left_fixed = 5usize; // 2 (mark) + 2 (icon+space) + 1
+    let name_width = w.saturating_sub(left_fixed + right_fixed).max(4);
+    let header = format!(
+        "  {icon:<2}{name:<name_width$}{size:>9} {date:<16} {git:<3}",
+        icon = "",
+        name = "Name",
+        name_width = name_width,
+        size = "Size",
+        date = "Modified",
+        git = "Git",
+    );
+    let para = Paragraph::new(header).style(pane_column_header_style(palette));
+    frame.render_widget(para, area);
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -605,6 +668,7 @@ mod tests {
             diff_colour: None,
             details_view: false,
             display_name: None,
+            is_filtered_out: false,
         });
 
         assert_eq!(item.width(), 40);
