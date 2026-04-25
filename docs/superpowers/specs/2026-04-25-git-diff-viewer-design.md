@@ -55,7 +55,7 @@ New functions in `src/git.rs` (shell-out pattern, same as `run_git`):
   Runs `git diff HEAD --numstat` (for ±counts) combined with `git status --porcelain=v1` (for status flags). Merges the two to produce the file list. Untracked files show `Added` status with no line counts.
 
 - `fetch_file_diff(repo_root: &Path, path: &Path) -> Vec<DiffLine>`  
-  Runs `git diff HEAD -- <path>` and parses the unified diff output line-by-line. For untracked files, runs `git diff --no-index /dev/null <path>` (Linux/macOS) or equivalent.
+  Runs `git diff HEAD -- <path>` and parses the unified diff output line-by-line. For untracked files (status `Untracked`), reads the file directly and presents every line as `DiffLineKind::Added` — this is cross-platform and avoids `/dev/null` vs `NUL` differences.
 
 No new Cargo dependencies required.
 
