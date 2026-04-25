@@ -1193,43 +1193,22 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
     };
     let img = match reader.decode() {
         Ok(img) => img,
-        Err(e) => {
-            return crate::preview::ViewBuffer::from_plain(&format!("[image decode error: {e}]"))
-        }
+        Err(e) => return crate::preview::ViewBuffer::from_plain(&format!("[image: {e}]")),
     };
 
     let orig_w = img.width();
     let orig_h = img.height();
 
-    // Scale to fit ~100 cols × 40 terminal rows (= 80 pixel rows with halfblocks).
-    let max_cols: u32 = 100;
-    let max_pixel_rows: u32 = 80;
-    let scale_w = max_cols as f32 / orig_w.max(1) as f32;
-    let scale_h = max_pixel_rows as f32 / orig_h.max(1) as f32;
-    let scale = scale_w.min(scale_h).min(1.0_f32);
-    let new_w = ((orig_w as f32 * scale) as u32).max(1);
-    // Round up to nearest even so every pair of pixel rows maps to a terminal row.
-    let new_h_raw = ((orig_h as f32 * scale) as u32).max(1);
-    let new_h = (new_h_raw + 1) & !1;
-
-    let resized = img.resize_exact(new_w, new_h, image::imageops::FilterType::Nearest);
-    let rgba = resized.to_rgba8();
-    let (w, h) = rgba.dimensions();
-
-    let mut pixel_rows: Vec<Vec<(ratatui::style::Color, ratatui::style::Color)>> = Vec::new();
-    let mut row = 0u32;
-    while row + 1 < h {
-        let mut cells = Vec::with_capacity(w as usize);
-        for col in 0..w {
-            let up = rgba.get_pixel(col, row);
-            let dn = rgba.get_pixel(col, row + 1);
-            let fg = ratatui::style::Color::Rgb(up[0], up[1], up[2]);
-            let bg = ratatui::style::Color::Rgb(dn[0], dn[1], dn[2]);
-            cells.push((fg, bg));
-        }
-        pixel_rows.push(cells);
-        row += 2;
-    }
+    // Pre-scale wide images to cap memory (max 800px wide), preserving aspect ratio.
+    // Final viewport-sized scaling happens at render time.
+    let pixels = if orig_w > 800 {
+        let scale = 800.0_f32 / orig_w as f32;
+        let pre_h = ((orig_h as f32 * scale) as u32).max(1);
+        img.resize_exact(800, pre_h, image::imageops::FilterType::Lanczos3)
+            .to_rgba8()
+    } else {
+        img.to_rgba8()
+    };
 
     let filename = path
         .file_name()
@@ -1241,7 +1220,7 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
         filename,
         orig_width: orig_w,
         orig_height: orig_h,
-        pixel_rows,
+        pixels: std::sync::Arc::new(pixels),
     })
 }
 

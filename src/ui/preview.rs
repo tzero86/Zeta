@@ -1,3 +1,4 @@
+use image;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -263,11 +264,8 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 if v.is_image() {
                     if let Some(data) = &v.image_data {
                         let header = format!(
-                            " {}  {}×{}px  ({} rows) ",
-                            data.filename,
-                            data.orig_width,
-                            data.orig_height,
-                            data.pixel_rows.len()
+                            " {}  {}×{}px ",
+                            data.filename, data.orig_width, data.orig_height,
                         );
                         frame.render_widget(
                             Paragraph::new(header).style(
@@ -278,7 +276,6 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                             inner,
                         );
                     }
-                    return;
                 } else if v.is_markdown() {
                     if let Some(source) = v.markdown_source() {
                         let text: String = source
@@ -335,14 +332,12 @@ fn render_image_preview(
     view: &ViewBuffer,
     palette: ThemePalette,
 ) {
-    let Some(data) = &view.image_data else { return };
+    let Some(data) = &view.image_data else {
+        return;
+    };
 
-    let start = view.scroll_row.min(data.pixel_rows.len().saturating_sub(1));
-    let max_y = area.y + area.height;
-    let mut y = area.y;
-
-    // Header row (only when not scrolled past it)
-    if start == 0 && y < max_y {
+    // Header row
+    if area.height > 0 {
         let header = Span::styled(
             format!(
                 " {}  {}×{}px ",
@@ -356,39 +351,64 @@ fn render_image_preview(
             Paragraph::new(Line::from(vec![header])).style(Style::default().bg(palette.surface_bg)),
             Rect {
                 x: area.x,
-                y,
+                y: area.y,
                 width: area.width,
                 height: 1,
             },
         );
-        y += 1;
     }
 
-    let visible_cols = area.width as usize;
-    for row_cells in data.pixel_rows.iter().skip(start) {
-        if y >= max_y {
+    let image_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    if image_area.height == 0 || image_area.width == 0 {
+        return;
+    }
+
+    // Scale pre-decoded pixels to exact viewport size (Lanczos3 for quality).
+    // Each terminal row = 2 pixel rows via ▀ halfblock.
+    let target_w = image_area.width as u32;
+    let target_h = image_area.height as u32 * 2;
+    let resized = image::imageops::resize(
+        data.pixels.as_ref(),
+        target_w,
+        target_h,
+        image::imageops::FilterType::Lanczos3,
+    );
+
+    let start = view
+        .scroll_row
+        .min((target_h / 2).saturating_sub(1) as usize);
+    for cell_row in start..(target_h / 2) as usize {
+        let y = image_area.y + (cell_row - start) as u16;
+        if y >= image_area.y + image_area.height {
             break;
         }
-        let spans: Vec<Span> = row_cells
-            .iter()
-            .take(visible_cols)
-            .map(|(fg, bg)| {
+        let py_upper = cell_row as u32 * 2;
+        let py_lower = py_upper + 1;
+        let spans: Vec<Span> = (0..target_w)
+            .map(|x| {
+                let up = resized.get_pixel(x, py_upper);
+                let dn = resized.get_pixel(x, py_lower);
                 Span::styled(
-                    "\u{2580}", // ▀ UPPER HALF BLOCK
-                    Style::default().fg(*fg).bg(*bg),
+                    "\u{2580}",
+                    Style::default()
+                        .fg(ratatui::style::Color::Rgb(up[0], up[1], up[2]))
+                        .bg(ratatui::style::Color::Rgb(dn[0], dn[1], dn[2])),
                 )
             })
             .collect();
         frame.render_widget(
             Paragraph::new(Line::from(spans)).style(Style::default().bg(palette.surface_bg)),
             Rect {
-                x: area.x,
+                x: image_area.x,
                 y,
-                width: area.width,
+                width: image_area.width,
                 height: 1,
             },
         );
-        y += 1;
     }
 }
 

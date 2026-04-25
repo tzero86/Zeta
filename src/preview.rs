@@ -1,22 +1,32 @@
 use std::sync::Arc;
 
+use image;
 use ratatui::style::{Color, Modifier};
 
 #[cfg(test)]
 use crate::highlight::HighlightToken;
 use crate::highlight::{normalize_preview_text, HighlightedLine};
 
-/// Decoded image data for halfblock preview rendering.
-/// Each row in `pixel_rows` represents one terminal row (two image pixel rows).
-/// Each element is (fg_color, bg_color) for a `▀` halfblock character.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Pre-decoded image pixels for viewport-adaptive halfblock rendering.
+#[derive(Clone, Debug)]
 pub struct ImagePreviewData {
     pub filename: String,
     pub orig_width: u32,
     pub orig_height: u32,
-    /// Each outer entry = one terminal row, inner = one column cell.
-    pub pixel_rows: Vec<Vec<(ratatui::style::Color, ratatui::style::Color)>>,
+    /// Decoded RGBA pixels (possibly pre-scaled, max 800px wide).
+    /// Scaled to exact viewport size at render time with Lanczos3.
+    pub pixels: Arc<image::RgbaImage>,
 }
+
+impl PartialEq for ImagePreviewData {
+    fn eq(&self, other: &Self) -> bool {
+        self.filename == other.filename
+            && self.orig_width == other.orig_width
+            && self.orig_height == other.orig_height
+    }
+}
+
+impl Eq for ImagePreviewData {}
 
 /// A read-only scrollable view of syntax-highlighted file content.
 /// Used by the preview panel. Scroll state is owned here.
@@ -70,7 +80,8 @@ impl ViewBuffer {
 
     /// Build from pre-decoded image pixel data.
     pub fn from_image_data(data: ImagePreviewData) -> Self {
-        let total_lines = data.pixel_rows.len() + 2; // header + blank + pixel rows
+        // Estimate total cell-rows: half the pixel height (halfblock = 2 rows/cell)
+        let total_lines = (data.orig_height / 2 + 2) as usize;
         Self {
             lines: Arc::from([]),
             scroll_row: 0,
