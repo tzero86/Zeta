@@ -191,29 +191,44 @@ fn render_line_with_gutter(
 ) -> Line<'static> {
     use DiffLineKind::*;
 
+    // Subtle dark bg for added/removed lines — fills the full terminal row.
+    // Gutter spans carry explicit bg(tools_bg) which overrides the row base.
+    const ADDED_BG: Color = Color::Rgb(0, 40, 0);
+    const REMOVED_BG: Color = Color::Rgb(50, 0, 0);
+
+    let (text_fg, diff_bg): (Color, Option<Color>) = match dl.kind {
+        Added => (Color::Green, Some(ADDED_BG)),
+        Removed => (Color::Red, Some(REMOVED_BG)),
+        HunkHeader => (Color::Cyan, None),
+        FileHeader => (palette.text_primary, None),
+        Context => (palette.text_muted, None),
+    };
+
     let gutter_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
     let sep_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
+
+    let content_style = match diff_bg {
+        Some(bg) => Style::default().fg(text_fg).bg(bg),
+        None => Style::default().fg(text_fg),
+    };
+
+    // Base line style fills the row background (gutter spans override it for their cells).
+    let row_style = match diff_bg {
+        Some(bg) => Style::default().bg(bg),
+        None => Style::default(),
+    };
 
     let num_str = match line_num {
         Some(n) => format!("{n:>digit_width$}"),
         None => " ".repeat(digit_width),
     };
 
-    let line_style = match dl.kind {
-        Added => Style::default().fg(Color::Green),
-        Removed => Style::default().fg(Color::Red),
-        HunkHeader => Style::default().fg(Color::Cyan),
-        FileHeader => Style::default()
-            .fg(palette.text_primary)
-            .add_modifier(Modifier::BOLD),
-        Context => Style::default().fg(palette.text_muted),
-    };
-
     Line::from(vec![
         Span::styled(num_str, gutter_style),
         Span::styled(" │ ", sep_style),
-        Span::styled(dl.content.clone(), line_style),
+        Span::styled(dl.content.clone(), content_style),
     ])
+    .style(row_style)
 }
 
 #[cfg(test)]
