@@ -445,7 +445,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
@@ -864,7 +863,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
@@ -920,7 +918,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
@@ -1031,7 +1028,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
