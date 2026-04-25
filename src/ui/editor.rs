@@ -100,7 +100,8 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         .path
         .as_ref()
         .and_then(|p| p.parent())
-        .map(|d| d.display().to_string())
+        .and_then(|d| d.file_name())
+        .map(|n| format!("{}/", n.to_string_lossy()))
         .unwrap_or_default();
     let dirty_part = if editor.is_dirty { " ● " } else { "   " };
     let (cursor_line, cursor_col) = editor.cursor_line_col();

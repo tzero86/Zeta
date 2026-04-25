@@ -2,8 +2,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Wrap, block::Title,
+    block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Wrap,
 };
 use ratatui::Frame;
 
@@ -34,10 +34,7 @@ pub fn render_modal_backdrop(
         width: (popup.width + 2).min(area.width.saturating_sub(popup.x.saturating_sub(area.x))),
         height: (popup.height + 2).min(area.height.saturating_sub(popup.y.saturating_sub(area.y))),
     };
-    frame.render_widget(
-        Paragraph::new("").style(modal_halo_style(palette)),
-        halo,
-    );
+    frame.render_widget(Paragraph::new("").style(modal_halo_style(palette)), halo);
 }
 
 pub fn menu_popup_width(items: &[MenuItem]) -> u16 {
@@ -143,7 +140,10 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(Title::from(Span::styled(prompt.title, overlay_title_style(palette))))
+        .title(Title::from(Span::styled(
+            prompt.title,
+            overlay_title_style(palette),
+        )))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -270,7 +270,10 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(Title::from(Span::styled(dialog.title, overlay_title_style(palette))))
+        .title(Title::from(Span::styled(
+            dialog.title,
+            overlay_title_style(palette),
+        )))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -519,7 +522,10 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Title::from(Span::styled(" Open With ", overlay_title_style(palette))))
+        .title(Title::from(Span::styled(
+            " Open With ",
+            overlay_title_style(palette),
+        )))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));

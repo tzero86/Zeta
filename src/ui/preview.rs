@@ -8,7 +8,7 @@ use unicode_width::UnicodeWidthChar;
 use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 use crate::preview::ViewBuffer;
-use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style};
+use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style, pane_column_header_style};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedPreviewRow {
@@ -225,18 +225,16 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
         .add_modifier(Modifier::BOLD);
 
     // Extract extension from filename
-    let ext_hint = filename
-        .split('.')
-        .last()
-        .filter(|e| !e.is_empty() && *e != filename)
-        .map(|e| e.to_ascii_uppercase())
+    let ext_hint = std::path::Path::new(filename)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_uppercase())
         .unwrap_or_default();
 
     let title_line = Line::from(vec![
         Span::styled(format!(" \u{f02d5} {} ", filename), title_style),
         Span::styled(
             if ext_hint.is_empty() { String::new() } else { format!(" .{} ", ext_hint) },
-            Style::default().fg(palette.text_muted),
+            pane_column_header_style(palette),
         ),
         Span::styled(" Preview ", badge_style),
     ]);
