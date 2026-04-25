@@ -138,6 +138,8 @@ pub enum IconMode {
 /// Detect the best icon mode for the current environment.
 /// Called once at first run (when no config file exists yet).
 /// Tries `fc-list` to check for NerdFont-named fonts; falls back to Unicode.
+/// On WSL, fc-list queries Linux-side fonts but the terminal (Windows Terminal,
+/// Warp, etc.) uses Windows fonts — skip font detection and return Unicode.
 pub fn detect_icon_mode() -> IconMode {
     // Explicit env override for CI or scripted setups
     if let Ok(val) = std::env::var("ZETA_ICON_MODE") {
@@ -147,6 +149,15 @@ pub fn detect_icon_mode() -> IconMode {
             "ascii" => IconMode::Ascii,
             _ => IconMode::Unicode,
         };
+    }
+
+    // On WSL, the terminal is a Windows application that uses Windows-side fonts.
+    // fc-list only sees Linux-side fonts, so NerdFont detection is unreliable.
+    // Users on WSL who have NerdFonts configured can set ZETA_ICON_MODE=nerd.
+    if std::env::var_os("WSL_DISTRO_NAME").is_some()
+        || std::env::var_os("WSL_INTEROP").is_some()
+    {
+        return IconMode::Unicode;
     }
 
     // Check fc-list for any font with "nerd" or "powerline" in the family name

@@ -213,8 +213,6 @@ fn menu_spans(
             .fg(fg)
             .bg(palette.menu_active_bg)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
-    } else if !is_relevant {
-        Style::default().fg(fg).bg(palette.menu_bg)
     } else {
         Style::default().fg(fg).bg(palette.menu_bg)
     };

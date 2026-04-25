@@ -1062,7 +1062,7 @@ impl AppState {
 
                     let state = crate::state::dialog::DestructiveConfirmState::new(
                         crate::state::dialog::DestructiveAction::Delete,
-                        &[entry.path.clone()],
+                        std::slice::from_ref(&entry.path),
                         refresh,
                     );
 
@@ -1108,7 +1108,7 @@ impl AppState {
 
                     let state = crate::state::dialog::DestructiveConfirmState::new(
                         crate::state::dialog::DestructiveAction::PermanentDelete,
-                        &[entry.path.clone()],
+                        std::slice::from_ref(&entry.path),
                         refresh,
                     );
 
@@ -3310,8 +3310,6 @@ mod tests {
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
         WorkspaceState,
     };
-    use crate::state::dialog::DestructiveAction;
-
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
             title: String::from("left"),
@@ -3341,7 +3339,7 @@ mod tests {
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
-            details_view: false,
+            details_view: true,
             rename_state: None,
             scan_cache: None,
         }
@@ -3633,7 +3631,7 @@ mod tests {
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
-            details_view: false,
+            details_view: true,
             rename_state: None,
             scan_cache: None,
         };
