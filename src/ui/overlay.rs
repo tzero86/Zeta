@@ -11,8 +11,8 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
-    elevated_surface_style, modal_backdrop_style, modal_halo_style, overlay_footer_style,
-    overlay_key_hint_style, overlay_title_style,
+    elevated_surface_style, key_pill_style, modal_backdrop_style, modal_halo_style,
+    overlay_footer_style, overlay_key_hint_style, overlay_title_style, section_divider_style,
 };
 
 pub fn render_modal_backdrop(
@@ -248,6 +248,89 @@ pub fn render_prompt(
     }
 }
 
+fn render_two_column_help(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    lines: &[String],
+    scroll: u16,
+    palette: ThemePalette,
+) {
+    let mut left: Vec<&str> = Vec::new();
+    let mut right: Vec<&str> = Vec::new();
+    let mut in_left = false;
+    let mut in_right = false;
+    for line in lines {
+        if line == "##COLSTART" {
+            in_left = true;
+            continue;
+        }
+        if line == "##COLBREAK" {
+            in_left = false;
+            in_right = true;
+            continue;
+        }
+        if line == "##COLEND" {
+            break;
+        }
+        if in_left {
+            left.push(line.as_str());
+        }
+        if in_right {
+            right.push(line.as_str());
+        }
+    }
+
+    let halves = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(inner);
+
+    let render_col = |col_lines: &[&str]| -> Vec<Line<'static>> {
+        col_lines
+            .iter()
+            .map(|raw| {
+                if raw.is_empty() {
+                    Line::raw("")
+                } else if let Some(header) = raw.strip_prefix("## ") {
+                    Line::from(Span::styled(
+                        header.to_string(),
+                        section_divider_style(palette),
+                    ))
+                } else if let Some((key, desc)) = raw.split_once('\t') {
+                    let key_part = key.trim();
+                    Line::from(vec![
+                        Span::styled(
+                            format!(" {} ", key_part),
+                            key_pill_style(palette),
+                        ),
+                        Span::raw("  "),
+                        Span::styled(
+                            desc.to_string(),
+                            Style::default().fg(palette.text_primary),
+                        ),
+                    ])
+                } else {
+                    Line::from(Span::styled(
+                        raw.to_string(),
+                        Style::default().fg(palette.text_primary),
+                    ))
+                }
+            })
+            .collect()
+    };
+
+    let left_lines = render_col(&left);
+    let right_lines = render_col(&right);
+    frame.render_widget(
+        Paragraph::new(left_lines).scroll((scroll, 0)),
+        halves[0],
+    );
+    frame.render_widget(
+        Paragraph::new(right_lines).scroll((scroll, 0)),
+        halves[1],
+    );
+}
+
 pub fn render_dialog(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -295,6 +378,13 @@ pub fn render_dialog(
         .map(|raw| {
             if raw.is_empty() {
                 Line::raw("")
+            } else if let Some(art) = raw.strip_prefix("##LOGO ") {
+                Line::from(Span::styled(
+                    art.to_string(),
+                    Style::default()
+                        .fg(palette.accent_mauve)
+                        .add_modifier(Modifier::BOLD),
+                ))
             } else if let Some(header) = raw.strip_prefix("##") {
                 Line::from(Span::styled(
                     header.to_string(),
@@ -329,10 +419,15 @@ pub fn render_dialog(
         })
         .collect();
 
-    let paragraph = Paragraph::new(styled_lines)
-        .style(elevated_surface_style(palette))
-        .scroll((scroll, 0));
-    frame.render_widget(paragraph, inner);
+    let has_two_col = dialog.lines.iter().any(|l| l == "##COLSTART");
+    if has_two_col {
+        render_two_column_help(frame, inner, &dialog.lines, scroll, palette);
+    } else {
+        let paragraph = Paragraph::new(styled_lines)
+            .style(elevated_surface_style(palette))
+            .scroll((scroll, 0));
+        frame.render_widget(paragraph, inner);
+    }
 
     // Render a scrollbar when content overflows the visible area.
     if dialog.lines.len() > visible_lines {
