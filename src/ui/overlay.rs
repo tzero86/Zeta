@@ -137,7 +137,12 @@ pub fn render_prompt(
             (area.width.min(76), area.height.min(10))
         }
         crate::state::PromptKind::Trash | crate::state::PromptKind::Delete => {
-            (area.width.min(64), area.height.min(7))
+            let n = prompt.source_paths.len().max(1);
+            let shown = n.min(5);
+            // header line + item lines + ("+N more" if truncated) + blank + hint
+            let inner = 1 + shown + usize::from(n > shown) + 1 + 1;
+            let needed = (inner as u16 + 2).max(7);
+            (area.width.min(64), area.height.min(needed))
         }
         _ => (area.width.min(60), area.height.min(8)),
     };
@@ -168,22 +173,62 @@ pub fn render_prompt(
 
     // Build description text (source path info + hint).
     let desc_text = match prompt.kind {
-        crate::state::PromptKind::Trash => format!(
-            "Move to trash:\n{}\n\nEnter confirm  Esc cancel",
-            prompt
-                .source_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| String::from("<missing target>")),
-        ),
-        crate::state::PromptKind::Delete => format!(
-            "Delete permanently:\n{}\n\nEnter confirm  Esc cancel",
-            prompt
-                .source_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| String::from("<missing target>")),
-        ),
+        crate::state::PromptKind::Trash => {
+            let paths = &prompt.source_paths;
+            if paths.len() > 1 {
+                let shown = paths.len().min(5);
+                let mut s = format!("Move to trash: {} items\n", paths.len());
+                for p in paths.iter().take(shown) {
+                    let name = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.display().to_string());
+                    s.push_str(&format!("  {}\n", name));
+                }
+                if paths.len() > shown {
+                    s.push_str(&format!("  ... and {} more\n", paths.len() - shown));
+                }
+                s.push_str("\nEnter confirm  Esc cancel");
+                s
+            } else {
+                format!(
+                    "Move to trash:\n{}\n\nEnter confirm  Esc cancel",
+                    prompt
+                        .source_path
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| String::from("<missing target>")),
+                )
+            }
+        }
+        crate::state::PromptKind::Delete => {
+            let paths = &prompt.source_paths;
+            if paths.len() > 1 {
+                let shown = paths.len().min(5);
+                let mut s = format!("Delete permanently: {} items\n", paths.len());
+                for p in paths.iter().take(shown) {
+                    let name = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.display().to_string());
+                    s.push_str(&format!("  {}\n", name));
+                }
+                if paths.len() > shown {
+                    s.push_str(&format!("  ... and {} more\n", paths.len() - shown));
+                }
+                s.push_str("\nEnter confirm  Esc cancel");
+                s
+            } else {
+                format!(
+                    "Delete permanently:\n{}\n\nEnter confirm  Esc cancel",
+                    prompt
+                        .source_path
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| String::from("<missing target>")),
+                )
+            }
+        }
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => format!(
             "Source:\n{}\n\nDestination:  (Enter submit  Esc cancel)",
             prompt
