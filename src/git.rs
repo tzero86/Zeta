@@ -161,12 +161,19 @@ pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
     let root = detect_repo(path)?;
 
     // Get +/- counts for tracked changes
-    let numstat_out = run_git(&root, &["diff", "HEAD", "--numstat"])?;
-    let counts = parse_numstat(&String::from_utf8_lossy(&numstat_out.stdout));
+    let counts = run_git(&root, &["diff", "HEAD", "--numstat"])
+        .filter(|o| o.status.success())
+        .map(|o| parse_numstat(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or_default();
 
     // Get status + untracked from porcelain
-    let status_out = run_git(&root, &["status", "--porcelain=v1", "-u", "--no-optional-locks"])
-        .or_else(|| run_git(&root, &["status", "--porcelain=v1", "-u"]))?;
+    let status_out = [
+        &["status", "--porcelain=v1", "-u", "--no-optional-locks"][..],
+        &["status", "--porcelain=v1", "-u"][..],
+    ]
+    .iter()
+    .filter_map(|args| run_git(&root, args))
+    .find(|o| o.status.success())?;
     let statuses = parse_porcelain(&String::from_utf8_lossy(&status_out.stdout));
 
     let mut files: Vec<GitDiffFile> = statuses
@@ -178,7 +185,7 @@ pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
         })
         .collect();
 
-    // Sort: modified/added first, then deleted, then untracked; alpha within groups
+    // Sort: conflicted → modified → added → renamed → deleted → untracked; alpha within groups
     files.sort_by(|a, b| {
         status_sort_key(a.status).cmp(&status_sort_key(b.status))
             .then(a.path.cmp(&b.path))
@@ -202,12 +209,14 @@ fn status_sort_key(s: FileStatus) -> u8 {
 ///
 /// For tracked files: runs `git diff HEAD -- <path>`.
 /// For untracked files: reads the file directly and marks all lines as Added.
+///
+/// `is_untracked` must be `true` only for `FileStatus::Untracked` files.
+/// Staged-but-new files (`FileStatus::Added`) belong in the tracked branch.
 pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<DiffLine> {
+    let root = detect_repo(path);
+
     if is_untracked {
-        let full_path = match detect_repo(path) {
-            Some(root) => root.join(rel_path),
-            None => rel_path.to_path_buf(),
-        };
+        let full_path = root.map_or_else(|| rel_path.to_path_buf(), |r| r.join(rel_path));
         return match std::fs::read_to_string(&full_path) {
             Ok(content) => content
                 .lines()
@@ -220,7 +229,7 @@ pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<
         };
     }
 
-    let root = match detect_repo(path) {
+    let root = match root {
         Some(r) => r,
         None => return Vec::new(),
     };
