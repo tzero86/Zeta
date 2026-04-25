@@ -4121,6 +4121,7 @@ mod tests {
         state.overlay.modal = Some(ModalState::Menu {
             id: MenuId::Navigate,
             selection: 5,
+            flyout: None,
         });
 
         let commands = state

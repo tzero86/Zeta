@@ -20,6 +20,9 @@ pub enum ModalState {
     Menu {
         id: MenuId,
         selection: usize,
+        /// Active flyout submenu: (submenu_id, submenu_selection).
+        /// When Some, keyboard navigation targets the flyout.
+        flyout: Option<(MenuId, usize)>,
     },
     Prompt(PromptState),
     Dialog(DialogState),
@@ -91,6 +94,38 @@ impl OverlayState {
         match &self.modal {
             Some(ModalState::Menu { id, .. }) => menu_items_for(*id, self.menu_context),
             _ => vec![],
+        }
+    }
+
+    /// Returns the active flyout state as `(submenu_id, submenu_selection)` if open.
+    pub fn menu_flyout(&self) -> Option<(MenuId, usize)> {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => *flyout,
+            _ => None,
+        }
+    }
+
+    /// Returns the flyout submenu items if a flyout is open.
+    pub fn menu_flyout_items(&self) -> Vec<MenuItem> {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => {
+                if let Some((flyout_id, _)) = flyout {
+                    menu_items_for(*flyout_id, self.menu_context)
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![],
+        }
+    }
+
+    /// Returns the flyout submenu selection index if a flyout is open.
+    pub fn menu_flyout_selection(&self) -> usize {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => {
+                flyout.map(|(_, sel)| sel).unwrap_or(0)
+            }
+            _ => 0,
         }
     }
 
@@ -393,10 +428,11 @@ impl OverlayState {
                 self.modal = Some(ModalState::Menu {
                     id: *menu_id,
                     selection: 0,
+                    flyout: None,
                 });
             }
             Action::MenuActivate => {
-                if let Some(ModalState::Menu { id, selection }) = &self.modal {
+                if let Some(ModalState::Menu { id, selection, .. }) = &self.modal {
                     let id = *id;
                     let sel = *selection;
                     if let Some(item) = menu_items_for(id, self.menu_context).get(sel).cloned() {
@@ -434,7 +470,7 @@ impl OverlayState {
                 }
             }
             Action::MenuMoveDown => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
+                if let Some(ModalState::Menu { id, selection, .. }) = self.modal.as_mut() {
                     let len = menu_items_for(*id, self.menu_context).len();
                     if len > 0 {
                         *selection = (*selection + 1).min(len.saturating_sub(1));
@@ -447,7 +483,7 @@ impl OverlayState {
                 }
             }
             Action::MenuNext => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
+                if let Some(ModalState::Menu { id, selection, .. }) = self.modal.as_mut() {
                     let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + 1) % tabs.len()].id;
@@ -456,7 +492,7 @@ impl OverlayState {
                 }
             }
             Action::MenuPrevious => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
+                if let Some(ModalState::Menu { id, selection, .. }) = self.modal.as_mut() {
                     let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + tabs.len() - 1) % tabs.len()].id;
@@ -602,7 +638,8 @@ mod tests {
             s.modal,
             Some(ModalState::Menu {
                 id: MenuId::File,
-                selection: 0
+                selection: 0,
+                flyout: None,
             })
         ));
     }
@@ -613,6 +650,7 @@ mod tests {
         s.modal = Some(ModalState::Menu {
             id: MenuId::File,
             selection: 0,
+            flyout: None,
         });
         s.apply(&Action::OpenSettingsPanel).unwrap();
         assert!(matches!(s.modal, Some(ModalState::Settings(_))));
@@ -627,11 +665,19 @@ mod tests {
     }
 
     #[test]
+    fn open_menu_has_no_flyout() {
+        let mut s = OverlayState::default();
+        s.apply(&Action::OpenMenu(MenuId::View)).unwrap();
+        assert!(s.menu_flyout().is_none(), "newly opened menu must have no flyout");
+    }
+
+    #[test]
     fn menu_activate_emits_dispatch_action() {
         let mut s = OverlayState::default();
         s.modal = Some(ModalState::Menu {
             id: MenuId::File,
             selection: 0,
+            flyout: None,
         });
         let cmds = s.apply(&Action::MenuActivate).unwrap();
         assert!(s.modal.is_none(), "menu should close after activation");
