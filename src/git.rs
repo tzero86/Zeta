@@ -343,6 +343,14 @@ pub(crate) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
                 || line.starts_with("index ")
                 || line.starts_with("--- ")
                 || line.starts_with("+++ ")
+                || line.starts_with("new file mode")
+                || line.starts_with("deleted file mode")
+                || line.starts_with("old mode")
+                || line.starts_with("new mode")
+                || line.starts_with("similarity index")
+                || line.starts_with("rename from")
+                || line.starts_with("rename to")
+                || line.starts_with("Binary files")
             {
                 DiffLineKind::FileHeader
             } else if line.starts_with("@@") {
@@ -568,6 +576,20 @@ mod tests {
     #[test]
     fn parse_unified_diff_triple_minus_is_file_header() {
         let out = "--- a/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_new_file_mode_is_file_header() {
+        let out = "new file mode 100644\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_binary_files_is_file_header() {
+        let out = "Binary files a/assets/logo.png and b/assets/logo.png differ\n";
         let lines = parse_unified_diff(out);
         assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
     }
