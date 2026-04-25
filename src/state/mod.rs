@@ -164,7 +164,8 @@ pub struct WorkspaceState {
     pub git_diff_selected: usize,
     pub git_diff_lines: Vec<crate::git::DiffLine>,
     pub git_diff_scroll: usize,
-    pub git_diff_focus_content: bool,   // false = FileList focused, true = DiffContent focused
+    pub git_diff_viewport_height: usize,
+    pub git_diff_focus_content: bool, // false = FileList focused, true = DiffContent focused
     /// Tracks an in-flight batch prompt submission until all queued file-op results settle.
     pending_batch: Option<PendingBatchOperation>,
 }
@@ -192,6 +193,7 @@ impl WorkspaceState {
             git_diff_selected: 0,
             git_diff_lines: Vec::new(),
             git_diff_scroll: 0,
+            git_diff_viewport_height: 0,
             git_diff_focus_content: false,
             pending_batch: None,
         }
@@ -860,16 +862,27 @@ impl AppState {
                     // Activate: load files list
                     let cwd = self.panes.active_pane().cwd.clone();
                     if let Some(files) = crate::git::fetch_diff_files(&cwd) {
-                        self.git_diff_active = true;
-                        self.git_diff_files = files;
-                        self.git_diff_selected = 0;
-                        self.git_diff_scroll = 0;
-                        self.git_diff_focus_content = false;
-                        // Load the first file's diff if any files exist
-                        if let Some(first_file) = self.git_diff_files.first() {
-                            let is_untracked = first_file.status == crate::git::FileStatus::Untracked;
-                            let lines = crate::git::fetch_file_diff(&cwd, &first_file.path, is_untracked);
-                            self.git_diff_lines = lines;
+                        if files.is_empty() {
+                            // Show a status message; do not open the viewer
+                            self.status_message =
+                                String::from("Git diff: no changes in working tree");
+                        } else {
+                            self.git_diff_active = true;
+                            self.git_diff_files = files;
+                            self.git_diff_selected = 0;
+                            self.git_diff_scroll = 0;
+                            self.git_diff_focus_content = false;
+                            // Load the first file's diff if any files exist
+                            if let Some(first_file) = self.git_diff_files.first() {
+                                let is_untracked =
+                                    first_file.status == crate::git::FileStatus::Untracked;
+                                let lines = crate::git::fetch_file_diff(
+                                    &cwd,
+                                    &first_file.path,
+                                    is_untracked,
+                                );
+                                self.git_diff_lines = lines;
+                            }
                         }
                     }
                 }
@@ -899,7 +912,8 @@ impl AppState {
                 self.git_diff_scroll = self.git_diff_scroll.saturating_sub(1);
             }
             Action::GitDiffScrollDown => {
-                let max_scroll = self.git_diff_lines.len().saturating_sub(1);
+                let viewport = self.git_diff_viewport_height.max(1);
+                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
                 if self.git_diff_scroll < max_scroll {
                     self.git_diff_scroll += 1;
                 }
@@ -915,8 +929,12 @@ impl AppState {
                 self.git_diff_scroll = self.git_diff_scroll.saturating_sub(20);
             }
             Action::GitDiffContentPageDown => {
-                let max_scroll = self.git_diff_lines.len().saturating_sub(1);
+                let viewport = self.git_diff_viewport_height.max(1);
+                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
                 self.git_diff_scroll = (self.git_diff_scroll + 20).min(max_scroll);
+            }
+            Action::GitDiffSetViewport(height) => {
+                self.git_diff_viewport_height = *height;
             }
             Action::OpenOpenWithMenu => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
@@ -5366,17 +5384,24 @@ mod tests {
     }
 
     #[test]
-    fn toggle_git_diff_activates_and_deactivates() {
+    fn toggle_git_diff_deactivates_and_clears_state() {
         let mut state = test_state();
-        // Initially inactive
-        assert!(!state.git_diff_active);
-        // Toggle on - we're in a git repo, so this should activate
-        state.apply(Action::ToggleGitDiff).unwrap();
-        assert!(state.git_diff_active, "should activate when in a git repo");
-        // Toggle off from active state
+        // Set up active state manually (bypasses subprocess)
+        state.git_diff_active = true;
+        state.git_diff_files = vec![crate::git::GitDiffFile {
+            path: std::path::PathBuf::from("a.rs"),
+            added: 1,
+            removed: 0,
+            status: crate::git::FileStatus::Modified,
+        }];
+        state.git_diff_selected = 0;
+        state.git_diff_scroll = 5;
+        // Deactivate
         state.apply(Action::ToggleGitDiff).unwrap();
         assert!(!state.git_diff_active);
         assert!(state.git_diff_files.is_empty());
+        assert_eq!(state.git_diff_scroll, 0);
+        assert_eq!(state.git_diff_selected, 0);
     }
 
     #[test]
@@ -5465,14 +5490,12 @@ mod tests {
     #[test]
     fn git_diff_page_up_clamps_at_zero() {
         let mut state = test_state();
-        state.git_diff_files = vec![
-            crate::git::GitDiffFile {
-                path: PathBuf::from("a.rs"),
-                added: 1,
-                removed: 0,
-                status: crate::git::FileStatus::Modified,
-            },
-        ];
+        state.git_diff_files = vec![crate::git::GitDiffFile {
+            path: PathBuf::from("a.rs"),
+            added: 1,
+            removed: 0,
+            status: crate::git::FileStatus::Modified,
+        }];
         state.git_diff_selected = 0;
         state.apply(Action::GitDiffPageUp).unwrap();
         assert_eq!(state.git_diff_selected, 0); // saturating_sub(10) from 0
@@ -5490,9 +5513,23 @@ mod tests {
                 kind: crate::git::DiffLineKind::Context,
                 content: "line2".into(),
             },
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Context,
+                content: "line3".into(),
+            },
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Context,
+                content: "line4".into(),
+            },
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Context,
+                content: "line5".into(),
+            },
         ];
-        state.git_diff_scroll = 1; // already at last index
+        state.git_diff_viewport_height = 2; // viewport of 2 lines
+                                            // max_scroll = 5 - 2 = 3
+        state.git_diff_scroll = 3;
         state.apply(Action::GitDiffContentPageDown).unwrap();
-        assert_eq!(state.git_diff_scroll, 1); // clamped at last index
+        assert_eq!(state.git_diff_scroll, 3); // clamped at 3 (len - viewport)
     }
 }

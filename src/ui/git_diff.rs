@@ -8,18 +8,23 @@ use ratatui::{
 
 use crate::{
     config::ThemePalette,
-    git::{DiffLine, DiffLineKind, FileStatus},
+    git::{DiffLine, DiffLineKind},
     state::AppState,
 };
 
 /// Top-level renderer: splits area 38/62, renders file list left, diff content right.
-pub fn render_git_diff_view(f: &mut Frame, area: Rect, state: &AppState) {
+pub fn render_git_diff_view(f: &mut Frame, area: Rect, state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(38), Constraint::Percentage(62)])
         .split(area);
 
     render_diff_file_list(f, chunks[0], state);
+
+    // Update viewport height before rendering content
+    let inner_height = chunks[1].height.saturating_sub(2) as usize;
+    state.git_diff_viewport_height = inner_height;
+
     render_diff_content(f, chunks[1], state);
 }
 
@@ -40,17 +45,9 @@ pub fn render_diff_file_list(f: &mut Frame, area: Rect, state: &AppState) {
         .git_diff_files
         .iter()
         .map(|f| {
-            let status_char = match f.status {
-                FileStatus::Untracked => "?",
-                FileStatus::Added => "A",
-                FileStatus::Deleted => "D",
-                FileStatus::Modified => "M",
-                FileStatus::Renamed => "R",
-                FileStatus::Conflicted => "C",
-            };
             let label = format!(
                 "{} {} +{} -{}",
-                status_char,
+                f.status.symbol(),
                 f.path.display(),
                 f.added,
                 f.removed

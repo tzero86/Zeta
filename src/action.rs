@@ -256,6 +256,8 @@ pub enum Action {
     ToggleDebugPanel,
     /// Activate / deactivate git diff viewer mode.
     ToggleGitDiff,
+    /// Set git diff viewport height for scroll calculations (called by renderer)
+    GitDiffSetViewport(usize),
     /// Move file-list selection up by 1.
     GitDiffSelectPrev,
     /// Move file-list selection down by 1.
@@ -1116,21 +1118,34 @@ impl Action {
     /// Map a key event when the git diff file list has focus.
     pub fn from_git_diff_file_list_key_event(key: &KeyEvent) -> Option<Action> {
         match key {
-            KeyEvent { code: KeyCode::Up, .. }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
             | KeyEvent {
                 code: KeyCode::Char('k'),
                 modifiers: KeyModifiers::NONE,
                 ..
             } => Some(Action::GitDiffSelectPrev),
-            KeyEvent { code: KeyCode::Down, .. }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
             | KeyEvent {
                 code: KeyCode::Char('j'),
                 modifiers: KeyModifiers::NONE,
                 ..
             } => Some(Action::GitDiffSelectNext),
-            KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffPageUp),
-            KeyEvent { code: KeyCode::PageDown, .. } => Some(Action::GitDiffPageDown),
-            KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => Some(Action::GitDiffPageUp),
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } => Some(Action::GitDiffPageDown),
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => Some(Action::GitDiffToggleFocus),
             _ => None,
         }
     }
@@ -1138,26 +1153,39 @@ impl Action {
     /// Map a key event when the git diff content pane has focus.
     pub fn from_git_diff_content_key_event(key: &KeyEvent) -> Option<Action> {
         match key {
-            KeyEvent { code: KeyCode::Up, .. }
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
             | KeyEvent {
                 code: KeyCode::Char('k'),
                 modifiers: KeyModifiers::NONE,
                 ..
             } => Some(Action::GitDiffScrollUp),
-            KeyEvent { code: KeyCode::Down, .. }
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
             | KeyEvent {
                 code: KeyCode::Char('j'),
                 modifiers: KeyModifiers::NONE,
                 ..
             } => Some(Action::GitDiffScrollDown),
-            KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffContentPageUp),
-            KeyEvent { code: KeyCode::PageDown, .. }
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => Some(Action::GitDiffContentPageUp),
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            }
             | KeyEvent {
                 code: KeyCode::Char('d'),
                 modifiers: KeyModifiers::NONE,
                 ..
             } => Some(Action::GitDiffContentPageDown),
-            KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => Some(Action::GitDiffToggleFocus),
             _ => None,
         }
     }

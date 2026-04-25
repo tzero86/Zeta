@@ -181,13 +181,19 @@ pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
         .map(|(rel_path, status)| {
             let key = rel_path.display().to_string().replace('\\', "/");
             let (added, removed) = counts.get(&key).copied().unwrap_or((0, 0));
-            GitDiffFile { path: rel_path, status, added, removed }
+            GitDiffFile {
+                path: rel_path,
+                status,
+                added,
+                removed,
+            }
         })
         .collect();
 
     // Sort: conflicted → modified → added → renamed → deleted → untracked; alpha within groups
     files.sort_by(|a, b| {
-        status_sort_key(a.status).cmp(&status_sort_key(b.status))
+        status_sort_key(a.status)
+            .cmp(&status_sort_key(b.status))
             .then(a.path.cmp(&b.path))
     });
 
@@ -197,11 +203,11 @@ pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
 fn status_sort_key(s: FileStatus) -> u8 {
     match s {
         FileStatus::Conflicted => 0,
-        FileStatus::Modified   => 1,
-        FileStatus::Added      => 2,
-        FileStatus::Renamed    => 3,
-        FileStatus::Deleted    => 4,
-        FileStatus::Untracked  => 5,
+        FileStatus::Modified => 1,
+        FileStatus::Added => 2,
+        FileStatus::Renamed => 3,
+        FileStatus::Deleted => 4,
+        FileStatus::Untracked => 5,
     }
 }
 
@@ -220,7 +226,10 @@ pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<
         return match std::fs::read_to_string(&full_path) {
             Ok(content) => content
                 .lines()
-                .map(|l| DiffLine { kind: DiffLineKind::Added, content: format!("+{l}") })
+                .map(|l| DiffLine {
+                    kind: DiffLineKind::Added,
+                    content: format!("+{l}"),
+                })
                 .collect(),
             Err(_) => vec![DiffLine {
                 kind: DiffLineKind::Context,
@@ -240,9 +249,7 @@ pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<
     );
 
     match output {
-        Some(o) if o.status.success() => {
-            parse_unified_diff(&String::from_utf8_lossy(&o.stdout))
-        }
+        Some(o) if o.status.success() => parse_unified_diff(&String::from_utf8_lossy(&o.stdout)),
         _ => Vec::new(),
     }
 }
@@ -418,9 +425,17 @@ pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
         }
         let added = parts[0].parse::<usize>().unwrap_or(0);
         let removed = parts[1].parse::<usize>().unwrap_or(0);
-        let path = parts[2].trim().to_string();
-        if !path.is_empty() {
-            map.insert(path, (added, removed));
+        let path = parts[2].trim();
+
+        // Handle simple rename: "old.rs => new.rs" → key on destination
+        let resolved = if path.contains(" => ") {
+            path.split(" => ").nth(1).unwrap_or(path).trim().to_string()
+        } else {
+            path.to_string()
+        };
+
+        if !resolved.is_empty() {
+            map.insert(resolved, (added, removed));
         }
     }
     map
@@ -621,6 +636,14 @@ mod tests {
     #[test]
     fn parse_numstat_empty_gives_empty_map() {
         assert!(parse_numstat("").is_empty());
+    }
+
+    #[test]
+    fn parse_numstat_handles_simple_rename() {
+        let input = "5\t2\told_name.rs => new_name.rs\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("new_name.rs"), Some(&(5, 2)));
+        assert!(!counts.contains_key("old_name.rs => new_name.rs"));
     }
 
     #[test]
