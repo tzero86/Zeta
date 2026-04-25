@@ -40,7 +40,7 @@ pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuContext, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
-pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
+pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState, SettingsTab};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
 
 /// Structured data for the four status bar zones.
@@ -408,7 +408,8 @@ impl AppState {
         if let Action::SettingsRebindCapture(key_event) = action {
             if let Some(ModalState::Settings(s)) = &self.overlay.modal {
                 if let Some(rebind_idx) = s.rebind_mode {
-                    let entries = self.settings_entries();
+                    let active_tab = s.active_tab;
+                    let entries = self.settings_entries_for_tab(active_tab);
                     if let Some(SettingsField::KeymapBinding { field, .. }) =
                         entries.get(rebind_idx).map(|e| &e.field)
                     {
@@ -1499,20 +1500,52 @@ impl AppState {
                 self.status_message = String::from("discarded editor changes");
             }
             Action::SettingsToggleCurrent => {
-                if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                    let selection = s.selection;
-                    let entries = self.settings_entries();
-                    if let Some(entry) = entries.get(selection).cloned() {
-                        if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
-                            // Begin rebind: enter key-capture mode for this entry.
-                            if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
-                                s.rebind_mode = Some(selection);
-                            }
-                            self.status_message =
-                                String::from("press new key combo (Esc to cancel)");
-                        } else {
-                            self.apply_settings_entry(entry);
+                let (selection, active_tab) =
+                    if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                        (s.selection, s.active_tab)
+                    } else {
+                        return Ok(commands);
+                    };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if let Some(entry) = entries.get(selection).cloned() {
+                    if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
+                        // Begin rebind: enter key-capture mode for this entry.
+                        if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                            s.rebind_mode = Some(selection);
                         }
+                        self.status_message = String::from("press new key combo (Esc to cancel)");
+                    } else {
+                        self.apply_settings_entry(entry);
+                    }
+                }
+            }
+            Action::SettingsMoveDown => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = (s.selection + 1) % entries.len();
+                    }
+                }
+            }
+            Action::SettingsMoveUp => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = if s.selection == 0 {
+                            entries.len() - 1
+                        } else {
+                            s.selection - 1
+                        };
                     }
                 }
             }
@@ -1530,6 +1563,26 @@ impl AppState {
                     s.rebind_mode = None;
                 }
                 self.status_message = String::from("rebind cancelled");
+            }
+            Action::SettingsNextTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.next();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsPrevTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.prev();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsSelectTab(n) => {
+                if let Some(s) = self.settings_mut() {
+                    if let Some(tab) = crate::state::settings::SettingsTab::from_number(*n) {
+                        s.active_tab = tab;
+                        s.selection = 0;
+                    }
+                }
             }
             // Auto-preview after navigation
             Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
@@ -2930,9 +2983,61 @@ impl AppState {
         ]
     }
 
+    pub fn settings_entries_for_tab(
+        &self,
+        tab: crate::state::settings::SettingsTab,
+    ) -> Vec<SettingsEntry> {
+        use crate::state::settings::SettingsTab;
+        let all = self.settings_entries();
+        match tab {
+            SettingsTab::Appearance => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::Theme(_) | SettingsField::IconMode(_)
+                    )
+                })
+                .collect(),
+            SettingsTab::Panels => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::PaneLayout(_)
+                            | SettingsField::PreviewPanel
+                            | SettingsField::PreviewOnSelection
+                            | SettingsField::TerminalOpenByDefault
+                    )
+                })
+                .collect(),
+            SettingsTab::Editor => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::EditorTabWidth(_) | SettingsField::EditorWordWrap
+                    )
+                })
+                .collect(),
+            SettingsTab::Keymaps => all
+                .into_iter()
+                .filter(|e| matches!(e.field, SettingsField::KeymapBinding { .. }))
+                .collect(),
+        }
+    }
+
     // =========================================================================
     // Private Helpers
     // =========================================================================
+
+    fn settings_mut(&mut self) -> Option<&mut crate::state::settings::SettingsState> {
+        if let Some(crate::state::overlay::ModalState::Settings(ref mut s)) = self.overlay.modal {
+            Some(s)
+        } else {
+            None
+        }
+    }
 
     #[allow(dead_code)]
     fn summarize_paths(paths: &[PathBuf]) -> String {

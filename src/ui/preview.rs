@@ -8,7 +8,9 @@ use unicode_width::UnicodeWidthChar;
 use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 use crate::preview::ViewBuffer;
-use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style, pane_column_header_style};
+use crate::ui::styles::{
+    pane_column_header_style, panel_title_focused_style, panel_title_unfocused_style,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedPreviewRow {
@@ -233,7 +235,11 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
     let title_line = Line::from(vec![
         Span::styled(format!(" \u{f02d5} {} ", filename), title_style),
         Span::styled(
-            if ext_hint.is_empty() { String::new() } else { format!(" .{} ", ext_hint) },
+            if ext_hint.is_empty() {
+                String::new()
+            } else {
+                format!(" .{} ", ext_hint)
+            },
             pane_column_header_style(palette),
         ),
         Span::styled(" Preview ", badge_style),

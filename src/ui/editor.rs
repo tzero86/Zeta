@@ -9,7 +9,9 @@ use crate::editor::{EditorBuffer, EditorRenderState};
 use crate::ui::code_view::{
     render_code_view, CodeViewRenderArgs, SearchHighlight, SelectionHighlight,
 };
-use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style, dirty_indicator_style};
+use crate::ui::styles::{
+    dirty_indicator_style, panel_title_focused_style, panel_title_unfocused_style,
+};
 
 pub struct RenderEditorArgs<'a> {
     pub editor: &'a mut EditorBuffer,
@@ -124,7 +126,12 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
     let title_line = Line::from(vec![
         Span::styled(format!(" \u{f0187} {} ", filename), title_style),
         Span::styled(dirty_part, dirty_style),
-        Span::styled(format!(" {} ", parent), Style::default().fg(palette.text_muted).bg(palette.surface_bg)),
+        Span::styled(
+            format!(" {} ", parent),
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        ),
         Span::styled(ln_col, Style::default().fg(palette.text_subtext)),
         Span::styled(" Editor ", badge_style),
     ]);
