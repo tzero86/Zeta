@@ -254,6 +254,26 @@ pub enum Action {
     CloseOpenWithMenu,
     /// Toggle the floating debug panel (F12).
     ToggleDebugPanel,
+    /// Activate / deactivate git diff viewer mode.
+    ToggleGitDiff,
+    /// Move file-list selection up by 1.
+    GitDiffSelectPrev,
+    /// Move file-list selection down by 1.
+    GitDiffSelectNext,
+    /// Page up in file list (or diff content).
+    GitDiffPageUp,
+    /// Page down in file list (or diff content).
+    GitDiffPageDown,
+    /// Scroll diff content up by 1 line.
+    GitDiffScrollUp,
+    /// Scroll diff content down by 1 line.
+    GitDiffScrollDown,
+    /// Transfer focus between file-list pane and diff-content pane.
+    GitDiffToggleFocus,
+    /// Scroll diff content up by one page.
+    GitDiffContentPageUp,
+    /// Scroll diff content down by one page.
+    GitDiffContentPageDown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -877,6 +897,9 @@ impl Action {
         if key_event.code == KeyCode::Char('b') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::AddBookmark);
         }
+        if key_event.code == KeyCode::Char('d') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::ToggleGitDiff);
+        }
         // Delegate remaining keys to the comprehensive fallback handler.
         Self::from_key_event_with_settings(key_event, keymap)
     }
@@ -1086,6 +1109,40 @@ impl Action {
             (KeyCode::Char('n') | KeyCode::Char('N'), _) | (KeyCode::Esc, _) => {
                 Some(Action::DestructiveConfirmNo)
             }
+            _ => None,
+        }
+    }
+
+    /// Map a key event when the git diff file list has focus.
+    pub fn from_git_diff_file_list_key_event(key: &KeyEvent) -> Option<Action> {
+        match key {
+            KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
+                Some(Action::GitDiffSelectPrev)
+            }
+            KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
+                Some(Action::GitDiffSelectNext)
+            }
+            KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffPageUp),
+            KeyEvent { code: KeyCode::PageDown, .. } => Some(Action::GitDiffPageDown),
+            KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
+            _ => None,
+        }
+    }
+
+    /// Map a key event when the git diff content pane has focus.
+    pub fn from_git_diff_content_key_event(key: &KeyEvent) -> Option<Action> {
+        match key {
+            KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
+                Some(Action::GitDiffScrollUp)
+            }
+            KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
+                Some(Action::GitDiffScrollDown)
+            }
+            KeyEvent { code: KeyCode::PageUp, .. } => Some(Action::GitDiffContentPageUp),
+            KeyEvent { code: KeyCode::PageDown, .. } | KeyEvent { code: KeyCode::Char('d'), .. } => {
+                Some(Action::GitDiffContentPageDown)
+            }
+            KeyEvent { code: KeyCode::Tab, .. } => Some(Action::GitDiffToggleFocus),
             _ => None,
         }
     }
@@ -1528,6 +1585,37 @@ mod tests {
         assert_eq!(
             Action::from_collision_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
             Some(Action::CollisionSkip)
+        );
+    }
+
+    #[test]
+    fn git_diff_file_list_up_returns_select_prev() {
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&key),
+            Some(Action::GitDiffSelectPrev)
+        );
+    }
+
+    #[test]
+    fn git_diff_content_down_returns_scroll_down() {
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffScrollDown)
+        );
+    }
+
+    #[test]
+    fn git_diff_tab_returns_toggle_focus() {
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&key),
+            Some(Action::GitDiffToggleFocus)
+        );
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffToggleFocus)
         );
     }
 }

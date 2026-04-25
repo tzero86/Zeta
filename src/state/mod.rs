@@ -838,6 +838,21 @@ impl AppState {
             Action::ToggleDebugPanel => {
                 self.debug_visible = !self.debug_visible;
             }
+            Action::ToggleGitDiff => {
+                // Full implementation in Task 6
+                self.git_diff_active = !self.git_diff_active;
+            }
+            Action::GitDiffSelectPrev
+            | Action::GitDiffSelectNext
+            | Action::GitDiffPageUp
+            | Action::GitDiffPageDown
+            | Action::GitDiffScrollUp
+            | Action::GitDiffScrollDown
+            | Action::GitDiffToggleFocus
+            | Action::GitDiffContentPageUp
+            | Action::GitDiffContentPageDown => {
+                // Full implementation in Task 6
+            }
             Action::OpenOpenWithMenu => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
                     let ext = path
