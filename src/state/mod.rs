@@ -2983,10 +2983,7 @@ impl AppState {
         ]
     }
 
-    pub fn settings_entries_for_tab(
-        &self,
-        tab: SettingsTab,
-    ) -> Vec<SettingsEntry> {
+    pub fn settings_entries_for_tab(&self, tab: SettingsTab) -> Vec<SettingsEntry> {
         let all = self.settings_entries();
         match tab {
             SettingsTab::Appearance => all

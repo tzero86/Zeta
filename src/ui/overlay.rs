@@ -299,15 +299,9 @@ fn render_two_column_help(
                 } else if let Some((key, desc)) = raw.split_once('\t') {
                     let key_part = key.trim();
                     Line::from(vec![
-                        Span::styled(
-                            format!(" {} ", key_part),
-                            key_pill_style(palette),
-                        ),
+                        Span::styled(format!(" {} ", key_part), key_pill_style(palette)),
                         Span::raw("  "),
-                        Span::styled(
-                            desc.to_string(),
-                            Style::default().fg(palette.text_primary),
-                        ),
+                        Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
                     ])
                 } else {
                     Line::from(Span::styled(
@@ -321,14 +315,8 @@ fn render_two_column_help(
 
     let left_lines = render_col(&left);
     let right_lines = render_col(&right);
-    frame.render_widget(
-        Paragraph::new(left_lines).scroll((scroll, 0)),
-        halves[0],
-    );
-    frame.render_widget(
-        Paragraph::new(right_lines).scroll((scroll, 0)),
-        halves[1],
-    );
+    frame.render_widget(Paragraph::new(left_lines).scroll((scroll, 0)), halves[0]);
+    frame.render_widget(Paragraph::new(right_lines).scroll((scroll, 0)), halves[1]);
 }
 
 pub fn render_dialog(

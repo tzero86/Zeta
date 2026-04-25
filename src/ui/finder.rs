@@ -7,7 +7,9 @@ use ratatui::Frame;
 use crate::config::ThemePalette;
 use crate::finder::FileFinderState;
 use crate::ui::overlay::render_modal_backdrop;
-use crate::ui::styles::{elevated_surface_style, overlay_footer_style, overlay_title_style};
+use crate::ui::styles::{
+    elevated_surface_style, finder_match_highlight_style, overlay_footer_style, overlay_title_style,
+};
 
 pub fn render_file_finder(
     frame: &mut Frame<'_>,
@@ -52,9 +54,23 @@ pub fn render_file_finder(
         .split(inner);
 
     let input = Paragraph::new(vec![
-        Line::from(format!("> {}_", state.query)),
+        Line::from(vec![
+            Span::styled(
+                " ⌕  ",
+                Style::default()
+                    .fg(palette.accent_teal)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                state.query.clone(),
+                Style::default()
+                    .fg(palette.text_primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("│", Style::default().fg(palette.text_muted)),
+        ]),
         Line::from(Span::styled(
-            format!("root: {}", state.root.display()),
+            format!(" root: {} ", state.root.display()),
             Style::default().fg(palette.text_muted),
         )),
     ])
@@ -93,14 +109,43 @@ pub fn render_file_finder(
                 } else {
                     Style::default().fg(palette.text_primary)
                 };
-                let mut spans = Vec::new();
-                spans.push(Span::styled(" ", base));
-                spans.push(Span::styled(rel.clone(), base));
-                if rel != filename {
+                let dir_style = Style::default().fg(palette.text_muted);
+                let query_lower = state.query.to_lowercase();
+
+                let dir_part = if let Some(parent) = std::path::Path::new(&rel).parent() {
+                    let s = parent.display().to_string();
+                    if s.is_empty() || s == "." {
+                        String::new()
+                    } else {
+                        format!("{}/", s)
+                    }
+                } else {
+                    String::new()
+                };
+                let mut spans: Vec<Span> =
+                    vec![Span::styled(" ", base), Span::styled(dir_part, dir_style)];
+                if query_lower.is_empty() {
                     spans.push(Span::styled(
-                        format!("  ({filename})"),
+                        filename.to_string(),
                         base.add_modifier(Modifier::BOLD),
                     ));
+                } else {
+                    let mut rem = filename;
+                    while !rem.is_empty() {
+                        if let Some(pos) = rem.to_lowercase().find(&query_lower) {
+                            if pos > 0 {
+                                spans.push(Span::styled(rem[..pos].to_string(), base));
+                            }
+                            spans.push(Span::styled(
+                                rem[pos..pos + query_lower.len()].to_string(),
+                                finder_match_highlight_style(palette),
+                            ));
+                            rem = &rem[pos + query_lower.len()..];
+                        } else {
+                            spans.push(Span::styled(rem.to_string(), base));
+                            break;
+                        }
+                    }
                 }
                 ListItem::new(Line::from(spans))
             })
@@ -111,7 +156,7 @@ pub fn render_file_finder(
         chunks[1],
     );
 
-    let footer = Paragraph::new("Type to search • Enter to jump • Esc to close")
+    let footer = Paragraph::new("  Enter open  ·  Ctrl+Enter open in editor  ·  Esc close")
         .style(overlay_footer_style(palette));
     frame.render_widget(footer, chunks[2]);
 }
