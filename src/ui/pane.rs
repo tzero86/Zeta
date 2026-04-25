@@ -235,16 +235,6 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
 
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 
-    // NerdFont PUA glyphs (U+E000–U+F8FF) render as double-wide in terminals with
-    // NerdFont configured, but unicode-width reports them as width=1. Ratatui writes
-    // the next cell's content at column x+1, which is the right half of the double-wide
-    // glyph — destroying it and making the icon invisible.
-    // Fix: after rendering the list, mark the cell immediately following each NerdFont
-    // glyph as skip=true so ratatui won't write to it during terminal flush.
-    if icon_mode == IconMode::NerdFont {
-        fix_nerd_font_cells(frame.buffer_mut(), list_area);
-    }
-
     if let Some(header_area) = header_area {
         render_column_headers(frame, header_area, palette);
     }
@@ -386,11 +376,24 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         ]));
     }
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
-    let guide = if is_last { "  " } else { "│ " };
-    let _branch = if is_last { "└" } else { "├" };
-    // icon already bound above
-    // Tree-view branch connector: always one of two static strings, no format!() needed.
-    let branch_span: &'static str = if is_last { "\u{2514} " } else { "\u{251c} " };
+    // NerdFont's PUA glyphs cause some terminals (Warp + FiraCode NF, etc.) to
+    // pick a font fallback for the whole row, which can blank out the standard
+    // box-drawing tree connectors (U+2514, U+251C, U+2502). Use the heavy
+    // variants in NerdFont mode — they're rendered consistently because the
+    // NerdFont itself supplies them. Other modes keep the lighter line.
+    let (guide, branch_span): (&'static str, &'static str) = match icon_mode {
+        IconMode::NerdFont => {
+            let g = if is_last { "  " } else { "\u{2503} " };
+            let b = if is_last { "\u{2517} " } else { "\u{2523} " };
+            (g, b)
+        }
+        _ => {
+            let g = if is_last { "  " } else { "\u{2502} " };
+            let b = if is_last { "\u{2514} " } else { "\u{251c} " };
+            (g, b)
+        }
+    };
+    let _branch = branch_span;
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = display_name.unwrap_or_else(|| match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
@@ -413,7 +416,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         + icon_slot_w
         + 1; // space after icon
     let prefix_width = prefix_display_width + 2; // +2 for git indicator + space
-                                                   // Git status indicator — always 1 char wide so column alignment is stable.
+                                                 // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
         None => (" ", palette.text_muted),
@@ -538,52 +541,6 @@ pub fn icon_slot_width(icon: &str, icon_mode: IconMode) -> usize {
 
 pub fn display_width(value: &str) -> usize {
     UnicodeWidthStr::width(value)
-}
-
-/// Returns `true` for characters in NerdFont's Private Use Area ranges.
-/// These glyphs are rendered as double-wide by NerdFont-configured terminals
-/// but reported as width=1 by unicode-width — requiring special treatment.
-fn is_nerd_font_char(c: char) -> bool {
-    let cp = c as u32;
-    matches!(cp, 0xE000..=0xF8FF | 0x100000..=0x10FFFF)
-}
-
-/// After rendering a list into `area`, mark the cell immediately following each
-/// NerdFont PUA glyph as `skip = true`.
-///
-/// Without this, ratatui's buffer flush writes the next logical cell (a space) at
-/// terminal column `x+1`, which is the right half of the double-wide glyph →
-/// the terminal erases the whole glyph, leaving an invisible blank.
-///
-/// With `skip = true`, ratatui won't emit any cursor-positioning+write for that
-/// cell, so the terminal's double-wide glyph remains intact.
-fn fix_nerd_font_cells(buf: &mut ratatui::buffer::Buffer, area: Rect) {
-    for y in area.y..area.y + area.height {
-        let mut x = area.x;
-        while x + 1 < area.x + area.width {
-            let is_nf = buf
-                .cell((x, y))
-                .and_then(|c| c.symbol().chars().next())
-                .map(is_nerd_font_char)
-                .unwrap_or(false);
-            if is_nf {
-                // Inherit background from the glyph so there's no colour glitch.
-                if let Some(glyph_cell) = buf.cell((x, y)) {
-                    let bg = glyph_cell.bg;
-                    let fg = glyph_cell.fg;
-                    if let Some(cont) = buf.cell_mut((x + 1, y)) {
-                        cont.set_symbol(" ")
-                            .set_bg(bg)
-                            .set_fg(fg)
-                            .set_skip(true);
-                    }
-                }
-                x += 2;
-            } else {
-                x += 1;
-            }
-        }
-    }
 }
 
 pub fn truncate_text(value: &str, max_width: usize) -> String {
@@ -724,6 +681,61 @@ mod tests {
             status_git_bg: Color::Rgb(190, 200, 210),
             status_entry_bg: Color::Rgb(220, 230, 240),
             status_workspace_bg: Color::Rgb(250, 10, 20),
+        }
+    }
+
+    #[test]
+    fn nerdfont_tree_row_includes_branch_connectors() {
+        for (icon_mode, label) in [
+            (IconMode::Ascii, "ascii"),
+            (IconMode::Unicode, "unicode"),
+            (IconMode::NerdFont, "nerdfont"),
+        ] {
+            let item = render_item(RenderItemArgs {
+                entry: &EntryInfo {
+                    name: String::from("note.txt"),
+                    path: PathBuf::from("./note.txt"),
+                    kind: EntryKind::File,
+                    size_bytes: Some(1024),
+                    modified: None,
+                    link_target: None,
+                },
+                is_focused: true,
+                is_marked: false,
+                is_last: false,
+                available_width: 60,
+                palette: test_palette(),
+                icon_mode,
+                git_status: None,
+                diff_colour: None,
+                details_view: false,
+                display_name: None,
+                is_filtered_out: false,
+            });
+            // Render to a buffer and assert connector chars survive.
+            let area = Rect::new(0, 0, 60, 1);
+            let mut buf = ratatui::buffer::Buffer::empty(area);
+            ratatui::widgets::Widget::render(
+                ratatui::widgets::List::new(vec![item]),
+                area,
+                &mut buf,
+            );
+            let row: String = (0..area.width)
+                .map(|x| {
+                    buf.cell((x, 0))
+                        .map(|c| c.symbol().to_string())
+                        .unwrap_or_default()
+                })
+                .collect();
+            let expected_branch = if matches!(icon_mode, IconMode::NerdFont) {
+                '\u{2523}' // ┣
+            } else {
+                '\u{251c}' // ├
+            };
+            assert!(
+                row.contains(expected_branch),
+                "{label} mode tree row missing branch connector. row was: {row:?}"
+            );
         }
     }
 

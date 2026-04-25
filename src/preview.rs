@@ -33,7 +33,12 @@ pub struct ImagePreviewData {
 }
 
 impl ImagePreviewData {
-    pub fn new(filename: String, orig_width: u32, orig_height: u32, pixels: Arc<image::RgbaImage>) -> Self {
+    pub fn new(
+        filename: String,
+        orig_width: u32,
+        orig_height: u32,
+        pixels: Arc<image::RgbaImage>,
+    ) -> Self {
         Self {
             filename,
             orig_width,
@@ -49,14 +54,21 @@ impl ImagePreviewData {
     /// indistinguishable from Lanczos3 at terminal halfblock resolution.
     pub fn scaled_for(&self, target_w: u32, target_h: u32) -> image::RgbaImage {
         let mut cache = self.scale_cache.lock().unwrap_or_else(|e| e.into_inner());
-        if !cache.as_ref().is_some_and(|c| c.target_w == target_w && c.target_h == target_h) {
+        if !cache
+            .as_ref()
+            .is_some_and(|c| c.target_w == target_w && c.target_h == target_h)
+        {
             let scaled = image::imageops::resize(
                 self.pixels.as_ref(),
                 target_w,
                 target_h,
                 image::imageops::FilterType::Triangle,
             );
-            *cache = Some(ScaleCache { target_w, target_h, scaled });
+            *cache = Some(ScaleCache {
+                target_w,
+                target_h,
+                scaled,
+            });
         }
         cache.as_ref().unwrap().scaled.clone()
     }

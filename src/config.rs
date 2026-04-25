@@ -154,9 +154,7 @@ pub fn detect_icon_mode() -> IconMode {
     // On WSL, the terminal is a Windows application that uses Windows-side fonts.
     // fc-list only sees Linux-side fonts, so NerdFont detection is unreliable.
     // Users on WSL who have NerdFonts configured can set ZETA_ICON_MODE=nerd.
-    if std::env::var_os("WSL_DISTRO_NAME").is_some()
-        || std::env::var_os("WSL_INTEROP").is_some()
-    {
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
         return IconMode::Unicode;
     }
 
