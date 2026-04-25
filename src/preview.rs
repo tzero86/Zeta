@@ -6,6 +6,18 @@ use ratatui::style::{Color, Modifier};
 use crate::highlight::HighlightToken;
 use crate::highlight::{normalize_preview_text, HighlightedLine};
 
+/// Decoded image data for halfblock preview rendering.
+/// Each row in `pixel_rows` represents one terminal row (two image pixel rows).
+/// Each element is (fg_color, bg_color) for a `▀` halfblock character.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImagePreviewData {
+    pub filename: String,
+    pub orig_width: u32,
+    pub orig_height: u32,
+    /// Each outer entry = one terminal row, inner = one column cell.
+    pub pixel_rows: Vec<Vec<(ratatui::style::Color, ratatui::style::Color)>>,
+}
+
 /// A read-only scrollable view of syntax-highlighted file content.
 /// Used by the preview panel. Scroll state is owned here.
 ///
@@ -22,6 +34,8 @@ pub struct ViewBuffer {
     /// document to be rendered by `tui_markdown` at display time.
     /// `lines` is empty for markdown buffers.
     pub markdown_source: Option<String>,
+    /// Pre-decoded image for halfblock rendering; `None` for non-image buffers.
+    pub image_data: Option<Arc<ImagePreviewData>>,
 }
 
 impl ViewBuffer {
@@ -35,6 +49,7 @@ impl ViewBuffer {
             scroll_row: 0,
             total_lines: 0,
             markdown_source: Some(source),
+            image_data: None,
         }
     }
 
@@ -46,6 +61,23 @@ impl ViewBuffer {
     /// Returns the raw Markdown source, or `None` for non-markdown buffers.
     pub fn markdown_source(&self) -> Option<&str> {
         self.markdown_source.as_deref()
+    }
+
+    /// Returns `true` if this buffer represents a decoded image.
+    pub fn is_image(&self) -> bool {
+        self.image_data.is_some()
+    }
+
+    /// Build from pre-decoded image pixel data.
+    pub fn from_image_data(data: ImagePreviewData) -> Self {
+        let total_lines = data.pixel_rows.len() + 2; // header + blank + pixel rows
+        Self {
+            lines: Arc::from([]),
+            scroll_row: 0,
+            total_lines,
+            markdown_source: None,
+            image_data: Some(Arc::new(data)),
+        }
     }
 
     /// Build a sanitized read-only preview buffer from raw text.
@@ -61,6 +93,7 @@ impl ViewBuffer {
             scroll_row: 0,
             total_lines,
             markdown_source: None,
+            image_data: None,
         }
     }
 
@@ -77,6 +110,7 @@ impl ViewBuffer {
             scroll_row: 0,
             total_lines,
             markdown_source: None,
+            image_data: None,
         }
     }
 

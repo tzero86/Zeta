@@ -1183,6 +1183,68 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    use image::ImageReader;
+    use std::io::Cursor;
+
+    let reader = match ImageReader::new(Cursor::new(bytes)).with_guessed_format() {
+        Ok(r) => r,
+        Err(e) => return crate::preview::ViewBuffer::from_plain(&format!("[image: {e}]")),
+    };
+    let img = match reader.decode() {
+        Ok(img) => img,
+        Err(e) => {
+            return crate::preview::ViewBuffer::from_plain(&format!("[image decode error: {e}]"))
+        }
+    };
+
+    let orig_w = img.width();
+    let orig_h = img.height();
+
+    // Scale to fit ~100 cols × 40 terminal rows (= 80 pixel rows with halfblocks).
+    let max_cols: u32 = 100;
+    let max_pixel_rows: u32 = 80;
+    let scale_w = max_cols as f32 / orig_w.max(1) as f32;
+    let scale_h = max_pixel_rows as f32 / orig_h.max(1) as f32;
+    let scale = scale_w.min(scale_h).min(1.0_f32);
+    let new_w = ((orig_w as f32 * scale) as u32).max(1);
+    // Round up to nearest even so every pair of pixel rows maps to a terminal row.
+    let new_h_raw = ((orig_h as f32 * scale) as u32).max(1);
+    let new_h = (new_h_raw + 1) & !1;
+
+    let resized = img.resize_exact(new_w, new_h, image::imageops::FilterType::Nearest);
+    let rgba = resized.to_rgba8();
+    let (w, h) = rgba.dimensions();
+
+    let mut pixel_rows: Vec<Vec<(ratatui::style::Color, ratatui::style::Color)>> = Vec::new();
+    let mut row = 0u32;
+    while row + 1 < h {
+        let mut cells = Vec::with_capacity(w as usize);
+        for col in 0..w {
+            let up = rgba.get_pixel(col, row);
+            let dn = rgba.get_pixel(col, row + 1);
+            let fg = ratatui::style::Color::Rgb(up[0], up[1], up[2]);
+            let bg = ratatui::style::Color::Rgb(dn[0], dn[1], dn[2]);
+            cells.push((fg, bg));
+        }
+        pixel_rows.push(cells);
+        row += 2;
+    }
+
+    let filename = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("image")
+        .to_owned();
+
+    crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData {
+        filename,
+        orig_width: orig_w,
+        orig_height: orig_h,
+        pixel_rows,
+    })
+}
+
 fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
@@ -1200,6 +1262,16 @@ fn load_preview_from_bytes(
         return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
 
+    // Render image files as halfblock art before the binary check intercepts them.
+    let extension = path.extension().and_then(|e| e.to_str());
+    let is_image_ext = matches!(
+        extension,
+        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
+    );
+    if is_image_ext {
+        return load_image_preview(bytes, path);
+    }
+
     if looks_like_binary(bytes) {
         let size_bytes = std::fs::metadata(path)
             .map(|m| m.len())
@@ -1209,7 +1281,6 @@ fn load_preview_from_bytes(
     }
 
     let text = String::from_utf8_lossy(bytes);
-    let extension = path.extension().and_then(|e| e.to_str());
 
     // Markdown: store raw text for AST rendering at display time.
     if extension == Some("md") {

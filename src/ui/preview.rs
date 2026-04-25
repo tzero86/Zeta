@@ -260,7 +260,26 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
         ),
         Some(v) => {
             if cheap_mode {
-                if v.is_markdown() {
+                if v.is_image() {
+                    if let Some(data) = &v.image_data {
+                        let header = format!(
+                            " {}  {}×{}px  ({} rows) ",
+                            data.filename,
+                            data.orig_width,
+                            data.orig_height,
+                            data.pixel_rows.len()
+                        );
+                        frame.render_widget(
+                            Paragraph::new(header).style(
+                                Style::default()
+                                    .fg(palette.text_primary)
+                                    .bg(palette.tools_bg),
+                            ),
+                            inner,
+                        );
+                    }
+                    return;
+                } else if v.is_markdown() {
                     if let Some(source) = v.markdown_source() {
                         let text: String = source
                             .lines()
@@ -296,6 +315,8 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                         .wrap(Wrap { trim: false });
                     frame.render_widget(widget, inner);
                 }
+            } else if v.is_image() {
+                render_image_preview(frame, inner, v, palette);
             } else {
                 let height = inner.height as usize;
                 let (first_line_num, window) = v.visible_window(height);
@@ -305,6 +326,69 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
             }
         }
+    }
+}
+
+fn render_image_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &ViewBuffer,
+    palette: ThemePalette,
+) {
+    let Some(data) = &view.image_data else { return };
+
+    let start = view.scroll_row.min(data.pixel_rows.len().saturating_sub(1));
+    let max_y = area.y + area.height;
+    let mut y = area.y;
+
+    // Header row (only when not scrolled past it)
+    if start == 0 && y < max_y {
+        let header = Span::styled(
+            format!(
+                " {}  {}×{}px ",
+                data.filename, data.orig_width, data.orig_height
+            ),
+            Style::default()
+                .fg(palette.text_primary)
+                .add_modifier(Modifier::BOLD),
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![header])).style(Style::default().bg(palette.surface_bg)),
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
+        );
+        y += 1;
+    }
+
+    let visible_cols = area.width as usize;
+    for row_cells in data.pixel_rows.iter().skip(start) {
+        if y >= max_y {
+            break;
+        }
+        let spans: Vec<Span> = row_cells
+            .iter()
+            .take(visible_cols)
+            .map(|(fg, bg)| {
+                Span::styled(
+                    "\u{2580}", // ▀ UPPER HALF BLOCK
+                    Style::default().fg(*fg).bg(*bg),
+                )
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(palette.surface_bg)),
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
+        );
+        y += 1;
     }
 }
 

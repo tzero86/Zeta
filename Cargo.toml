@@ -27,6 +27,7 @@ tar = "0.4"
 flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
 tempfile = "3"
 portable-pty = "0.9"
 vt100 = "0.15"
