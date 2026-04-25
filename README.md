@@ -186,6 +186,13 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 - Refreshes automatically alongside every directory scan
 - No git crate dependency — shells out to `git` on PATH; absent or non-repo paths are silently skipped
 
+### Git Diff Viewer
+- Press `Ctrl+D` to toggle a full-screen git diff view showing a list of changed files (left) and unified diff content (right)
+- 38/62 pane split optimized for displaying wide diffs
+- Navigate the file list with arrow keys / `j`/`k`, scroll diff content with `Page Up`/`Page Down`, or use `d` for vi-style page-down
+- `Tab` switches focus between the file list and diff panes
+- Press `Ctrl+D` again to return to normal dual-pane view
+
 ### Navigation & UX
 - Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
 - Command palette (`Shift+P`) with a dedicated Workspaces section
@@ -218,6 +225,7 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 | `Ins` | New file |
 | `Tab` | Switch active pane |
 | `Shift+P` | Command palette |
+| `Ctrl+D` | Toggle git diff viewer |
 | `Ctrl+O` | Settings |
 | `Alt+F/N/V/H` | Open menu |
 | `Alt+←/→` | Navigate directory history |
