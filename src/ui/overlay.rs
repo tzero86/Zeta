@@ -1,9 +1,10 @@
+use ratatui::buffer::Buffer;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Wrap,
+    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
@@ -11,9 +12,23 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
-    elevated_surface_style, key_pill_style, modal_backdrop_style, modal_halo_style,
-    overlay_footer_style, overlay_key_hint_style, overlay_title_style, section_divider_style,
+    elevated_surface_style, key_pill_style, modal_halo_style, overlay_footer_style,
+    overlay_key_hint_style, overlay_title_style, section_divider_style,
 };
+
+struct DimOverlay;
+
+impl Widget for DimOverlay {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_style(Style::default().add_modifier(Modifier::DIM));
+                }
+            }
+        }
+    }
+}
 
 pub fn render_modal_backdrop(
     frame: &mut Frame<'_>,
@@ -21,12 +36,8 @@ pub fn render_modal_backdrop(
     popup: Rect,
     palette: ThemePalette,
 ) {
-    // Full-area dim pass
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new("").style(modal_backdrop_style(palette)),
-        area,
-    );
+    // Dim the pane content visible behind the modal (no Clear — preserve cell chars)
+    frame.render_widget(DimOverlay, area);
     // Halo ring: one-cell border around the modal
     let halo = Rect {
         x: popup.x.saturating_sub(1).max(area.x),

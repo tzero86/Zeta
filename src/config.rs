@@ -68,7 +68,7 @@ impl Default for AppConfig {
         Self {
             theme: ThemeConfig::default(),
             keymap: KeymapConfig::default(),
-            icon_mode: IconMode::default(),
+            icon_mode: detect_icon_mode(),
             pane_layout: PaneLayout::default(),
             preview_panel_open: false,
             preview_on_selection: true,
@@ -133,6 +133,31 @@ pub enum IconMode {
     Ascii,
     #[serde(alias = "custom")]
     NerdFont,
+}
+
+/// Detect the best icon mode for the current environment.
+/// Called once at first run (when no config file exists yet).
+/// Tries `fc-list` to check for NerdFont-named fonts; falls back to Unicode.
+pub fn detect_icon_mode() -> IconMode {
+    // Explicit env override for CI or scripted setups
+    if let Ok(val) = std::env::var("ZETA_ICON_MODE") {
+        return match val.to_ascii_lowercase().as_str() {
+            "nerd" | "nerdfont" | "nerd_font" => IconMode::NerdFont,
+            "unicode" => IconMode::Unicode,
+            "ascii" => IconMode::Ascii,
+            _ => IconMode::Unicode,
+        };
+    }
+
+    // Check fc-list for any font with "nerd" or "powerline" in the family name
+    if let Ok(out) = std::process::Command::new("fc-list").arg(":").output() {
+        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        if text.contains("nerd") || text.contains("powerline") {
+            return IconMode::NerdFont;
+        }
+    }
+
+    IconMode::Unicode
 }
 
 impl AppConfig {
