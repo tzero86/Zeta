@@ -88,6 +88,8 @@ pub enum Action {
     MenuSetSelection(usize),
     MenuMnemonic(char),
     MenuMoveDown,
+    MenuEnterFlyout,
+    MenuExitFlyout,
     MenuMoveUp,
     MenuNext,
     MenuPrevious,
@@ -1038,8 +1040,9 @@ impl Action {
         match key_event.code {
             KeyCode::Esc => Some(Self::CloseMenu),
             KeyCode::Enter => Some(Self::MenuActivate),
-            KeyCode::Left => Some(Self::MenuPrevious),
-            KeyCode::Right | KeyCode::Tab => Some(Self::MenuNext),
+            KeyCode::Left => Some(Self::MenuExitFlyout),
+            KeyCode::Right => Some(Self::MenuEnterFlyout),
+            KeyCode::Tab => Some(Self::MenuNext),
             KeyCode::Up => Some(Self::MenuMoveUp),
             KeyCode::Down => Some(Self::MenuMoveDown),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
@@ -1577,6 +1580,14 @@ mod tests {
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &keymap),
+            Some(Action::MenuEnterFlyout)
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &keymap),
+            Some(Action::MenuExitFlyout)
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keymap),
             Some(Action::MenuNext)
         );
     }
