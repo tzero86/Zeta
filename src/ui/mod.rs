@@ -427,7 +427,7 @@ fn render_status_bar(
             spans.push(Span::styled(
                 "│",
                 Style::default()
-                    .fg(palette.modal_halo)
+                    .fg(palette.text_muted)
                     .bg(palette.status_bg),
             ));
         }
@@ -441,7 +441,7 @@ fn render_status_bar(
             spans.push(Span::styled(
                 "│",
                 Style::default()
-                    .fg(palette.modal_halo)
+                    .fg(palette.text_muted)
                     .bg(palette.status_bg),
             ));
         }
@@ -460,7 +460,7 @@ fn render_status_bar(
             spans.push(Span::styled(
                 "│",
                 Style::default()
-                    .fg(palette.modal_halo)
+                    .fg(palette.text_muted)
                     .bg(palette.status_bg),
             ));
             spans.push(Span::styled(
@@ -473,7 +473,7 @@ fn render_status_bar(
         spans.push(Span::styled(
             "│",
             Style::default()
-                .fg(palette.modal_halo)
+                .fg(palette.text_muted)
                 .bg(palette.status_bg),
         ));
         spans.push(Span::styled(
@@ -711,18 +711,19 @@ mod tests {
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<Vec<_>>();
-        assert!(labels.contains(&"[1]"));
-        assert!(labels.contains(&"[2]"));
-        assert!(labels.contains(&"[3]"));
-        assert!(labels.contains(&"[4]"));
+        assert!(labels.contains(&" 1 "));
+        assert!(labels.contains(&" 2 "));
+        // workspace 3 is active (index 2), has CWD prefix " 3 "
+        assert!(labels.iter().any(|l| l.contains('3')));
+        assert!(labels.contains(&" 4 "));
 
         let active = spans
             .iter()
-            .find(|span| span.content.as_ref() == "[3]")
+            .find(|span| span.content.contains('3'))
             .expect("active workspace pill should exist");
         let inactive = spans
             .iter()
-            .find(|span| span.content.as_ref() == "[1]")
+            .find(|span| span.content.as_ref() == " 1 ")
             .expect("inactive workspace pill should exist");
         assert_eq!(active.style.bg, Some(p.selection_bg));
         assert_eq!(active.style.fg, Some(p.selection_fg));

@@ -2819,7 +2819,7 @@ impl AppState {
         });
 
         let workspace = format!(
-            " ws:{}/{} ",
+            " ws {}/{} ",
             self.active_workspace_index() + 1,
             self.workspace_count()
         );
@@ -5114,8 +5114,8 @@ mod tests {
 
     #[test]
     fn status_zones_workspace_format() {
-        let ws = format!(" ws:{}/{} ", 1, 4);
-        assert!(ws.starts_with(" ws:"));
+        let ws = format!(" ws {}/{} ", 1, 4);
+        assert!(ws.starts_with(" ws "));
         assert!(ws.contains('/'));
     }
 }

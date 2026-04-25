@@ -308,7 +308,8 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 if let Some(source) = v.markdown_source() {
                     let widget = Paragraph::new(source)
                         .style(Style::default().bg(palette.tools_bg))
-                        .wrap(Wrap { trim: false });
+                        .wrap(Wrap { trim: false })
+                        .scroll((v.scroll_row as u16, 0));
                     frame.render_widget(widget, inner);
                 }
             } else if v.is_image() {

@@ -123,10 +123,11 @@ impl ViewBuffer {
     /// markdown-specific layout (no gutter, word-wrap) and a future tui-markdown
     /// integration can be dropped in with a one-line change.
     pub fn from_markdown(source: String) -> Self {
+        let total_lines = source.lines().count().max(1);
         Self {
             lines: Arc::from([]),
             scroll_row: 0,
-            total_lines: 0,
+            total_lines,
             markdown_source: Some(source),
             image_data: None,
         }

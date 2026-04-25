@@ -1,3 +1,4 @@
+use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
@@ -15,12 +16,17 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
     } else {
         palette.menu_bg
     };
-    let mut line = Line::default();
-    line.spans
+
+    // ── Left side: logo + context badge + menu tabs ────────────────────────
+    let mut left_line = Line::default();
+    left_line
+        .spans
         .extend(top_bar_logo_spans(bar_is_active, palette));
-    line.spans.extend(context_badge_spans(ctx, state, palette));
+    left_line
+        .spans
+        .extend(context_badge_spans(ctx, state, palette));
     for tab in menu_tabs(ctx) {
-        line.spans.extend(menu_spans(
+        left_line.spans.extend(menu_spans(
             tab.label,
             Some(tab.mnemonic),
             state.active_menu() == Some(tab.id),
@@ -29,6 +35,7 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
         ));
     }
 
+    // ── Right side: workspace switcher (right-aligned) ─────────────────────
     let cwd_hint: Option<String> = {
         let cwd = state.active_workspace().panes.active_pane().cwd.clone();
         let home = std::env::var_os("HOME")
@@ -63,21 +70,35 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
         }
     };
 
-    line.spans.extend(workspace_switcher_spans(
+    let ws_spans = workspace_switcher_spans(
         state.active_workspace_index(),
         state.workspace_count(),
         cwd_hint.as_deref(),
         bar_is_active,
         palette,
-    ));
-
-    let menu = Paragraph::new(line).style(
-        Style::default()
-            .fg(palette.menu_fg)
-            .bg(top_bar_bg)
-            .add_modifier(Modifier::BOLD),
     );
-    frame.render_widget(menu, area);
+
+    // Measure the workspace switcher's display width to carve out a right slot.
+    let ws_width: u16 = ws_spans
+        .iter()
+        .map(|s| s.content.chars().count() as u16)
+        .sum();
+
+    let base_style = Style::default()
+        .fg(palette.menu_fg)
+        .bg(top_bar_bg)
+        .add_modifier(Modifier::BOLD);
+
+    let parts = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(0), Constraint::Length(ws_width)])
+        .split(area);
+
+    frame.render_widget(Paragraph::new(left_line).style(base_style), parts[0]);
+    frame.render_widget(
+        Paragraph::new(Line::from(ws_spans)).style(base_style),
+        parts[1],
+    );
 }
 
 /// Returns a short badge indicating the current context (editor filename, TERM, etc.).
@@ -183,12 +204,12 @@ pub fn workspace_switcher_spans(
         };
         let label = if idx == active_workspace {
             if let Some(hint) = cwd_hint {
-                format!("{}:{}", idx + 1, hint)
+                format!(" {}:{} ", idx + 1, hint)
             } else {
-                format!("[{}]", idx + 1)
+                format!(" {} ", idx + 1)
             }
         } else {
-            format!("[{}]", idx + 1)
+            format!(" {} ", idx + 1)
         };
         spans.push(Span::styled(label, style));
         spans.push(Span::styled(" ", Style::default().bg(bg)));
