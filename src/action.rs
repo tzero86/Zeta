@@ -185,8 +185,11 @@ pub enum Action {
     SettingsCancelRebind,
     /// A key event captured during rebind mode — becomes the new binding.
     SettingsRebindCapture(crossterm::event::KeyEvent),
+    /// Advance the settings panel to the next tab (Tab key).
     SettingsNextTab,
+    /// Move the settings panel to the previous tab (Shift+Tab).
     SettingsPrevTab,
+    /// Jump directly to a numbered tab (1–4 keys).
     SettingsSelectTab(usize),
     CycleSortMode,
     ToggleDiffMode,

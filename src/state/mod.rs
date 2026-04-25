@@ -2985,9 +2985,8 @@ impl AppState {
 
     pub fn settings_entries_for_tab(
         &self,
-        tab: crate::state::settings::SettingsTab,
+        tab: SettingsTab,
     ) -> Vec<SettingsEntry> {
-        use crate::state::settings::SettingsTab;
         let all = self.settings_entries();
         match tab {
             SettingsTab::Appearance => all
