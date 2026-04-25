@@ -1612,9 +1612,9 @@ impl AppState {
                 self.panes.left.details_view = new_state;
                 self.panes.right.details_view = new_state;
                 self.status_message = if new_state {
-                    String::from("details view on (both panes)")
+                    String::from("rich columns: enabled (both panes)")
                 } else {
-                    String::from("details view off (both panes)")
+                    String::from("rich columns: hidden (both panes)")
                 };
             }
             Action::BeginInlineRename => {
@@ -5117,5 +5117,32 @@ mod tests {
         let ws = format!(" ws {}/{} ", 1, 4);
         assert!(ws.starts_with(" ws "));
         assert!(ws.contains('/'));
+    }
+
+    #[test]
+    fn toggle_details_view_message_matches_new_state() {
+        let mut state = test_state();
+        // Default is details_view = true (ON)
+        assert!(state.panes.active_pane().details_view, "starts ON");
+
+        // Toggle OFF → message should say "off" (view is now off)
+        state.apply(Action::ToggleDetailsView).unwrap();
+        assert!(!state.panes.left.details_view, "now OFF");
+        assert!(!state.panes.right.details_view, "right also OFF");
+        assert!(
+            state.status_message.contains("hidden"),
+            "msg when turning off: {:?}",
+            state.status_message
+        );
+
+        // Toggle ON → message should say "enabled" (view is now on)
+        state.apply(Action::ToggleDetailsView).unwrap();
+        assert!(state.panes.left.details_view, "now ON");
+        assert!(state.panes.right.details_view, "right also ON");
+        assert!(
+            state.status_message.contains("enabled"),
+            "msg when turning on: {:?}",
+            state.status_message
+        );
     }
 }

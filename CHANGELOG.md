@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Diagnostic binary `zeta-font-test`**: Added under `src/bin/` to print NerdFont PUA glyphs alongside reference Unicode chars so users can verify their terminal's font face actually supports NerdFont before chasing a phantom Zeta bug.
 - **Toggle Details View missing from command palette**: The `Ctrl+L` action existed in the View menu and the keymap but was absent from the command palette (`Ctrl+B`), making it invisible to discovery. Added under "View / Layout" with the `Ctrl+L` hint.
 - **Toggle Details View only affecting one pane**: `Action::ToggleDetailsView` mutated only the active pane, leaving the other pane out of sync. The action now toggles both panes together so the user gets a consistent dual-pane view with one shortcut.
+- **Toggle Details View status message ambiguous**: The status message after `Ctrl+L` read "details view on/off (both panes)" which was ambiguous — it was unclear whether "off" meant the view was just disabled or was currently in a disabled state. Reworded to "rich columns: enabled/hidden (both panes)" to clearly describe the resulting state.
 
 ## [0.5.0] - 2025-05-01
 
