@@ -1,13 +1,14 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{block::Title, Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 use crate::preview::ViewBuffer;
+use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedPreviewRow {
@@ -212,9 +213,35 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
     } else {
         Style::default().fg(palette.text_muted)
     };
-    let title = format!(" Preview  {} ", filename);
+    let accent = palette.accent_teal;
+    let title_style = if is_focused {
+        panel_title_focused_style(accent)
+    } else {
+        panel_title_unfocused_style(palette)
+    };
+    let badge_style = Style::default()
+        .fg(palette.surface_bg)
+        .bg(accent)
+        .add_modifier(Modifier::BOLD);
+
+    // Extract extension from filename
+    let ext_hint = filename
+        .split('.')
+        .last()
+        .filter(|e| !e.is_empty() && *e != filename)
+        .map(|e| e.to_ascii_uppercase())
+        .unwrap_or_default();
+
+    let title_line = Line::from(vec![
+        Span::styled(format!(" \u{f02d5} {} ", filename), title_style),
+        Span::styled(
+            if ext_hint.is_empty() { String::new() } else { format!(" .{} ", ext_hint) },
+            Style::default().fg(palette.text_muted),
+        ),
+        Span::styled(" Preview ", badge_style),
+    ]);
     let block = Block::default()
-        .title(title)
+        .title(Title::from(title_line))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
