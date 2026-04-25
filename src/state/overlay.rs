@@ -122,9 +122,7 @@ impl OverlayState {
     /// Returns the flyout submenu selection index if a flyout is open.
     pub fn menu_flyout_selection(&self) -> usize {
         match &self.modal {
-            Some(ModalState::Menu { flyout, .. }) => {
-                flyout.map(|(_, sel)| sel).unwrap_or(0)
-            }
+            Some(ModalState::Menu { flyout, .. }) => flyout.map(|(_, sel)| sel).unwrap_or(0),
             _ => 0,
         }
     }
@@ -668,7 +666,10 @@ mod tests {
     fn open_menu_has_no_flyout() {
         let mut s = OverlayState::default();
         s.apply(&Action::OpenMenu(MenuId::View)).unwrap();
-        assert!(s.menu_flyout().is_none(), "newly opened menu must have no flyout");
+        assert!(
+            s.menu_flyout().is_none(),
+            "newly opened menu must have no flyout"
+        );
     }
 
     #[test]
