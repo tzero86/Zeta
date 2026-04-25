@@ -1,13 +1,16 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{block::Title, Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
 use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 use crate::preview::ViewBuffer;
+use crate::ui::styles::{
+    pane_column_header_style, panel_title_focused_style, panel_title_unfocused_style,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WrappedPreviewRow {
@@ -212,9 +215,37 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
     } else {
         Style::default().fg(palette.text_muted)
     };
-    let title = format!(" Preview  {} ", filename);
+    let accent = palette.accent_teal;
+    let title_style = if is_focused {
+        panel_title_focused_style(accent)
+    } else {
+        panel_title_unfocused_style(palette)
+    };
+    let badge_style = Style::default()
+        .fg(palette.surface_bg)
+        .bg(accent)
+        .add_modifier(Modifier::BOLD);
+
+    // Extract extension from filename
+    let ext_hint = std::path::Path::new(filename)
+        .extension()
+        .map(|e| e.to_string_lossy().to_ascii_uppercase())
+        .unwrap_or_default();
+
+    let title_line = Line::from(vec![
+        Span::styled(format!(" \u{f02d5} {} ", filename), title_style),
+        Span::styled(
+            if ext_hint.is_empty() {
+                String::new()
+            } else {
+                format!(" .{} ", ext_hint)
+            },
+            pane_column_header_style(palette),
+        ),
+        Span::styled(" Preview ", badge_style),
+    ]);
     let block = Block::default()
-        .title(title)
+        .title(Title::from(title_line))
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
@@ -229,7 +260,22 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
         ),
         Some(v) => {
             if cheap_mode {
-                if v.is_markdown() {
+                if v.is_image() {
+                    if let Some(data) = &v.image_data {
+                        let header = format!(
+                            " {}  {}×{}px ",
+                            data.filename, data.orig_width, data.orig_height,
+                        );
+                        frame.render_widget(
+                            Paragraph::new(header).style(
+                                Style::default()
+                                    .fg(palette.text_primary)
+                                    .bg(palette.tools_bg),
+                            ),
+                            inner,
+                        );
+                    }
+                } else if v.is_markdown() {
                     if let Some(source) = v.markdown_source() {
                         let text: String = source
                             .lines()
@@ -262,9 +308,12 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 if let Some(source) = v.markdown_source() {
                     let widget = Paragraph::new(source)
                         .style(Style::default().bg(palette.tools_bg))
-                        .wrap(Wrap { trim: false });
+                        .wrap(Wrap { trim: false })
+                        .scroll((v.scroll_row as u16, 0));
                     frame.render_widget(widget, inner);
                 }
+            } else if v.is_image() {
+                render_image_preview(frame, inner, v, palette);
             } else {
                 let height = inner.height as usize;
                 let (first_line_num, window) = v.visible_window(height);
@@ -274,6 +323,90 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 render_wrapped_preview_view(frame, inner, window, first_line_num + 1, palette);
             }
         }
+    }
+}
+
+fn render_image_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &ViewBuffer,
+    palette: ThemePalette,
+) {
+    let Some(data) = &view.image_data else {
+        return;
+    };
+
+    // Header row
+    if area.height > 0 {
+        let header = Span::styled(
+            format!(
+                " {}  {}×{}px ",
+                data.filename, data.orig_width, data.orig_height
+            ),
+            Style::default()
+                .fg(palette.text_primary)
+                .add_modifier(Modifier::BOLD),
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![header])).style(Style::default().bg(palette.surface_bg)),
+            Rect {
+                x: area.x,
+                y: area.y,
+                width: area.width,
+                height: 1,
+            },
+        );
+    }
+
+    let image_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    if image_area.height == 0 || image_area.width == 0 {
+        return;
+    }
+
+    // Scale pre-decoded pixels to exact viewport size.
+    // Uses a per-image cache keyed by (target_w, target_h) so the resize only
+    // runs once per viewport size — subsequent frames hit the cache.
+    // Triangle (bilinear) is used: ~10× faster than Lanczos3 and visually
+    // indistinguishable at terminal halfblock resolution (~1 pixel per cell).
+    let target_w = image_area.width as u32;
+    let target_h = image_area.height as u32 * 2;
+    let resized = data.scaled_for(target_w, target_h);
+
+    let start = view
+        .scroll_row
+        .min((target_h / 2).saturating_sub(1) as usize);
+    for cell_row in start..(target_h / 2) as usize {
+        let y = image_area.y + (cell_row - start) as u16;
+        if y >= image_area.y + image_area.height {
+            break;
+        }
+        let py_upper = cell_row as u32 * 2;
+        let py_lower = py_upper + 1;
+        let spans: Vec<Span> = (0..target_w)
+            .map(|x| {
+                let up = resized.get_pixel(x, py_upper);
+                let dn = resized.get_pixel(x, py_lower);
+                Span::styled(
+                    "\u{2580}",
+                    Style::default()
+                        .fg(ratatui::style::Color::Rgb(up[0], up[1], up[2]))
+                        .bg(ratatui::style::Color::Rgb(dn[0], dn[1], dn[2])),
+                )
+            })
+            .collect();
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)).style(Style::default().bg(palette.surface_bg)),
+            Rect {
+                x: image_area.x,
+                y,
+                width: image_area.width,
+                height: 1,
+            },
+        );
     }
 }
 

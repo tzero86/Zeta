@@ -4,3 +4,5 @@
 .worktrees/
 node_modules/
 .pi/
+.superpowers/
+screenshot.png

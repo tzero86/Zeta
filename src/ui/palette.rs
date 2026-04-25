@@ -8,8 +8,8 @@ use crate::config::ThemePalette;
 use crate::ui::overlay::render_modal_backdrop;
 use crate::ui::styles::{
     command_palette_entry_hint_style, command_palette_entry_label_style,
-    command_palette_header_style, elevated_surface_style, overlay_footer_style,
-    overlay_title_style,
+    command_palette_header_style, elevated_surface_style, match_highlight_style,
+    overlay_footer_style, overlay_title_style,
 };
 
 pub fn render_command_palette(
@@ -58,17 +58,29 @@ pub fn render_command_palette(
         ])
         .split(inner);
 
-    let input_line = format!("> {}_", state.query);
+    let input_line = Line::from(vec![
+        Span::styled(
+            " ⌕  ",
+            Style::default()
+                .fg(palette.border_focus)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            state.query.clone(),
+            Style::default()
+                .fg(palette.text_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("│", Style::default().fg(palette.text_muted)),
+    ]);
     let input = Paragraph::new(input_line).style(
         Style::default()
             .fg(palette.text_primary)
-            .bg(palette.tools_bg)
-            .add_modifier(Modifier::BOLD),
+            .bg(palette.tools_bg),
     );
     frame.render_widget(input, chunks[0]);
 
-    let footer = Paragraph::new("Type to filter • Enter to run • Esc to close")
-        .style(overlay_footer_style(palette));
+    let footer = Paragraph::new("  Enter run  ·  Esc close").style(overlay_footer_style(palette));
     frame.render_widget(footer, chunks[2]);
 
     let entries = crate::palette::all_entries();
@@ -131,13 +143,37 @@ pub fn render_command_palette(
                 let pad = label_max.saturating_sub(label_text.chars().count());
                 let padding = " ".repeat(pad);
 
-                let line = Line::from(vec![
-                    Span::raw(" "),
-                    Span::styled(label_text + &padding, label_style),
-                    Span::raw("  "),
-                    Span::styled(hint.to_string(), hint_style),
-                    Span::raw(" "),
-                ]);
+                let query_lower = state.query.to_lowercase();
+                let mut label_spans: Vec<Span> = Vec::new();
+                if query_lower.is_empty() {
+                    label_spans.push(Span::styled(label_text.clone() + &padding, label_style));
+                } else {
+                    let mut remaining = label_text.as_str();
+                    while !remaining.is_empty() {
+                        if let Some((before, matched, after)) =
+                            crate::ui::highlight::split_at_match(remaining, &query_lower)
+                        {
+                            if !before.is_empty() {
+                                label_spans.push(Span::styled(before.to_string(), label_style));
+                            }
+                            label_spans.push(Span::styled(
+                                matched.to_string(),
+                                match_highlight_style(palette),
+                            ));
+                            remaining = after;
+                        } else {
+                            label_spans.push(Span::styled(remaining.to_string(), label_style));
+                            break;
+                        }
+                    }
+                    label_spans.push(Span::styled(padding, label_style));
+                }
+                let mut line_spans: Vec<Span> = vec![Span::raw(" ")];
+                line_spans.extend(label_spans);
+                line_spans.push(Span::raw("  "));
+                line_spans.push(Span::styled(hint.to_string(), hint_style));
+                line_spans.push(Span::raw(" "));
+                let line = Line::from(line_spans);
                 ListItem::new(line)
             }
         })

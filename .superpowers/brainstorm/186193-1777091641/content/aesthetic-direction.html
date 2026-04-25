@@ -1,0 +1,132 @@
+<h2>Zeta UI Revamp — Aesthetic Direction</h2>
+<p class="subtitle">This will guide the entire visual identity: borders, colors, modal depth, icon style, and spacing. Pick the direction that feels right for a keyboard-first file manager.</p>
+
+<div class="cards" data-multiselect>
+
+  <div class="card" data-choice="modern-dark" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1a1b26;border:1px solid #7aa2f7;border-radius:6px;padding:10px;font-family:monospace;font-size:12px;color:#c0caf5">
+        <div style="color:#7aa2f7;border-bottom:1px solid #3b4261;padding-bottom:4px;margin-bottom:6px">╭─ [Z]eta ─ File  Edit  View  Go  Tools ──────── [1] [2] ─╮</div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1;border:1px solid #3b4261;border-radius:4px;padding:6px">
+            <div style="color:#7aa2f7;margin-bottom:4px">◈ ~/projects</div>
+            <div style="color:#bb9af7">▶ src/</div>
+            <div style="color:#c0caf5;padding-left:8px">• main.rs</div>
+            <div style="color:#c0caf5;padding-left:8px">• lib.rs</div>
+          </div>
+          <div style="flex:1;border:1px solid #3b4261;border-radius:4px;padding:6px">
+            <div style="color:#7aa2f7;margin-bottom:4px">◈ ~/docs</div>
+            <div style="color:#c0caf5">• README.md</div>
+            <div style="color:#73daca">↗ link → target</div>
+          </div>
+        </div>
+        <div style="background:#16161e;border:1px solid #7aa2f7;border-radius:4px;padding:6px;margin-top:6px;color:#e0af68">
+          ╭─ Move to trash? ──────────────────╮<br/>
+          │  • main.rs                         │<br/>
+          │                          [Confirm] │<br/>
+          ╰───────────────────────────────────╯
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Modern Dark</h3>
+      <p>Tokyo Night / Catppuccin feel. Deep navy backgrounds, subtle rounded borders, cool blue/purple accents. Clean and contemporary.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="retro-classic" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#000080;border:2px solid #00aaff;padding:10px;font-family:monospace;font-size:12px;color:#ffffff">
+        <div style="background:#00aaff;color:#000080;padding:2px 6px;margin-bottom:6px;font-weight:bold"> [Z]eta   File  Edit  View  Go  Tools            [1] [2] </div>
+        <div style="display:flex;gap:6px">
+          <div style="flex:1;border:2px solid #00aaff;padding:6px">
+            <div style="color:#ffff00;margin-bottom:4px">~/projects</div>
+            <div style="color:#ffffff">[D] src/</div>
+            <div style="color:#aaaaaa;padding-left:4px">[F] main.rs</div>
+            <div style="color:#aaaaaa;padding-left:4px">[F] lib.rs</div>
+          </div>
+          <div style="flex:1;border:2px solid #00aaff;padding:6px">
+            <div style="color:#ffff00;margin-bottom:4px">~/docs</div>
+            <div style="color:#aaaaaa">[F] README.md</div>
+            <div style="color:#00ff00">[L] link</div>
+          </div>
+        </div>
+        <div style="background:#000000;border:2px solid #ffff00;padding:6px;margin-top:6px;color:#ffffff">
+          +-- Move to trash? ------------------+<br/>
+          |  [F] main.rs                        |<br/>
+          |                         [ Confirm ] |<br/>
+          +-------------------------------------+
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Retro Classic</h3>
+      <p>Norton Commander heritage. Deep blue backgrounds, bright cyan/yellow accents, hard borders. Familiar to power users of classic file managers.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="minimal-zen" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;border:1px solid #45475a;padding:10px;font-family:monospace;font-size:12px;color:#cdd6f4">
+        <div style="color:#6c7086;border-bottom:1px solid #313244;padding-bottom:4px;margin-bottom:6px">  [Z]eta   file  edit  view  go  tools              [1][2]</div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1;border-left:2px solid #89b4fa;padding-left:8px">
+            <div style="color:#89b4fa;margin-bottom:4px">~/projects</div>
+            <div style="color:#cba6f7"> src/</div>
+            <div style="color:#6c7086;padding-left:10px">main.rs</div>
+            <div style="color:#6c7086;padding-left:10px">lib.rs</div>
+          </div>
+          <div style="flex:1;border-left:1px solid #45475a;padding-left:8px">
+            <div style="color:#6c7086;margin-bottom:4px">~/docs</div>
+            <div style="color:#6c7086">README.md</div>
+            <div style="color:#94e2d5">→ link</div>
+          </div>
+        </div>
+        <div style="background:#181825;padding:8px;margin-top:6px;color:#cdd6f4;border-left:3px solid #f38ba8">
+          <div style="color:#f38ba8">Move to trash?</div>
+          <div style="color:#6c7086;margin-top:4px">main.rs</div>
+          <div style="text-align:right;color:#a6e3a1;margin-top:4px">Enter confirm · Esc cancel</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Minimal Zen</h3>
+      <p>Catppuccin Mocha feel. Muted palette, subtle borders, breathing room. Elegant and easy on the eyes for long sessions.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="synthwave" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#0d0221;border:1px solid #ff2d6b;padding:10px;font-family:monospace;font-size:12px;color:#f8f8f2">
+        <div style="background:linear-gradient(90deg,#ff2d6b22,#7b2fff22);border-bottom:1px solid #ff2d6b;padding:4px 6px;margin-bottom:6px;color:#ff2d6b">⟦Z⟧eta   File  Edit  View  Go  Tools            ❬1❭ ❬2❭</div>
+        <div style="display:flex;gap:8px">
+          <div style="flex:1;border:1px solid #7b2fff55;padding:6px;box-shadow:0 0 4px #7b2fff44">
+            <div style="color:#7b2fff;margin-bottom:4px">◉ ~/projects</div>
+            <div style="color:#ff2d6b">⬡ src/</div>
+            <div style="color:#f8f8f2;padding-left:8px">› main.rs</div>
+            <div style="color:#f8f8f2;padding-left:8px">› lib.rs</div>
+          </div>
+          <div style="flex:1;border:1px solid #7b2fff33;padding:6px">
+            <div style="color:#7b2fff44;margin-bottom:4px">◎ ~/docs</div>
+            <div style="color:#f8f8f2">› README.md</div>
+            <div style="color:#7b2fff">⟿ link</div>
+          </div>
+        </div>
+        <div style="background:#1a0a2e;border:1px solid #ff2d6b;padding:6px;margin-top:6px;color:#f8f8f2">
+          <span style="color:#ff2d6b">⟦</span> Move to trash? <span style="color:#ff2d6b">⟧</span><br/>
+          <span style="color:#7b2fff">›</span> main.rs<br/>
+          <div style="text-align:right;color:#ff2d6b">Enter ✓ · Esc ✗</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Synthwave</h3>
+      <p>Deep purple/pink neon. Bold and distinctive. Makes Zeta instantly recognizable. Higher visual intensity — rewarding for power users.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:16px">
+  <p class="subtitle">💡 You can select multiple if you like elements from several directions — tell me what you like in the terminal too.</p>
+</div>

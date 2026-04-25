@@ -5,8 +5,7 @@ use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragra
 use ratatui::Frame;
 
 use crate::config::ThemePalette;
-use crate::state::SettingsField;
-use crate::state::{AppState, SettingsState};
+use crate::state::{AppState, SettingsField, SettingsState, SettingsTab};
 use crate::ui::overlay::render_modal_backdrop;
 use crate::ui::styles::{elevated_surface_style, overlay_footer_style, overlay_title_style};
 
@@ -17,7 +16,7 @@ pub fn render_settings_panel(
     state: &AppState,
     palette: ThemePalette,
 ) {
-    let entries = state.settings_entries();
+    let entries = state.settings_entries_for_tab(settings.active_tab);
     let width = ((area.width as f32 * 0.84) as u16)
         .clamp(64, 104)
         .min(area.width.saturating_sub(2).max(1));
@@ -54,17 +53,39 @@ pub fn render_settings_panel(
         ])
         .split(inner);
 
-    // Header: normal hint or rebind prompt.
-    let header_text = if let Some(rebind_idx) = settings.rebind_mode {
-        let label = entries.get(rebind_idx).map(|e| e.label).unwrap_or("key");
-        format!(" Rebinding \"{label}\" — press the new key combo (Esc to cancel)")
-    } else {
-        String::from(
-            " Enter/Space toggles or begins rebind  \u{2022}  Up/Down navigates  \u{2022}  Esc closes",
-        )
-    };
-    let intro = Paragraph::new(header_text).style(overlay_footer_style(palette));
-    frame.render_widget(intro, chunks[0]);
+    // Tab bar
+    let tab_bar_spans: Vec<ratatui::text::Span> = [
+        SettingsTab::Appearance,
+        SettingsTab::Panels,
+        SettingsTab::Editor,
+        SettingsTab::Keymaps,
+    ]
+    .iter()
+    .flat_map(|&tab| {
+        let is_active = tab == settings.active_tab;
+        let style = if is_active {
+            ratatui::style::Style::default()
+                .fg(palette.selection_fg)
+                .bg(palette.border_focus)
+                .add_modifier(ratatui::style::Modifier::BOLD)
+        } else {
+            ratatui::style::Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.tools_bg)
+        };
+        vec![
+            ratatui::text::Span::styled(format!(" {} ", tab.label()), style),
+            ratatui::text::Span::styled(
+                "  ",
+                ratatui::style::Style::default().bg(palette.tools_bg),
+            ),
+        ]
+    })
+    .collect();
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(ratatui::text::Line::from(tab_bar_spans)),
+        chunks[0],
+    );
 
     let rows: Vec<ListItem<'_>> = entries
         .iter()

@@ -1,8 +1,10 @@
 use crate::config::ThemePalette;
 use crate::state::terminal::TerminalState;
+use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::widgets::{Block, Borders};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{block::Title, Block, Borders};
 use ratatui::Frame;
 
 pub fn render_terminal(
@@ -12,9 +14,23 @@ pub fn render_terminal(
     palette: ThemePalette,
     focused: bool,
 ) {
+    let accent = palette.accent_green;
+    let title_style = if focused {
+        panel_title_focused_style(accent)
+    } else {
+        panel_title_unfocused_style(palette)
+    };
+    let badge_style = Style::default()
+        .fg(palette.surface_bg)
+        .bg(accent)
+        .add_modifier(Modifier::BOLD);
+    let title_line = Line::from(vec![
+        Span::styled(" \u{f489} Terminal ", title_style),
+        Span::styled(" Shell ", badge_style),
+    ]);
     let block = Block::default()
         .borders(Borders::TOP)
-        .title(" Terminal ")
+        .title(Title::from(title_line))
         .border_style(if focused {
             Style::default().fg(palette.border_focus)
         } else {

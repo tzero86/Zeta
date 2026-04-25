@@ -1,12 +1,16 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{block::Title, Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::config::ThemePalette;
 use crate::editor::{EditorBuffer, EditorRenderState};
 use crate::ui::code_view::{
     render_code_view, CodeViewRenderArgs, SearchHighlight, SelectionHighlight,
+};
+use crate::ui::styles::{
+    dirty_indicator_style, panel_title_focused_style, panel_title_unfocused_style,
 };
 
 pub struct RenderEditorArgs<'a> {
@@ -88,15 +92,51 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         Style::default().fg(palette.text_muted)
     };
 
-    let path = editor
+    let filename = editor
         .path
         .as_ref()
-        .map(|value| value.display().to_string())
-        .unwrap_or_else(|| String::from("<unnamed>"));
-    let dirty_marker = if editor.is_dirty { "*" } else { "" };
-    let title = format!("Editor{}  {}", dirty_marker, path);
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| String::from("[untitled]"));
+    let parent = editor
+        .path
+        .as_ref()
+        .and_then(|p| p.parent())
+        .and_then(|d| d.file_name())
+        .map(|n| format!("{}/", n.to_string_lossy()))
+        .unwrap_or_default();
+    let dirty_part = if editor.is_dirty { " ● " } else { "   " };
+    let (cursor_line, cursor_col) = editor.cursor_line_col();
+    let ln_col = format!(" Ln {} · Col {} ", cursor_line + 1, cursor_col + 1);
+    let accent = palette.border_editor_focus;
+    let title_style = if is_focused {
+        panel_title_focused_style(accent)
+    } else {
+        panel_title_unfocused_style(palette)
+    };
+    let dirty_style = if editor.is_dirty {
+        dirty_indicator_style(palette)
+    } else {
+        title_style
+    };
+    let badge_style = Style::default()
+        .fg(palette.surface_bg)
+        .bg(accent)
+        .add_modifier(Modifier::BOLD);
+    let title_line = Line::from(vec![
+        Span::styled(format!(" \u{f0187} {} ", filename), title_style),
+        Span::styled(dirty_part, dirty_style),
+        Span::styled(
+            format!(" {} ", parent),
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        ),
+        Span::styled(ln_col, Style::default().fg(palette.text_subtext)),
+        Span::styled(" Editor ", badge_style),
+    ]);
     let block = Block::default()
-        .title(title)
+        .title(Title::from(title_line))
         .borders(Borders::ALL)
         .border_style(border_style);
     let inner = block.inner(area);

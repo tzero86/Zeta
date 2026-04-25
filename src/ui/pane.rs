@@ -10,7 +10,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::config::{IconMode, ThemePalette};
 use crate::fs::{EntryInfo, EntryKind};
 use crate::git::{FileStatus, RepoStatus};
-use crate::icon::icon_for_kind;
+use crate::icon::icon_for_entry;
 use crate::pane::PaneState;
 use crate::state::AppState;
 
@@ -43,6 +43,7 @@ struct RenderItemArgs<'a> {
     details_view: bool,
     /// Optional display-name override (used by inline rename on the selected row).
     display_name: Option<String>,
+    is_filtered_out: bool,
 }
 
 pub fn pane_chrome_style(is_focused: bool, palette: ThemePalette) -> PaneChrome {
@@ -164,6 +165,17 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
     } else {
         (inner, None)
     };
+
+    let (header_area, list_area) = if pane.details_view && list_area.height > 2 {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Min(1)])
+            .split(list_area);
+        (Some(chunks[0]), chunks[1])
+    } else {
+        (None, list_area)
+    };
+
     let visible_height = list_area.height as usize;
     let visible_entries = pane.visible_entries(visible_height);
     let selected_visible = pane.visible_selection(visible_height);
@@ -186,6 +198,9 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                 } else {
                     None
                 };
+                let is_filtered_out = pane.filter_active
+                    && !pane.filter_query.is_empty()
+                    && !crate::utils::glob_match::matches(&pane.filter_query, &entry.name);
                 render_item(RenderItemArgs {
                     entry,
                     is_focused,
@@ -198,6 +213,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                     diff_colour,
                     details_view: pane.details_view,
                     display_name,
+                    is_filtered_out,
                 })
             })
             .collect()
@@ -219,13 +235,32 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
 
     frame.render_stateful_widget(list.style(chrome.surface), list_area, &mut list_state);
 
+    if let Some(header_area) = header_area {
+        render_column_headers(frame, header_area, palette);
+    }
+
     if let Some(filter_area) = filter_area {
-        let filter = Paragraph::new(format!(" Filter: {}_", pane.filter_query)).style(
-            Style::default()
-                .fg(palette.text_primary)
-                .bg(palette.selection_bg),
-        );
-        frame.render_widget(filter, filter_area);
+        use crate::ui::styles::pane_filter_strip_style;
+        let match_count = pane.filtered_count();
+        let query_display = format!(" ⌕  {}│", pane.filter_query);
+        let count_display = format!(" {} matches  Esc clear", match_count);
+        let query_width = query_display.chars().count();
+        let count_width = count_display.chars().count();
+        let pad = (filter_area.width as usize).saturating_sub(query_width + count_width);
+        let line = Line::from(vec![
+            Span::styled(
+                query_display,
+                pane_filter_strip_style(palette).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" ".repeat(pad), pane_filter_strip_style(palette)),
+            Span::styled(
+                count_display,
+                Style::default()
+                    .fg(palette.accent_green)
+                    .bg(palette.pane_filter_bg),
+            ),
+        ]);
+        frame.render_widget(Paragraph::new(line), filter_area);
     }
 }
 
@@ -270,13 +305,26 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         diff_colour,
         details_view,
         display_name,
+        is_filtered_out,
     } = args;
-    let icon = icon_for_kind(entry.kind, icon_mode);
+    let icon = icon_for_entry(
+        entry.kind,
+        entry.path.extension().and_then(|e| e.to_str()),
+        icon_mode,
+    );
+    // Return dimmed text if this entry is filtered out
+    if is_filtered_out {
+        let name = entry.name.clone();
+        return ListItem::new(Line::from(Span::styled(
+            format!("  {} {}", icon, name),
+            Style::default().fg(palette.text_muted),
+        )));
+    }
     // --- Details view: flat columns (mark | icon | git | name | size | date) ---
     if details_view {
         let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
         let icon_slot = format_icon_slot(icon, icon_mode);
-        let icon_slot_width = display_width(&icon_slot);
+        let icon_slot_width = icon_slot_width(icon, icon_mode);
         let mark_prefix = if is_marked { "* " } else { "  " };
         let (git_char, git_colour) = match git_status {
             Some(s) => (s.symbol(), s.colour()),
@@ -328,11 +376,24 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
         ]));
     }
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
-    let guide = if is_last { "  " } else { "│ " };
-    let branch = if is_last { "└" } else { "├" };
-    // icon already bound above
-    // Tree-view branch connector: always one of two static strings, no format!() needed.
-    let branch_span: &'static str = if is_last { "\u{2514} " } else { "\u{251c} " };
+    // NerdFont's PUA glyphs cause some terminals (Warp + FiraCode NF, etc.) to
+    // pick a font fallback for the whole row, which can blank out the standard
+    // box-drawing tree connectors (U+2514, U+251C, U+2502). Use the heavy
+    // variants in NerdFont mode — they're rendered consistently because the
+    // NerdFont itself supplies them. Other modes keep the lighter line.
+    let (guide, branch_span): (&'static str, &'static str) = match icon_mode {
+        IconMode::NerdFont => {
+            let g = if is_last { "  " } else { "\u{2503} " };
+            let b = if is_last { "\u{2517} " } else { "\u{2523} " };
+            (g, b)
+        }
+        _ => {
+            let g = if is_last { "  " } else { "\u{2502} " };
+            let b = if is_last { "\u{2514} " } else { "\u{251c} " };
+            (g, b)
+        }
+    };
+    let _branch = branch_span;
     let mark_prefix = if is_marked { "* " } else { "  " };
     let name = display_name.unwrap_or_else(|| match entry.kind {
         EntryKind::Directory => format!("{}/", entry.name),
@@ -348,9 +409,14 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     });
     let meta = format_entry_meta(entry);
     let icon_slot = format_icon_slot(icon, icon_mode);
-    let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);
-    let prefix_width = display_width(&prefix) + 2; // +2 for git indicator + space
-                                                   // Git status indicator — always 1 char wide so column alignment is stable.
+    let icon_slot_w = icon_slot_width(icon, icon_mode);
+    let prefix_display_width = display_width(guide)
+        + display_width(branch_span)
+        + display_width(mark_prefix)
+        + icon_slot_w
+        + 1; // space after icon
+    let prefix_width = prefix_display_width + 2; // +2 for git indicator + space
+                                                 // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
         None => (" ", palette.text_muted),
@@ -449,8 +515,27 @@ pub fn pane_row_styles(
 
 pub fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
     match icon_mode {
-        IconMode::Unicode | IconMode::Custom => format!("{icon}  "),
+        // Unicode glyphs are single-width per unicode-width; add 2 spaces for a
+        // consistent 3-column slot.
+        IconMode::Unicode => format!("{icon}  "),
+        // Ascii icons like "[D]" / "[F]" are already multi-char and consume
+        // correct layout width on their own — no extra padding needed.
         IconMode::Ascii => icon.to_string(),
+        // NerdFont PUA glyphs (U+E000–U+F8FF) render as double-wide (2 terminal
+        // columns) in fonts configured with NerdFont, but unicode-width reports
+        // them as ambiguous (width 1). Reserve the extra column explicitly by
+        // only adding 1 trailing space so the total terminal width = 2 + 1 = 3.
+        IconMode::NerdFont => format!("{icon} "),
+    }
+}
+
+/// Returns the logical column width that `format_icon_slot` occupies in the terminal.
+/// For NerdFont mode, PUA glyphs are treated as double-wide (2 cols) + 1 space = 3.
+/// For other modes, delegates to `display_width`.
+pub fn icon_slot_width(icon: &str, icon_mode: IconMode) -> usize {
+    match icon_mode {
+        IconMode::NerdFont => 3, // 2 (double-wide glyph) + 1 (space gap)
+        _ => display_width(&format_icon_slot(icon, icon_mode)),
     }
 }
 
@@ -530,6 +615,27 @@ pub fn human_size(size: u64) -> String {
     }
 }
 
+fn render_column_headers(frame: &mut Frame<'_>, area: Rect, palette: ThemePalette) {
+    use crate::ui::styles::pane_column_header_style;
+    let w = area.width as usize;
+    // Layout mirrors the data row exactly (Unicode icon slot = 2 cols):
+    //   2 (mark) + 2 (icon) + 1 (sp) + 1 (G) + 1 (sp) = 7 left
+    //   9 (size) + 1 (sp) + 16 (date) + 1 (pad) = 27 right
+    let right_fixed = 27usize;
+    let left_fixed = 7usize;
+    let name_width = w.saturating_sub(left_fixed + right_fixed).max(4);
+    let header = format!(
+        "  {icon:<2} G {name:<name_width$}{size:>9} {date:<16} ",
+        icon = "",
+        name = "Name",
+        name_width = name_width,
+        size = "Size",
+        date = "Modified",
+    );
+    let para = Paragraph::new(header).style(pane_column_header_style(palette));
+    frame.render_widget(para, area);
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -564,6 +670,74 @@ mod tests {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(220, 221, 222),
+            accent_mauve: Color::Rgb(230, 231, 232),
+            accent_teal: Color::Rgb(240, 241, 242),
+            accent_green: Color::Rgb(250, 251, 252),
+            accent_yellow: Color::Rgb(10, 20, 30),
+            accent_peach: Color::Rgb(40, 50, 60),
+            accent_red: Color::Rgb(70, 80, 90),
+            modal_halo: Color::Rgb(100, 110, 120),
+            pane_filter_bg: Color::Rgb(130, 140, 150),
+            pane_filter_border: Color::Rgb(160, 170, 180),
+            status_git_bg: Color::Rgb(190, 200, 210),
+            status_entry_bg: Color::Rgb(220, 230, 240),
+            status_workspace_bg: Color::Rgb(250, 10, 20),
+        }
+    }
+
+    #[test]
+    fn nerdfont_tree_row_includes_branch_connectors() {
+        for (icon_mode, label) in [
+            (IconMode::Ascii, "ascii"),
+            (IconMode::Unicode, "unicode"),
+            (IconMode::NerdFont, "nerdfont"),
+        ] {
+            let item = render_item(RenderItemArgs {
+                entry: &EntryInfo {
+                    name: String::from("note.txt"),
+                    path: PathBuf::from("./note.txt"),
+                    kind: EntryKind::File,
+                    size_bytes: Some(1024),
+                    modified: None,
+                    link_target: None,
+                },
+                is_focused: true,
+                is_marked: false,
+                is_last: false,
+                available_width: 60,
+                palette: test_palette(),
+                icon_mode,
+                git_status: None,
+                diff_colour: None,
+                details_view: false,
+                display_name: None,
+                is_filtered_out: false,
+            });
+            // Render to a buffer and assert connector chars survive.
+            let area = Rect::new(0, 0, 60, 1);
+            let mut buf = ratatui::buffer::Buffer::empty(area);
+            ratatui::widgets::Widget::render(
+                ratatui::widgets::List::new(vec![item]),
+                area,
+                &mut buf,
+            );
+            let row: String = (0..area.width)
+                .map(|x| {
+                    buf.cell((x, 0))
+                        .map(|c| c.symbol().to_string())
+                        .unwrap_or_default()
+                })
+                .collect();
+            let expected_branch = if matches!(icon_mode, IconMode::NerdFont) {
+                '\u{2523}' // ┣
+            } else {
+                '\u{251c}' // ├
+            };
+            assert!(
+                row.contains(expected_branch),
+                "{label} mode tree row missing branch connector. row was: {row:?}"
+            );
         }
     }
 
@@ -588,6 +762,7 @@ mod tests {
             diff_colour: None,
             details_view: false,
             display_name: None,
+            is_filtered_out: false,
         });
 
         assert_eq!(item.width(), 40);

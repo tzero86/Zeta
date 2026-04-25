@@ -3,6 +3,7 @@ mod code_view;
 mod debug;
 mod editor;
 mod finder;
+pub(crate) mod highlight;
 pub mod markdown;
 mod menu_bar;
 mod overlay;
@@ -369,13 +370,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         render_open_with_popup(frame, areas[1], items, selection, palette);
     }
 
-    let status = Paragraph::new(Line::raw(state.status_line())).style(
-        Style::default()
-            .fg(palette.status_fg)
-            .bg(palette.status_bg)
-            .add_modifier(Modifier::BOLD),
-    );
-    frame.render_widget(status, areas[2]);
+    render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);
 
     // Debug panel renders last so it always floats above everything else.
@@ -393,6 +388,145 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         hint_bar: areas[3],
         menu_popup: menu_popup_rect,
         terminal_panel: terminal_area,
+    }
+}
+
+fn render_status_bar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    palette: crate::config::ThemePalette,
+) {
+    let zones = state.status_zones();
+    let mut spans = Vec::new();
+
+    if let Some(ref progress) = zones.progress {
+        let op_text = format!(
+            " {} {}/{} — {} ",
+            progress.operation, progress.current, progress.total, progress.current_name,
+        );
+        let bar_width = (area.width as usize).saturating_sub(op_text.len() + 2);
+        let filled = if progress.total > 0 {
+            (progress.current * bar_width as u64 / progress.total) as usize
+        } else {
+            0
+        };
+        let empty = bar_width.saturating_sub(filled);
+        spans.push(Span::styled(
+            format!("{}{}{} ", op_text, "─".repeat(filled), "░".repeat(empty)),
+            Style::default().fg(palette.status_fg).bg(palette.status_bg),
+        ));
+    } else {
+        if let Some(ref git) = zones.git_branch {
+            spans.push(Span::styled(
+                git.clone(),
+                Style::default()
+                    .fg(palette.border_focus)
+                    .bg(palette.status_git_bg),
+            ));
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.text_muted)
+                    .bg(palette.status_bg),
+            ));
+        }
+        if let Some(ref entry) = zones.entry_detail {
+            spans.push(Span::styled(
+                entry.clone(),
+                Style::default()
+                    .fg(palette.text_primary)
+                    .bg(palette.status_entry_bg),
+            ));
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.text_muted)
+                    .bg(palette.status_bg),
+            ));
+        }
+        spans.push(Span::styled(
+            zones.message.clone(),
+            Style::default()
+                .fg(palette.text_subtext)
+                .bg(palette.status_bg),
+        ));
+        if let Some(ref marks) = zones.marks {
+            let size_str = if marks.total_bytes > 0 {
+                format!(" ✦ {} · {} ", marks.count, format_size(marks.total_bytes))
+            } else {
+                format!(" ✦ {} ", marks.count)
+            };
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.text_muted)
+                    .bg(palette.status_bg),
+            ));
+            spans.push(Span::styled(
+                size_str,
+                Style::default()
+                    .fg(palette.accent_yellow)
+                    .bg(palette.status_bg),
+            ));
+        }
+        spans.push(Span::styled(
+            "│",
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.status_bg),
+        ));
+        spans.push(Span::styled(
+            zones.workspace.clone(),
+            Style::default()
+                .fg(palette.accent_mauve)
+                .bg(palette.status_workspace_bg)
+                .add_modifier(Modifier::BOLD),
+        ));
+        // Clock is rendered right-aligned in a separate area below.
+    }
+
+    if zones.progress.is_some() {
+        frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    } else {
+        let clock_text = format!(" {} ", zones.clock);
+        let right_width = (clock_text.chars().count() + 1) as u16; // +1 for │ divider
+        let [body_area, clock_area] = Layout::horizontal([
+            Constraint::Min(0),
+            Constraint::Length(right_width),
+        ])
+        .areas(area);
+        frame.render_widget(Paragraph::new(Line::from(spans)), body_area);
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(
+                    "│",
+                    Style::default()
+                        .fg(palette.text_muted)
+                        .bg(palette.status_bg),
+                ),
+                Span::styled(
+                    clock_text,
+                    Style::default()
+                        .fg(palette.accent_mauve)
+                        .bg(palette.status_bg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ])),
+            clock_area,
+        );
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
@@ -536,6 +670,19 @@ mod tests {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(220, 221, 222),
+            accent_mauve: Color::Rgb(230, 231, 232),
+            accent_teal: Color::Rgb(240, 241, 242),
+            accent_green: Color::Rgb(250, 251, 252),
+            accent_yellow: Color::Rgb(10, 20, 30),
+            accent_peach: Color::Rgb(40, 50, 60),
+            accent_red: Color::Rgb(70, 80, 90),
+            modal_halo: Color::Rgb(100, 110, 120),
+            pane_filter_bg: Color::Rgb(130, 140, 150),
+            pane_filter_border: Color::Rgb(160, 170, 180),
+            status_git_bg: Color::Rgb(190, 200, 210),
+            status_entry_bg: Color::Rgb(220, 230, 240),
+            status_workspace_bg: Color::Rgb(250, 10, 20),
         }
     }
 
@@ -588,24 +735,25 @@ mod tests {
     #[test]
     fn top_bar_workspace_indicator_has_four_pills_and_highlights_active() {
         let p = test_palette();
-        let spans = workspace_switcher_spans(2, 4, true, p);
+        let spans = workspace_switcher_spans(2, 4, None, true, p);
 
         let labels = spans
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<Vec<_>>();
-        assert!(labels.contains(&"[1]"));
-        assert!(labels.contains(&"[2]"));
-        assert!(labels.contains(&"[3]"));
-        assert!(labels.contains(&"[4]"));
+        assert!(labels.contains(&" 1 "));
+        assert!(labels.contains(&" 2 "));
+        // workspace 3 is active (index 2), has CWD prefix " 3 "
+        assert!(labels.iter().any(|l| l.contains('3')));
+        assert!(labels.contains(&" 4 "));
 
         let active = spans
             .iter()
-            .find(|span| span.content.as_ref() == "[3]")
+            .find(|span| span.content.contains('3'))
             .expect("active workspace pill should exist");
         let inactive = spans
             .iter()
-            .find(|span| span.content.as_ref() == "[1]")
+            .find(|span| span.content.as_ref() == " 1 ")
             .expect("inactive workspace pill should exist");
         assert_eq!(active.style.bg, Some(p.selection_bg));
         assert_eq!(active.style.fg, Some(p.selection_fg));

@@ -1,0 +1,123 @@
+<h2>Dynamic Menu Bar</h2>
+<p class="subtitle">The menu bar already detects context (Pane / Editor / Terminal). How should the menus visually adapt when context changes? Showing the same bar in 3 contexts.</p>
+
+<div class="section">
+  <h3 style="color:#89b4fa;margin-bottom:8px">Current: Pane Mode</h3>
+  <div style="background:#181825;font-family:monospace;font-size:11.5px;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:0;align-items:center;margin-bottom:16px">
+    <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+    <span style="color:#45475a;margin:0 4px">│</span>
+    <span style="color:#cdd6f4"><u style="color:#89b4fa">F</u>ile </span>
+    <span style="color:#cdd6f4"><u style="color:#89b4fa">E</u>dit </span>
+    <span style="color:#cdd6f4"><u style="color:#89b4fa">V</u>iew </span>
+    <span style="color:#cdd6f4"><u style="color:#89b4fa">G</u>o </span>
+    <span style="color:#cdd6f4"><u style="color:#89b4fa">T</u>ools </span>
+    <span style="flex:1"></span>
+    <span style="color:#6c7086">[1] [2]</span>
+  </div>
+</div>
+
+<div class="options">
+
+  <div class="option" data-choice="swap-menus" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Swap Menus by Context</h3>
+      <p>Each context gets its own complete menu set. Editor replaces File/Edit/View/Go with File/Edit/Format/View. Terminal gets File/Shell/View. Clean separation — no bleed between contexts.</p>
+      <div style="font-family:monospace;font-size:10.5px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center;margin-bottom:4px">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#cba6f7;padding:0 5px;border-radius:2px;font-size:10px"> ◈ EDITOR  main.rs </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span><u style="color:#89b4fa">F</u>ormat </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#f9e2af;padding:0 5px;border-radius:2px;font-size:10px"> ◈ TERMINAL </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">S</u>hell </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="highlight-relevant" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Same Menus, Context Badge + Dimmed Irrelevant</h3>
+      <p>Menus stay consistent (File/Edit/View/Go/Tools), but items irrelevant to the current context are dimmed. The context badge makes it clear what mode you're in. Zero learning curve.</p>
+      <div style="font-family:monospace;font-size:10.5px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center;margin-bottom:4px">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#cba6f7;padding:0 5px;border-radius:2px;font-size:10px"> ◈ EDITOR  main.rs </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span><u style="color:#89b4fa">E</u>dit </span>
+          <span style="color:#45475a"><u>V</u>iew </span>
+          <span style="color:#45475a"><u>G</u>o </span>
+          <span><u style="color:#89b4fa">T</u>ools </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#f9e2af;padding:0 5px;border-radius:2px;font-size:10px"> ◈ TERMINAL </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span style="color:#45475a"><u>F</u>ile </span>
+          <span style="color:#45475a"><u>E</u>dit </span>
+          <span style="color:#45475a"><u>V</u>iew </span>
+          <span style="color:#45475a"><u>G</u>o </span>
+          <span><u style="color:#89b4fa">T</u>ools </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="context-inject" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Base Menus + Context Injection</h3>
+      <p>Core menus (File/View/Tools) always present. Context-specific menus are injected between them when active — Editor adds "Edit" and "Format", Terminal adds "Shell". Menus expand and contract naturally.</p>
+      <div style="font-family:monospace;font-size:10.5px;margin-top:8px">
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center;margin-bottom:4px">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#cba6f7;padding:0 5px;border-radius:2px;font-size:10px"> ◈ EDITOR  main.rs </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span style="color:#cba6f7;border-bottom:1px solid #cba6f7"><u style="color:#cba6f7">E</u>dit </span>
+          <span style="color:#cba6f7;border-bottom:1px solid #cba6f7"><u style="color:#cba6f7">F</u>ormat </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span><u style="color:#89b4fa">T</u>ools </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+        <div style="background:#181825;padding:3px 6px;border:1px solid #313244;color:#cdd6f4;display:flex;gap:4px;align-items:center">
+          <span style="color:#89b4fa;font-weight:bold">[Z]</span><span style="color:#a6adc8;font-weight:bold">eta </span>
+          <span style="background:#313244;color:#f9e2af;padding:0 5px;border-radius:2px;font-size:10px"> ◈ TERMINAL </span>
+          <span style="color:#45475a;margin:0 2px">│</span>
+          <span><u style="color:#89b4fa">F</u>ile </span>
+          <span style="color:#f9e2af;border-bottom:1px solid #f9e2af"><u style="color:#f9e2af">S</u>hell </span>
+          <span><u style="color:#89b4fa">V</u>iew </span>
+          <span><u style="color:#89b4fa">T</u>ools </span>
+          <span style="flex:1"></span>
+          <span style="color:#6c7086">[1]</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:12px">
+  <p class="subtitle">💡 The context badge (◈ EDITOR main.rs) already exists in the codebase — these options all build on top of it.</p>
+</div>

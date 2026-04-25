@@ -21,6 +21,7 @@ pub enum ThemePreset {
     Monochrome,
     Dracula,
     Zeta,
+    CatppuccinMocha,
 }
 
 impl ThemePreset {
@@ -35,6 +36,7 @@ impl ThemePreset {
             Self::Monochrome => "monochrome",
             Self::Dracula => "dracula",
             Self::Zeta => "zeta",
+            Self::CatppuccinMocha => "catppuccin_mocha",
         }
     }
 }
@@ -66,7 +68,7 @@ impl Default for AppConfig {
         Self {
             theme: ThemeConfig::default(),
             keymap: KeymapConfig::default(),
-            icon_mode: IconMode::default(),
+            icon_mode: detect_icon_mode(),
             pane_layout: PaneLayout::default(),
             preview_panel_open: false,
             preview_on_selection: true,
@@ -129,7 +131,42 @@ pub enum IconMode {
     #[default]
     Unicode,
     Ascii,
-    Custom,
+    #[serde(alias = "custom")]
+    NerdFont,
+}
+
+/// Detect the best icon mode for the current environment.
+/// Called once at first run (when no config file exists yet).
+/// Tries `fc-list` to check for NerdFont-named fonts; falls back to Unicode.
+/// On WSL, fc-list queries Linux-side fonts but the terminal (Windows Terminal,
+/// Warp, etc.) uses Windows fonts — skip font detection and return Unicode.
+pub fn detect_icon_mode() -> IconMode {
+    // Explicit env override for CI or scripted setups
+    if let Ok(val) = std::env::var("ZETA_ICON_MODE") {
+        return match val.to_ascii_lowercase().as_str() {
+            "nerd" | "nerdfont" | "nerd_font" => IconMode::NerdFont,
+            "unicode" => IconMode::Unicode,
+            "ascii" => IconMode::Ascii,
+            _ => IconMode::Unicode,
+        };
+    }
+
+    // On WSL, the terminal is a Windows application that uses Windows-side fonts.
+    // fc-list only sees Linux-side fonts, so NerdFont detection is unreliable.
+    // Users on WSL who have NerdFonts configured can set ZETA_ICON_MODE=nerd.
+    if std::env::var_os("WSL_DISTRO_NAME").is_some() || std::env::var_os("WSL_INTEROP").is_some() {
+        return IconMode::Unicode;
+    }
+
+    // Check fc-list for any font with "nerd" or "powerline" in the family name
+    if let Ok(out) = std::process::Command::new("fc-list").arg(":").output() {
+        let text = String::from_utf8_lossy(&out.stdout).to_lowercase();
+        if text.contains("nerd") || text.contains("powerline") {
+            return IconMode::NerdFont;
+        }
+    }
+
+    IconMode::Unicode
 }
 
 impl AppConfig {
@@ -326,6 +363,21 @@ pub struct ThemePalette {
     pub search_match_active_bg: Color,
     /// Background for text selection highlighting in the editor.
     pub text_sel_bg: Color,
+    // Accent tokens (used by new UI surfaces)
+    pub text_subtext: Color,
+    pub accent_mauve: Color,
+    pub accent_teal: Color,
+    pub accent_green: Color,
+    pub accent_yellow: Color,
+    pub accent_peach: Color,
+    pub accent_red: Color,
+    pub modal_halo: Color,
+    pub pane_filter_bg: Color,
+    pub pane_filter_border: Color,
+    // Zone background tints for the zoned status bar
+    pub status_git_bg: Color,
+    pub status_entry_bg: Color,
+    pub status_workspace_bg: Color,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -397,6 +449,55 @@ impl ThemePalette {
                 preset: String::from("zeta"),
                 warning: None,
             },
+            ThemePreset::CatppuccinMocha => ResolvedTheme {
+                palette: Self::catppuccin_mocha(),
+                preset: String::from("catppuccin_mocha"),
+                warning: None,
+            },
+        }
+    }
+
+    fn catppuccin_mocha() -> Self {
+        Self {
+            menu_bg: Color::Rgb(24, 24, 37),                // mantle
+            menu_fg: Color::Rgb(205, 214, 244),             // text
+            menu_active_bg: Color::Rgb(49, 50, 68),         // surface0/overlay
+            menu_mnemonic_fg: Color::Rgb(203, 166, 247),    // mauve
+            border_focus: Color::Rgb(137, 180, 250),        // blue
+            border_editor_focus: Color::Rgb(250, 179, 135), // peach
+            selection_bg: Color::Rgb(69, 71, 90),           // surface1
+            selection_fg: Color::Rgb(205, 214, 244),        // text
+            surface_bg: Color::Rgb(30, 30, 46),             // base
+            tools_bg: Color::Rgb(24, 24, 37),               // mantle
+            prompt_bg: Color::Rgb(17, 17, 27),              // crust
+            prompt_border: Color::Rgb(137, 180, 250),       // blue
+            text_primary: Color::Rgb(205, 214, 244),        // text
+            text_muted: Color::Rgb(108, 112, 134),          // overlay0
+            directory_fg: Color::Rgb(137, 180, 250),        // blue
+            symlink_fg: Color::Rgb(148, 226, 213),          // teal
+            file_fg: Color::Rgb(186, 194, 222),             // subtext1
+            status_bg: Color::Rgb(49, 50, 68),              // surface0
+            status_fg: Color::Rgb(205, 214, 244),           // text
+            logo_accent: Color::Rgb(203, 166, 247),         // mauve
+            key_hint_fg: Color::Rgb(249, 226, 175),         // yellow
+            syntect_theme: "Dracula",
+            search_match_bg: Color::Rgb(75, 68, 30),
+            search_match_active_bg: Color::Rgb(160, 140, 30),
+            text_sel_bg: Color::Rgb(40, 55, 100),
+            // New accent tokens
+            text_subtext: Color::Rgb(186, 194, 222), // subtext1
+            accent_mauve: Color::Rgb(203, 166, 247), // mauve
+            accent_teal: Color::Rgb(148, 226, 213),  // teal
+            accent_green: Color::Rgb(166, 227, 161), // green
+            accent_yellow: Color::Rgb(249, 226, 175), // yellow
+            accent_peach: Color::Rgb(250, 179, 135), // peach
+            accent_red: Color::Rgb(243, 139, 168),   // red
+            modal_halo: Color::Rgb(49, 50, 68),      // surface0/overlay
+            pane_filter_bg: Color::Rgb(33, 36, 58),  // blue tint over base
+            pane_filter_border: Color::Rgb(60, 80, 130), // blue 30% over base
+            status_git_bg: Color::Rgb(35, 37, 62),   // blue tint
+            status_entry_bg: Color::Rgb(36, 33, 58), // mauve tint
+            status_workspace_bg: Color::Rgb(46, 36, 70), // strong mauve
         }
     }
 
@@ -427,6 +528,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(180, 190, 200),
+            accent_mauve: Color::Rgb(180, 60, 30),
+            accent_teal: Color::Rgb(118, 196, 182),
+            accent_green: Color::Rgb(100, 200, 120),
+            accent_yellow: Color::Rgb(214, 179, 92),
+            accent_peach: Color::Rgb(230, 130, 80),
+            accent_red: Color::Rgb(220, 80, 80),
+            modal_halo: Color::Rgb(47, 53, 59),
+            pane_filter_bg: Color::Rgb(35, 44, 50),
+            pane_filter_border: Color::Rgb(70, 120, 130),
+            status_git_bg: Color::Rgb(34, 48, 52),
+            status_entry_bg: Color::Rgb(36, 38, 44),
+            status_workspace_bg: Color::Rgb(44, 36, 44),
         }
     }
 
@@ -457,6 +571,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(195, 185, 170),
+            accent_mauve: Color::Rgb(139, 69, 19),
+            accent_teal: Color::Rgb(83, 148, 117),
+            accent_green: Color::Rgb(80, 160, 100),
+            accent_yellow: Color::Rgb(205, 143, 57),
+            accent_peach: Color::Rgb(220, 120, 60),
+            accent_red: Color::Rgb(200, 70, 70),
+            modal_halo: Color::Rgb(52, 47, 40),
+            pane_filter_bg: Color::Rgb(40, 37, 30),
+            pane_filter_border: Color::Rgb(80, 130, 100),
+            status_git_bg: Color::Rgb(36, 42, 38),
+            status_entry_bg: Color::Rgb(38, 36, 32),
+            status_workspace_bg: Color::Rgb(48, 36, 30),
         }
     }
 
@@ -487,6 +614,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(185, 192, 200),
+            accent_mauve: Color::Rgb(101, 45, 32),
+            accent_teal: Color::Rgb(102, 174, 197),
+            accent_green: Color::Rgb(90, 160, 100),
+            accent_yellow: Color::Rgb(221, 176, 98),
+            accent_peach: Color::Rgb(205, 130, 107),
+            accent_red: Color::Rgb(210, 80, 80),
+            modal_halo: Color::Rgb(40, 45, 53),
+            pane_filter_bg: Color::Rgb(30, 38, 44),
+            pane_filter_border: Color::Rgb(70, 120, 140),
+            status_git_bg: Color::Rgb(30, 42, 50),
+            status_entry_bg: Color::Rgb(34, 36, 44),
+            status_workspace_bg: Color::Rgb(40, 32, 44),
         }
     }
 
@@ -518,6 +658,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(40, 160, 60),
+            accent_mauve: Color::Rgb(0, 255, 0),
+            accent_teal: Color::Rgb(44, 213, 255),
+            accent_green: Color::Rgb(0, 200, 64),
+            accent_yellow: Color::Rgb(200, 220, 0),
+            accent_peach: Color::Rgb(200, 150, 0),
+            accent_red: Color::Rgb(220, 50, 80),
+            modal_halo: Color::Rgb(20, 40, 20),
+            pane_filter_bg: Color::Rgb(12, 26, 12),
+            pane_filter_border: Color::Rgb(0, 150, 50),
+            status_git_bg: Color::Rgb(8, 28, 12),
+            status_entry_bg: Color::Rgb(10, 24, 10),
+            status_workspace_bg: Color::Rgb(14, 30, 20),
         }
     }
 
@@ -549,6 +702,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(160, 160, 200),
+            accent_mauve: Color::Rgb(255, 0, 255),
+            accent_teal: Color::Rgb(0, 220, 220),
+            accent_green: Color::Rgb(0, 255, 160),
+            accent_yellow: Color::Rgb(255, 255, 0),
+            accent_peach: Color::Rgb(255, 160, 80),
+            accent_red: Color::Rgb(255, 60, 100),
+            modal_halo: Color::Rgb(30, 30, 50),
+            pane_filter_bg: Color::Rgb(12, 12, 30),
+            pane_filter_border: Color::Rgb(0, 160, 255),
+            status_git_bg: Color::Rgb(10, 14, 30),
+            status_entry_bg: Color::Rgb(12, 10, 28),
+            status_workspace_bg: Color::Rgb(20, 10, 36),
         }
     }
 
@@ -580,6 +746,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(160, 160, 160),
+            accent_mauve: Color::Rgb(190, 190, 190),
+            accent_teal: Color::Rgb(200, 200, 200),
+            accent_green: Color::Rgb(150, 200, 150),
+            accent_yellow: Color::Rgb(210, 210, 150),
+            accent_peach: Color::Rgb(210, 180, 150),
+            accent_red: Color::Rgb(220, 100, 100),
+            modal_halo: Color::Rgb(40, 40, 40),
+            pane_filter_bg: Color::Rgb(22, 22, 22),
+            pane_filter_border: Color::Rgb(80, 80, 80),
+            status_git_bg: Color::Rgb(25, 28, 25),
+            status_entry_bg: Color::Rgb(24, 24, 28),
+            status_workspace_bg: Color::Rgb(30, 24, 30),
         }
     }
 
@@ -610,6 +789,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(190, 195, 220),
+            accent_mauve: Color::Rgb(189, 147, 249),
+            accent_teal: Color::Rgb(139, 233, 253),
+            accent_green: Color::Rgb(80, 250, 123),
+            accent_yellow: Color::Rgb(241, 250, 140),
+            accent_peach: Color::Rgb(255, 184, 108),
+            accent_red: Color::Rgb(255, 85, 85),
+            modal_halo: Color::Rgb(60, 63, 80),
+            pane_filter_bg: Color::Rgb(46, 48, 62),
+            pane_filter_border: Color::Rgb(100, 80, 180),
+            status_git_bg: Color::Rgb(44, 46, 70),
+            status_entry_bg: Color::Rgb(48, 44, 68),
+            status_workspace_bg: Color::Rgb(56, 44, 72),
         }
     }
 
@@ -641,6 +833,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(155, 165, 185),
+            accent_mauve: Color::Rgb(160, 100, 220),
+            accent_teal: Color::Rgb(80, 190, 190),
+            accent_green: Color::Rgb(80, 180, 100),
+            accent_yellow: Color::Rgb(210, 180, 80),
+            accent_peach: Color::Rgb(220, 140, 80),
+            accent_red: Color::Rgb(220, 80, 80),
+            modal_halo: Color::Rgb(45, 50, 60),
+            pane_filter_bg: Color::Rgb(28, 36, 50),
+            pane_filter_border: Color::Rgb(60, 100, 160),
+            status_git_bg: Color::Rgb(28, 36, 56),
+            status_entry_bg: Color::Rgb(32, 30, 52),
+            status_workspace_bg: Color::Rgb(40, 30, 58),
         }
     }
     fn zeta() -> Self {
@@ -672,6 +877,19 @@ impl ThemePalette {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(155, 165, 185),
+            accent_mauve: Color::Rgb(160, 100, 220),
+            accent_teal: Color::Rgb(80, 190, 190),
+            accent_green: Color::Rgb(80, 180, 100),
+            accent_yellow: Color::Rgb(210, 180, 80),
+            accent_peach: Color::Rgb(220, 140, 80),
+            accent_red: Color::Rgb(220, 80, 80),
+            modal_halo: Color::Rgb(45, 50, 60),
+            pane_filter_bg: Color::Rgb(28, 36, 50),
+            pane_filter_border: Color::Rgb(60, 100, 160),
+            status_git_bg: Color::Rgb(28, 36, 56),
+            status_entry_bg: Color::Rgb(32, 30, 52),
+            status_workspace_bg: Color::Rgb(40, 30, 58),
         }
     }
 }
@@ -688,6 +906,7 @@ impl ThemePreset {
             "monochrome" => Some(Self::Monochrome),
             "dracula" => Some(Self::Dracula),
             "zeta" => Some(Self::Zeta),
+            "catppuccin_mocha" => Some(Self::CatppuccinMocha),
             _ => None,
         }
     }
@@ -957,7 +1176,7 @@ mod tests {
 
         let config: AppConfig = toml::from_str(raw).expect("config should parse");
 
-        assert_eq!(config.icon_mode, IconMode::Custom);
+        assert_eq!(config.icon_mode, IconMode::NerdFont);
     }
 
     #[test]

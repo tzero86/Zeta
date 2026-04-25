@@ -1,11 +1,12 @@
 [package]
 name = "zeta"
-version = "0.4.2"
+version = "0.5.1"
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
 arboard = "3"
+chrono = "0.4"
 crossbeam-channel = "0.5"
 crossterm = "0.28"
 dirs = "5"
@@ -27,6 +28,7 @@ tar = "0.4"
 flate2 = "1.0"
 bzip2 = "0.4"
 xz2 = "0.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
 tempfile = "3"
 portable-pty = "0.9"
 vt100 = "0.15"

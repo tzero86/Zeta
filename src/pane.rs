@@ -168,7 +168,7 @@ impl PaneState {
             filter_query: String::new(),
             filter_active: false,
             mark_anchor: None,
-            details_view: false,
+            details_view: true,
             rename_state: None,
             history_back: Vec::new(),
             history_forward: Vec::new(),
@@ -511,6 +511,10 @@ impl PaneState {
     }
 
     pub fn filtered_len_pub(&self) -> usize {
+        self.filtered_len()
+    }
+
+    pub fn filtered_count(&self) -> usize {
         self.filtered_len()
     }
 

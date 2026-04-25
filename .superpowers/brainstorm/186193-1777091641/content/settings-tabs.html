@@ -1,0 +1,135 @@
+<h2>Settings Panel — Tab Layout</h2>
+<p class="subtitle">The 15 settings entries organized into 4 tabs. How should the tabs look and how should you navigate between them?</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="top-tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#11111b;padding:8px;border:1px solid #313244;font-family:monospace;font-size:11px;color:#cdd6f4;min-height:180px">
+        <!-- halo -->
+        <div style="background:#1e1e2e;border:1px solid #89b4fa;margin:4px auto;max-width:300px">
+          <!-- centered title -->
+          <div style="text-align:center;color:#89b4fa;border-bottom:1px solid #313244;padding:4px 0;font-weight:bold">⚙  Settings</div>
+          <!-- tab bar -->
+          <div style="display:flex;border-bottom:1px solid #313244;background:#181825">
+            <div style="padding:3px 10px;color:#cdd6f4;background:#1e1e2e;border-right:1px solid #313244;border-bottom:2px solid #89b4fa;font-weight:bold">󰏘 Appearance</div>
+            <div style="padding:3px 10px;color:#6c7086;border-right:1px solid #313244">󰕮 Panels</div>
+            <div style="padding:3px 10px;color:#6c7086;border-right:1px solid #313244"> Editor</div>
+            <div style="padding:3px 10px;color:#6c7086"> Keymaps</div>
+          </div>
+          <!-- content -->
+          <div style="padding:8px 10px">
+            <div style="display:flex;justify-content:space-between;padding:2px 0">
+              <span style="color:#a6adc8">Theme</span>
+              <span style="color:#cba6f7">Catppuccin Mocha</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0;background:#313244;border-radius:2px;padding:3px 4px;margin:1px 0">
+              <span style="color:#cdd6f4;font-weight:bold">Icon mode</span>
+              <span style="color:#89b4fa">nerd-font ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0">
+              <span style="color:#a6adc8">Pane layout</span>
+              <span style="color:#cba6f7">Dual</span>
+            </div>
+          </div>
+          <!-- footer -->
+          <div style="border-top:1px solid #313244;padding:3px 8px;color:#6c7086;font-size:10px;display:flex;justify-content:space-between">
+            <span>Tab/Shift+Tab switch tabs</span>
+            <span>Esc close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Top Tab Bar</h3>
+      <p>Horizontal tabs across the top with an underline indicator. Tab/Shift+Tab cycles between tabs. Familiar pattern, compact, leaves maximum space for content.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="side-tabs" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#11111b;padding:8px;border:1px solid #313244;font-family:monospace;font-size:11px;color:#cdd6f4;min-height:180px">
+        <div style="background:#1e1e2e;border:1px solid #89b4fa;margin:4px auto;max-width:300px">
+          <div style="text-align:center;color:#89b4fa;border-bottom:1px solid #313244;padding:4px 0;font-weight:bold">⚙  Settings</div>
+          <div style="display:flex">
+            <!-- sidebar -->
+            <div style="width:80px;border-right:1px solid #313244;background:#181825;padding:6px 0">
+              <div style="padding:4px 8px;color:#cdd6f4;background:#313244;border-left:2px solid #89b4fa;font-weight:bold">󰏘 Appear</div>
+              <div style="padding:4px 8px;color:#6c7086">󰕮 Panels</div>
+              <div style="padding:4px 8px;color:#6c7086"> Editor</div>
+              <div style="padding:4px 8px;color:#6c7086"> Keys</div>
+            </div>
+            <!-- content -->
+            <div style="flex:1;padding:8px">
+              <div style="display:flex;justify-content:space-between;padding:2px 0">
+                <span style="color:#a6adc8">Theme</span>
+                <span style="color:#cba6f7">Mocha</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;background:#313244;border-radius:2px;padding:3px 4px;margin:2px 0">
+                <span style="color:#cdd6f4;font-weight:bold">Icon mode</span>
+                <span style="color:#89b4fa">nerd ›</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:2px 0">
+                <span style="color:#a6adc8">Layout</span>
+                <span style="color:#cba6f7">Dual</span>
+              </div>
+            </div>
+          </div>
+          <div style="border-top:1px solid #313244;padding:3px 8px;color:#6c7086;font-size:10px;display:flex;justify-content:space-between">
+            <span>↑↓ navigate · Left/Right switch tabs</span>
+            <span>Esc close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Side Tab Panel</h3>
+      <p>Vertical tab list on the left, content on the right. Left/Right arrows switch tabs, Up/Down navigate entries. More room for tab labels, feels like a proper settings screen.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="segmented" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#11111b;padding:8px;border:1px solid #313244;font-family:monospace;font-size:11px;color:#cdd6f4;min-height:180px">
+        <div style="background:#1e1e2e;border:1px solid #89b4fa;margin:4px auto;max-width:300px">
+          <div style="text-align:center;color:#89b4fa;border-bottom:1px solid #313244;padding:4px 0;font-weight:bold">⚙  Settings</div>
+          <!-- segmented control style -->
+          <div style="display:flex;margin:6px 8px;border:1px solid #313244;border-radius:3px;overflow:hidden;font-size:10px">
+            <div style="flex:1;text-align:center;padding:3px 2px;background:#89b4fa;color:#1e1e2e;font-weight:bold">[1] Appear</div>
+            <div style="flex:1;text-align:center;padding:3px 2px;color:#6c7086;border-left:1px solid #313244">[2] Panels</div>
+            <div style="flex:1;text-align:center;padding:3px 2px;color:#6c7086;border-left:1px solid #313244">[3] Editor</div>
+            <div style="flex:1;text-align:center;padding:3px 2px;color:#6c7086;border-left:1px solid #313244">[4] Keys</div>
+          </div>
+          <!-- content -->
+          <div style="padding:6px 10px">
+            <div style="display:flex;justify-content:space-between;padding:2px 0">
+              <span style="color:#a6adc8">Theme</span>
+              <span style="color:#cba6f7">Catppuccin Mocha</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;background:#313244;border-radius:2px;padding:3px 4px;margin:2px 0">
+              <span style="color:#cdd6f4;font-weight:bold">Icon mode</span>
+              <span style="color:#89b4fa">nerd-font ›</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:2px 0">
+              <span style="color:#a6adc8">Pane layout</span>
+              <span style="color:#cba6f7">Dual</span>
+            </div>
+          </div>
+          <div style="border-top:1px solid #313244;padding:3px 8px;color:#6c7086;font-size:10px;display:flex;justify-content:space-between">
+            <span>1-4 jump to tab · Tab cycles</span>
+            <span>Esc close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Segmented + Number Keys</h3>
+      <p>Pill-style segmented control with number key shortcuts (1–4 jump directly to tab). Fast keyboard navigation, very compact. Norton Commander-ish feel.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:10px">
+  <p class="subtitle">💡 All options will also support a "Search settings" shortcut (like / to filter) for quick access without tab navigation.</p>
+</div>

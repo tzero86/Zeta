@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Palette & Finder Design</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #181825; --overlay: #313244; --crust: #11111b;
+    --text: #cdd6f4; --subtext: #a6adc8; --muted: #6c7086;
+    --blue: #89b4fa; --lavender: #b4befe; --mauve: #cba6f7;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af; --teal: #94e2d5;
+    --peach: #fab387;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 20px; color: var(--mauve); margin-bottom: 4px; }
+  .subtitle { color: var(--subtext); font-size: 13px; margin-bottom: 28px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 0 0 14px; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; margin-bottom: 36px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .design-label { font-size: 12px; font-weight: 700; color: var(--blue); }
+  .rec { display:inline-block;background:rgba(137,180,250,0.15);color:var(--blue);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:700;}
+
+  /* TUI frame */
+  .term-frame {
+    background: var(--surface); border: 1px solid var(--overlay);
+    border-radius: 6px; overflow: hidden;
+    font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 12px;
+  }
+  .term-backdrop {
+    background: rgba(17,17,27,0.70); padding: 16px;
+    display: flex; align-items: flex-start; justify-content: center; min-height: 280px;
+  }
+
+  /* Modal */
+  .modal { background: #24273a; border-radius: 4px; overflow: hidden; }
+  .modal.palette-w { width: 440px; border: 1px solid var(--blue); box-shadow: 0 0 0 1px rgba(137,180,250,0.12), 0 0 24px rgba(137,180,250,0.08); }
+  .modal.finder-w  { width: 480px; border: 1px solid var(--teal);  box-shadow: 0 0 0 1px rgba(148,226,213,0.12), 0 0 24px rgba(148,226,213,0.08); }
+
+  .modal-title { background: var(--overlay); font-weight: 700; font-size: 12px; padding: 5px 10px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .modal-title.blue  { color: var(--blue); }
+  .modal-title.teal  { color: var(--teal); }
+
+  /* Search input */
+  .search-box { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--overlay); }
+  .search-icon { color: var(--muted); font-size: 13px; }
+  .search-input { flex: 1; color: var(--text); font-family: inherit; font-size: 12px; }
+  .search-cursor { display: inline-block; width: 2px; height: 13px; background: var(--blue); vertical-align: middle; margin-left: 1px; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .search-hint { color: var(--muted); font-size: 10px; }
+
+  /* Root hint row (finder) */
+  .root-row { padding: 2px 10px 5px; border-bottom: 1px solid var(--overlay); color: var(--muted); font-size: 10px; }
+
+  /* Results list */
+  .results { padding: 4px 0; }
+  .result-item { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: default; }
+  .result-item.active { background: rgba(137,180,250,0.12); }
+  .result-item.active.teal-sel { background: rgba(148,226,213,0.1); }
+  .result-icon { font-size: 13px; width: 16px; text-align: center; flex-shrink: 0; }
+  .result-label { flex: 1; font-size: 12px; color: var(--text); }
+  .result-label .match { color: var(--yellow); font-weight: 700; }
+  .result-label .match.teal { color: var(--teal); }
+  .result-hint  { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  .result-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0; }
+  .badge-files  { background: rgba(137,180,250,0.15); color: var(--blue); }
+  .badge-git    { background: rgba(166,227,161,0.15); color: var(--green); }
+  .badge-nav    { background: rgba(203,166,247,0.15); color: var(--mauve); }
+  .badge-ssh    { background: rgba(148,226,213,0.15); color: var(--teal); }
+  .badge-view   { background: rgba(249,226,175,0.15); color: var(--yellow); }
+  .badge-sys    { background: rgba(243,139,168,0.15); color: var(--red); }
+
+  /* Section divider in palette */
+  .result-section { padding: 6px 10px 2px; font-size: 10px; font-weight: 700; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+
+  /* Finder path components */
+  .path-dir  { color: var(--subtext); }
+  .path-name { color: var(--text); font-weight: 600; }
+  .path-name .match { color: var(--teal); font-weight: 700; }
+
+  /* Footer */
+  .modal-footer { padding: 4px 10px; border-top: 1px solid var(--overlay); display: flex; gap: 12px; }
+  .footer-key { color: var(--muted); font-size: 10px; }
+  .footer-key span { background: var(--overlay); color: var(--yellow); padding: 0 4px; border-radius: 2px; margin-right: 3px; font-size: 10px; }
+</style>
+</head>
+<body>
+
+<h1>Palette &amp; Finder</h1>
+<p class="subtitle">Palette = commands. Finder = files. Both follow the halo+dim modal depth we already decided.</p>
+
+<div class="section-label">COMMAND PALETTE — 2 options</div>
+<div class="row">
+
+  <!-- Palette A: flat list with keybinding hints -->
+  <div class="col">
+    <div class="design-label">A — Flat list + keybinding hints</div>
+    <div class="term-frame">
+      <div class="term-backdrop">
+        <div class="modal palette-w">
+          <div class="modal-title blue">  Command Palette  </div>
+          <div class="search-box">
+            <span class="search-icon">⌕</span>
+            <span class="search-input">cop<span class="search-cursor"></span></span>
+            <span class="search-hint">↑↓ navigate · Enter run · Esc close</span>
+          </div>
+          <div class="results">
+            <div class="result-item active">
+              <span class="result-icon" style="color:var(--blue)">⊕</span>
+              <span class="result-label"><span class="match">Cop</span>y Selected</span>
+              <span class="result-hint">F5</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--yellow)">⎘</span>
+              <span class="result-label"><span class="match">Cop</span>y Path to Clipboard</span>
+              <span class="result-hint">Ctrl+C</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--green)">⑂</span>
+              <span class="result-label">Git: <span class="match">Cop</span>y Commit Hash</span>
+              <span class="result-hint"></span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--mauve)">◈</span>
+              <span class="result-label">Go: <span class="match">Cop</span>y to Workspace 2</span>
+              <span class="result-hint"></span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--teal)">⎆</span>
+              <span class="result-label">SSH: <span class="match">C</span>onnect t<span class="match">o</span> <span class="match">P</span>roduction</span>
+              <span class="result-hint"></span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span class="footer-key"><span>Enter</span>run</span>
+            <span class="footer-key"><span>Tab</span>preview</span>
+            <span class="footer-key"><span>Esc</span>close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Palette B: grouped by category with badges -->
+  <div class="col">
+    <div class="design-label">B — Grouped by category <span class="rec">RECOMMENDED</span></div>
+    <div class="term-frame">
+      <div class="term-backdrop">
+        <div class="modal palette-w">
+          <div class="modal-title blue">  Command Palette  </div>
+          <div class="search-box">
+            <span class="search-icon">⌕</span>
+            <span class="search-input">cop<span class="search-cursor"></span></span>
+          </div>
+          <div class="results">
+            <div class="result-section">Files</div>
+            <div class="result-item active">
+              <span class="result-icon" style="color:var(--blue)">⊕</span>
+              <span class="result-label"><span class="match">Cop</span>y Selected</span>
+              <span class="result-badge badge-files">Files</span>
+              <span class="result-hint" style="margin-left:6px">F5</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--yellow)">⎘</span>
+              <span class="result-label"><span class="match">Cop</span>y Path</span>
+              <span class="result-badge badge-files">Files</span>
+              <span class="result-hint" style="margin-left:6px">Ctrl+C</span>
+            </div>
+            <div class="result-section">Git</div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--green)">⑂</span>
+              <span class="result-label"><span class="match">Cop</span>y Commit Hash</span>
+              <span class="result-badge badge-git">Git</span>
+            </div>
+            <div class="result-section">Navigation</div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--mauve)">◈</span>
+              <span class="result-label"><span class="match">Cop</span>y to Workspace 2</span>
+              <span class="result-badge badge-nav">Nav</span>
+            </div>
+            <div class="result-section">SSH</div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--teal)">⎆</span>
+              <span class="result-label"><span class="match">C</span>onnect t<span class="match">o</span> <span class="match">P</span>roduction</span>
+              <span class="result-badge badge-ssh">SSH</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span class="footer-key"><span>Enter</span>run</span>
+            <span class="footer-key"><span>Esc</span>close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section-label">FILE FINDER</div>
+<div class="row">
+
+  <div class="col">
+    <div class="design-label">File Finder — match highlight + dir dimmed</div>
+    <div class="term-frame">
+      <div class="term-backdrop">
+        <div class="modal finder-w">
+          <div class="modal-title teal">  File Finder  </div>
+          <div class="search-box">
+            <span class="search-icon" style="color:var(--teal)">⌕</span>
+            <span class="search-input" style="color:var(--text)">main<span class="search-cursor" style="background:var(--teal)"></span></span>
+            <span class="search-hint">fuzzy · ↑↓ · Enter open</span>
+          </div>
+          <div class="root-row">root: ~/projects/zeta</div>
+          <div class="results">
+            <div class="result-item active teal-sel">
+              <span class="result-icon" style="color:var(--blue)">󰈙</span>
+              <span class="result-label">
+                <span class="path-dir">src/ </span><span class="path-name"><span class="match teal">main</span>.rs</span>
+              </span>
+              <span class="result-hint">Rust</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--blue)">󰈙</span>
+              <span class="result-label">
+                <span class="path-dir">src/state/ </span><span class="path-name"><span class="match teal">main</span>tain.rs</span>
+              </span>
+              <span class="result-hint">Rust</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--yellow)">󰈙</span>
+              <span class="result-label">
+                <span class="path-dir">docs/ </span><span class="path-name"><span class="match teal">MAIN</span>TENANCE.md</span>
+              </span>
+              <span class="result-hint">Markdown</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--peach)">󰈙</span>
+              <span class="result-label">
+                <span class="path-dir">scripts/ </span><span class="path-name"><span class="match teal">main</span>tain.sh</span>
+              </span>
+              <span class="result-hint">Shell</span>
+            </div>
+            <div class="result-item">
+              <span class="result-icon" style="color:var(--mauve)">󰉋</span>
+              <span class="result-label">
+                <span class="path-dir">tests/ </span><span class="path-name"><span class="match teal">main</span>_integration.rs</span>
+              </span>
+              <span class="result-hint">Rust</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <span class="footer-key"><span>Enter</span>open</span>
+            <span class="footer-key"><span>Ctrl+Enter</span>open in editor</span>
+            <span class="footer-key"><span>Esc</span>close</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

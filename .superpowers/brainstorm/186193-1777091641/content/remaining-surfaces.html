@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Remaining UI Surfaces</title>
+<style>
+  :root {
+    --bg: #1e1e2e; --surface: #181825; --overlay: #313244; --crust: #11111b;
+    --text: #cdd6f4; --subtext: #a6adc8; --muted: #6c7086;
+    --blue: #89b4fa; --lavender: #b4befe; --mauve: #cba6f7;
+    --green: #a6e3a1; --red: #f38ba8; --yellow: #f9e2af; --teal: #94e2d5;
+    --peach: #fab387;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; padding: 24px; }
+  h1 { font-size: 20px; color: var(--mauve); margin-bottom: 4px; }
+  .subtitle { color: var(--subtext); font-size: 13px; margin-bottom: 28px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin: 32px 0 12px; border-top: 1px solid var(--overlay); padding-top: 20px; }
+  .section-label:first-of-type { margin-top: 0; border-top: none; padding-top: 0; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 12px; }
+  .col { display: flex; flex-direction: column; gap: 6px; }
+  .design-label { font-size: 12px; font-weight: 700; color: var(--blue); margin-bottom: 4px; }
+  .rec { display:inline-block;background:rgba(137,180,250,0.15);color:var(--blue);font-size:9px;padding:1px 5px;border-radius:3px;margin-left:6px;font-weight:700;}
+  .note { color: var(--subtext); font-size: 11px; margin-top: 4px; max-width: 500px; }
+
+  /* TUI chrome */
+  .term { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: 12px; }
+
+  /* ── STATUS BAR ── */
+  .status-bar { display: flex; align-items: stretch; height: 20px; border-radius: 0; }
+  .sb-zone { display: flex; align-items: center; padding: 0 8px; font-size: 11px; white-space: nowrap; }
+  .sb-git    { background: rgba(137,180,250,0.15); color: var(--blue); gap: 4px; }
+  .sb-entry  { background: rgba(203,166,247,0.10); color: var(--text); gap: 6px; }
+  .sb-msg    { flex: 1; background: var(--surface); color: var(--subtext); justify-content: center; font-style: italic; }
+  .sb-msg.ok { color: var(--green); font-style: normal; }
+  .sb-marks  { background: rgba(249,226,175,0.12); color: var(--yellow); gap: 4px; }
+  .sb-ws     { background: rgba(203,166,247,0.18); color: var(--mauve); font-weight: 700; min-width: 52px; justify-content: center; }
+  .sb-sep    { width: 1px; background: var(--overlay); }
+
+  /* option B — plain left/right */
+  .sb-left  { flex: 1; display: flex; align-items: center; gap: 10px; padding: 0 8px; font-size: 11px; background: var(--surface); }
+  .sb-right { display: flex; align-items: center; gap: 8px; padding: 0 8px; font-size: 11px; background: var(--surface); }
+  .sb-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+  /* progress bar in status */
+  .sb-progress { flex: 1; display: flex; align-items: center; padding: 0 8px; background: var(--surface); gap: 6px; font-size: 11px; }
+  .progress-track { flex: 1; height: 4px; background: var(--overlay); border-radius: 2px; }
+  .progress-fill { height: 4px; background: var(--blue); border-radius: 2px; width: 40%; }
+
+  /* option C — classic single line but structured */
+  .sb-classic { display: flex; align-items: center; padding: 0 8px; font-size: 11px; background: var(--surface); height: 20px; gap: 0; }
+  .sb-c-seg { padding: 0 8px; border-right: 1px solid var(--overlay); }
+  .sb-c-seg:last-child { border-right: none; margin-left: auto; }
+
+  /* ── PANE FILTER ── */
+  .pane-mock { border: 1px solid var(--overlay); border-radius: 4px; overflow: hidden; width: 280px; }
+  .pane-header { background: var(--overlay); padding: 3px 8px; font-size: 11px; color: var(--blue); border-bottom: 1px solid var(--muted); display: flex; gap: 8px; }
+  .pane-rows { background: var(--surface); }
+  .pane-row { padding: 2px 8px; font-size: 11px; display: flex; align-items: center; gap: 6px; color: var(--text); }
+  .pane-row.sel { background: rgba(137,180,250,0.15); color: var(--blue); }
+  .pane-row.dim { color: var(--muted); }
+  .pane-filter-a {
+    display: flex; align-items: center; gap: 6px; padding: 3px 8px;
+    background: rgba(137,180,250,0.1); border-top: 1px solid rgba(137,180,250,0.3);
+    font-size: 11px; color: var(--text);
+  }
+  .pane-filter-b {
+    display: flex; align-items: center; padding: 3px 8px;
+    background: var(--overlay); border-top: 1px solid var(--muted);
+    font-size: 11px;
+  }
+  .filter-icon { color: var(--blue); }
+  .filter-input { color: var(--text); flex: 1; }
+  .filter-count { color: var(--green); font-size: 10px; }
+  .filter-hint  { color: var(--muted); font-size: 10px; margin-left: auto; }
+  .filter-cursor { display:inline-block;width:2px;height:11px;background:var(--blue);vertical-align:middle; }
+
+  /* ── PANEL CHROME ── */
+  .panel-mock { border-radius: 4px; overflow: hidden; font-size: 11px; }
+  .panel-title-a {
+    display: flex; align-items: center; padding: 4px 10px; gap: 8px;
+    background: var(--overlay); border-bottom: 1px solid var(--muted);
+    border: 1px solid var(--blue); border-bottom: none; border-radius: 4px 4px 0 0;
+  }
+  .panel-title-b {
+    display: flex; align-items: center; padding: 3px 10px;
+    background: var(--surface); border: 1px solid var(--overlay);
+    border-bottom: none; border-radius: 4px 4px 0 0; gap: 6px;
+  }
+  .panel-body {
+    background: #24273a; border: 1px solid var(--overlay); border-top: none;
+    padding: 6px 10px; border-radius: 0 0 4px 4px; color: var(--subtext); font-size: 11px; height: 60px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .pt-icon { font-size: 14px; }
+  .pt-name { color: var(--text); font-weight: 600; }
+  .pt-dirty { color: var(--peach); font-weight: 700; margin-left: 2px; }
+  .pt-path  { color: var(--muted); flex: 1; }
+  .pt-meta  { color: var(--subtext); font-size: 10px; }
+  .pt-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+  .badge-editor  { background:rgba(137,180,250,0.15);color:var(--blue); }
+  .badge-preview { background:rgba(148,226,213,0.15);color:var(--teal); }
+  .badge-term    { background:rgba(166,227,161,0.15);color:var(--green); }
+  .focused-border { border-color: var(--blue) !important; }
+  .focused-border-teal { border-color: var(--teal) !important; }
+  .focused-border-green { border-color: var(--green) !important; }
+
+  /* panel grid */
+  .panel-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 700px; }
+  .panel-grid-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+
+<h1>Remaining Surfaces</h1>
+<p class="subtitle">Status bar · Pane filter · Panel chrome (Editor / Preview / Terminal)</p>
+
+<!-- ═══════════════════ STATUS BAR ═══════════════════ -->
+<div class="section-label">STATUS BAR — 3 options</div>
+
+<div class="row">
+  <div class="col">
+    <div class="design-label">A — Color-zoned segments <span class="rec">RECOMMENDED</span></div>
+    <div class="term" style="border:1px solid var(--overlay);border-radius:3px;overflow:hidden;">
+      <!-- idle state -->
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">idle</div>
+      <div class="status-bar">
+        <div class="sb-zone sb-git">⎇ main</div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-entry"><span style="color:var(--muted)">󰈙</span> main.rs <span style="color:var(--muted)">·</span> <span style="color:var(--subtext)">-rw-r--r--</span> <span style="color:var(--subtext)">4.2 KB</span></div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-msg ok">directory scanned</div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-ws">ws 1/4</div>
+      </div>
+      <!-- marks state -->
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">with marks</div>
+      <div class="status-bar">
+        <div class="sb-zone sb-git">⎇ feature/ui</div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-entry"><span style="color:var(--muted)">󰉋</span> src/ <span style="color:var(--subtext)">·</span> <span style="color:var(--subtext)">drwxr-xr-x</span></div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-msg">type to filter</div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-marks">✦ 3 · 12.4 MB</div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-ws">ws 2/4</div>
+      </div>
+      <!-- copy in progress -->
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">copy in progress</div>
+      <div class="status-bar">
+        <div class="sb-zone sb-git">⎇ main</div>
+        <div class="sb-sep"></div>
+        <div class="sb-progress">
+          <span style="color:var(--blue)">copy</span>
+          <span style="color:var(--muted)">2/5</span>
+          <div class="progress-track"><div class="progress-fill"></div></div>
+          <span style="color:var(--subtext)">large-file.zip</span>
+        </div>
+        <div class="sb-sep"></div>
+        <div class="sb-zone sb-ws">ws 1/4</div>
+      </div>
+    </div>
+    <div class="note">Git · entry info · message/progress · marks · workspace. Each zone has its own tint. Progress replaces the entry+message zones during file ops.</div>
+  </div>
+
+  <div class="col">
+    <div class="design-label">B — Minimal left/right split</div>
+    <div class="term" style="border:1px solid var(--overlay);border-radius:3px;overflow:hidden;">
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">idle</div>
+      <div style="display:flex;height:20px;background:var(--surface)">
+        <div class="sb-left">
+          <span style="color:var(--blue)">⎇ main</span>
+          <span style="color:var(--overlay)">│</span>
+          <span style="color:var(--subtext)">main.rs</span>
+          <span style="color:var(--muted)">4.2 KB</span>
+          <span style="color:var(--muted)">-rw-r--r--</span>
+        </div>
+        <div class="sb-right">
+          <span style="color:var(--green)">directory scanned</span>
+          <span style="color:var(--overlay)">│</span>
+          <span style="color:var(--mauve)">ws 1/4</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">with marks</div>
+      <div style="display:flex;height:20px;background:var(--surface)">
+        <div class="sb-left">
+          <span style="color:var(--blue)">⎇ main</span>
+          <span style="color:var(--overlay)">│</span>
+          <span style="color:var(--subtext)">src/</span>
+          <span style="color:var(--muted)">drwxr-xr-x</span>
+        </div>
+        <div class="sb-right">
+          <span style="color:var(--yellow)">✦ 3 · 12.4 MB</span>
+          <span style="color:var(--overlay)">│</span>
+          <span style="color:var(--mauve)">ws 2/4</span>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:2px 6px;background:var(--crust)">copy in progress</div>
+      <div style="display:flex;height:20px;background:var(--surface)">
+        <div class="sb-progress">
+          <span style="color:var(--blue)">copy 2/5</span>
+          <div class="progress-track"><div class="progress-fill"></div></div>
+          <span style="color:var(--subtext)">large-file.zip</span>
+        </div>
+        <div class="sb-right">
+          <span style="color:var(--mauve)">ws 1/4</span>
+        </div>
+      </div>
+    </div>
+    <div class="note">Cleaner look. No color zones — uses subtle separators. Marks and workspace always on the right.</div>
+  </div>
+</div>
+
+<!-- ═══════════════════ PANE FILTER ═══════════════════ -->
+<div class="section-label">PANE INLINE FILTER — 2 options</div>
+<div class="row">
+
+  <div class="col">
+    <div class="design-label">A — Accent bar with match count <span class="rec">RECOMMENDED</span></div>
+    <div class="term pane-mock">
+      <div class="pane-header">󰉋 ~/projects/zeta/src</div>
+      <div class="pane-rows">
+        <div class="pane-row dim">󰉋 action</div>
+        <div class="pane-row sel">󰉋 state</div>
+        <div class="pane-row">󰈙 main.rs</div>
+        <div class="pane-row dim">󰈙 config.rs</div>
+      </div>
+      <div class="pane-filter-a">
+        <span class="filter-icon">⌕</span>
+        <span class="filter-input">st<span class="filter-cursor"></span></span>
+        <span class="filter-count">2 matches</span>
+        <span class="filter-hint">Esc clear</span>
+      </div>
+    </div>
+    <div class="note">Blue tint strip at bottom. Search icon, query, live match count, Esc hint. Non-matching entries dimmed (not hidden).</div>
+  </div>
+
+  <div class="col">
+    <div class="design-label">B — Vim-style / bar</div>
+    <div class="term pane-mock">
+      <div class="pane-header">󰉋 ~/projects/zeta/src</div>
+      <div class="pane-rows">
+        <div class="pane-row dim">󰉋 action</div>
+        <div class="pane-row sel">󰉋 state</div>
+        <div class="pane-row">󰈙 main.rs</div>
+        <div class="pane-row dim">󰈙 config.rs</div>
+      </div>
+      <div class="pane-filter-b">
+        <span style="color:var(--blue);font-weight:700;margin-right:6px">/</span>
+        <span class="filter-input" style="flex:1;color:var(--text)">st<span class="filter-cursor"></span></span>
+        <span style="color:var(--muted);font-size:10px">[2/47]</span>
+        <span class="filter-hint" style="margin-left:10px">↑↓ · Esc</span>
+      </div>
+    </div>
+    <div class="note">Vim-like `/` prefix. Shows match position [2/47]. Familiar for vim users.</div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════ PANEL CHROME ═══════════════════ -->
+<div class="section-label">PANEL CHROME — Editor / Preview / Terminal (2 options)</div>
+<div class="row">
+
+  <div class="col">
+    <div class="design-label">A — Rich title: icon + path + metadata right <span class="rec">RECOMMENDED</span></div>
+    <div class="panel-grid term">
+      <div>
+        <div class="panel-grid-label">EDITOR (focused)</div>
+        <div class="panel-mock">
+          <div class="panel-title-a focused-border" style="border-color:var(--blue)">
+            <span class="pt-icon" style="color:var(--blue)">󰈙</span>
+            <span class="pt-name">main.rs</span><span class="pt-dirty">●</span>
+            <span class="pt-path">src/</span>
+            <span class="pt-meta">Ln 42 · Col 8</span>
+            <span class="pt-badge badge-editor">Editor</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+      <div>
+        <div class="panel-grid-label">PREVIEW</div>
+        <div class="panel-mock">
+          <div class="panel-title-a focused-border-teal" style="border-color:var(--teal)">
+            <span class="pt-icon" style="color:var(--yellow)">󰈙</span>
+            <span class="pt-name">README.md</span>
+            <span class="pt-path"></span>
+            <span class="pt-meta">Markdown</span>
+            <span class="pt-badge badge-preview">Preview</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+      <div>
+        <div class="panel-grid-label">TERMINAL</div>
+        <div class="panel-mock">
+          <div class="panel-title-a focused-border-green" style="border-color:var(--green)">
+            <span class="pt-icon" style="color:var(--green)">󰆍</span>
+            <span class="pt-name">Terminal</span>
+            <span class="pt-path" style="color:var(--subtext);font-size:10px">zsh · ~/projects/zeta</span>
+            <span class="pt-badge badge-term">Shell</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">Each panel has its own accent color on the border when focused. Badge on the right labels the panel type. Editor shows Ln/Col. Terminal shows shell + cwd.</div>
+  </div>
+
+</div>
+
+<div class="row">
+  <div class="col">
+    <div class="design-label">B — Minimal: centered name + dirty dot only</div>
+    <div class="panel-grid term">
+      <div>
+        <div class="panel-grid-label">EDITOR (focused)</div>
+        <div class="panel-mock">
+          <div class="panel-title-b" style="border-color:var(--blue);justify-content:center">
+            <span style="color:var(--blue)">󰈙</span>
+            <span class="pt-name">main.rs</span><span class="pt-dirty">●</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+      <div>
+        <div class="panel-grid-label">PREVIEW</div>
+        <div class="panel-mock">
+          <div class="panel-title-b" style="justify-content:center">
+            <span style="color:var(--teal)">󰈙</span>
+            <span class="pt-name">README.md</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+      <div>
+        <div class="panel-grid-label">TERMINAL</div>
+        <div class="panel-mock">
+          <div class="panel-title-b" style="justify-content:center">
+            <span style="color:var(--green)">󰆍</span>
+            <span class="pt-name">Terminal</span>
+          </div>
+          <div class="panel-body">···</div>
+        </div>
+      </div>
+    </div>
+    <div class="note">Maximizes content space. Clean and distraction-free. No Ln/Col or shell path visible.</div>
+  </div>
+</div>
+
+</body>
+</html>

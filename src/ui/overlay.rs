@@ -1,9 +1,10 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Wrap,
+    block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
@@ -11,23 +12,21 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
-    elevated_surface_style, modal_backdrop_style, overlay_footer_style, overlay_key_hint_style,
-    overlay_title_style,
+    elevated_surface_style, key_pill_style, modal_halo_style, overlay_footer_style,
+    overlay_key_hint_style, overlay_title_style, section_divider_style,
 };
 
-pub fn expanded_modal_backdrop(area: Rect, popup: Rect) -> Rect {
-    let halo = (((popup.width.min(popup.height)) as f32) * 0.10) as u16;
-    let pad_x = halo.max(2);
-    let pad_y = halo.max(1);
-    let x = popup.x.saturating_sub(pad_x).max(area.x);
-    let y = popup.y.saturating_sub(pad_y).max(area.y);
-    let right = (popup.x + popup.width + pad_x).min(area.x + area.width);
-    let bottom = (popup.y + popup.height + pad_y).min(area.y + area.height);
-    Rect {
-        x,
-        y,
-        width: right.saturating_sub(x),
-        height: bottom.saturating_sub(y),
+struct DimOverlay;
+
+impl Widget for DimOverlay {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    cell.set_style(Style::default().add_modifier(Modifier::DIM));
+                }
+            }
+        }
     }
 }
 
@@ -37,12 +36,16 @@ pub fn render_modal_backdrop(
     popup: Rect,
     palette: ThemePalette,
 ) {
-    let backdrop = expanded_modal_backdrop(area, popup);
-    frame.render_widget(Clear, backdrop);
-    frame.render_widget(
-        Paragraph::new("").style(modal_backdrop_style(palette)),
-        backdrop,
-    );
+    // Dim the pane content visible behind the modal (no Clear — preserve cell chars)
+    frame.render_widget(DimOverlay, area);
+    // Halo ring: one-cell border around the modal
+    let halo = Rect {
+        x: popup.x.saturating_sub(1).max(area.x),
+        y: popup.y.saturating_sub(1).max(area.y),
+        width: (popup.width + 2).min(area.width.saturating_sub(popup.x.saturating_sub(area.x))),
+        height: (popup.height + 2).min(area.height.saturating_sub(popup.y.saturating_sub(area.y))),
+    };
+    frame.render_widget(Paragraph::new("").style(modal_halo_style(palette)), halo);
 }
 
 pub fn menu_popup_width(items: &[MenuItem]) -> u16 {
@@ -134,7 +137,12 @@ pub fn render_prompt(
             (area.width.min(76), area.height.min(10))
         }
         crate::state::PromptKind::Trash | crate::state::PromptKind::Delete => {
-            (area.width.min(64), area.height.min(7))
+            let n = prompt.source_paths.len().max(1);
+            let shown = n.min(5);
+            // header line + item lines + ("+N more" if truncated) + blank + hint
+            let inner = 1 + shown + usize::from(n > shown) + 1 + 1;
+            let needed = (inner as u16 + 2).max(7);
+            (area.width.min(64), area.height.min(needed))
         }
         _ => (area.width.min(60), area.height.min(8)),
     };
@@ -148,7 +156,11 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(Span::styled(prompt.title, overlay_title_style(palette)))
+        .title(Title::from(Span::styled(
+            prompt.title,
+            overlay_title_style(palette),
+        )))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -161,22 +173,62 @@ pub fn render_prompt(
 
     // Build description text (source path info + hint).
     let desc_text = match prompt.kind {
-        crate::state::PromptKind::Trash => format!(
-            "Move to trash:\n{}\n\nEnter confirm  Esc cancel",
-            prompt
-                .source_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| String::from("<missing target>")),
-        ),
-        crate::state::PromptKind::Delete => format!(
-            "Delete permanently:\n{}\n\nEnter confirm  Esc cancel",
-            prompt
-                .source_path
-                .as_ref()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| String::from("<missing target>")),
-        ),
+        crate::state::PromptKind::Trash => {
+            let paths = &prompt.source_paths;
+            if paths.len() > 1 {
+                let shown = paths.len().min(5);
+                let mut s = format!("Move to trash: {} items\n", paths.len());
+                for p in paths.iter().take(shown) {
+                    let name = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.display().to_string());
+                    s.push_str(&format!("  {}\n", name));
+                }
+                if paths.len() > shown {
+                    s.push_str(&format!("  ... and {} more\n", paths.len() - shown));
+                }
+                s.push_str("\nEnter confirm  Esc cancel");
+                s
+            } else {
+                format!(
+                    "Move to trash:\n{}\n\nEnter confirm  Esc cancel",
+                    prompt
+                        .source_path
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| String::from("<missing target>")),
+                )
+            }
+        }
+        crate::state::PromptKind::Delete => {
+            let paths = &prompt.source_paths;
+            if paths.len() > 1 {
+                let shown = paths.len().min(5);
+                let mut s = format!("Delete permanently: {} items\n", paths.len());
+                for p in paths.iter().take(shown) {
+                    let name = p
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| p.display().to_string());
+                    s.push_str(&format!("  {}\n", name));
+                }
+                if paths.len() > shown {
+                    s.push_str(&format!("  ... and {} more\n", paths.len() - shown));
+                }
+                s.push_str("\nEnter confirm  Esc cancel");
+                s
+            } else {
+                format!(
+                    "Delete permanently:\n{}\n\nEnter confirm  Esc cancel",
+                    prompt
+                        .source_path
+                        .as_ref()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|| String::from("<missing target>")),
+                )
+            }
+        }
         crate::state::PromptKind::Copy | crate::state::PromptKind::Move => format!(
             "Source:\n{}\n\nDestination:  (Enter submit  Esc cancel)",
             prompt
@@ -252,6 +304,77 @@ pub fn render_prompt(
     }
 }
 
+fn render_two_column_help(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    lines: &[String],
+    scroll: u16,
+    palette: ThemePalette,
+) {
+    let mut left: Vec<&str> = Vec::new();
+    let mut right: Vec<&str> = Vec::new();
+    let mut in_left = false;
+    let mut in_right = false;
+    for line in lines {
+        if line == "##COLSTART" {
+            in_left = true;
+            continue;
+        }
+        if line == "##COLBREAK" {
+            in_left = false;
+            in_right = true;
+            continue;
+        }
+        if line == "##COLEND" {
+            break;
+        }
+        if in_left {
+            left.push(line.as_str());
+        }
+        if in_right {
+            right.push(line.as_str());
+        }
+    }
+
+    let halves = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(inner);
+
+    let render_col = |col_lines: &[&str]| -> Vec<Line<'static>> {
+        col_lines
+            .iter()
+            .map(|raw| {
+                if raw.is_empty() {
+                    Line::raw("")
+                } else if let Some(header) = raw.strip_prefix("## ") {
+                    Line::from(Span::styled(
+                        header.to_string(),
+                        section_divider_style(palette),
+                    ))
+                } else if let Some((key, desc)) = raw.split_once('\t') {
+                    let key_part = key.trim();
+                    Line::from(vec![
+                        Span::styled(format!(" {} ", key_part), key_pill_style(palette)),
+                        Span::raw("  "),
+                        Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
+                    ])
+                } else {
+                    Line::from(Span::styled(
+                        raw.to_string(),
+                        Style::default().fg(palette.text_primary),
+                    ))
+                }
+            })
+            .collect()
+    };
+
+    let left_lines = render_col(&left);
+    let right_lines = render_col(&right);
+    frame.render_widget(Paragraph::new(left_lines).scroll((scroll, 0)), halves[0]);
+    frame.render_widget(Paragraph::new(right_lines).scroll((scroll, 0)), halves[1]);
+}
+
 pub fn render_dialog(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -274,7 +397,11 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(Span::styled(dialog.title, overlay_title_style(palette)))
+        .title(Title::from(Span::styled(
+            dialog.title,
+            overlay_title_style(palette),
+        )))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -289,50 +416,54 @@ pub fn render_dialog(
     let max_scroll = dialog.lines.len().saturating_sub(visible_lines);
     let scroll = dialog.scroll.min(max_scroll) as u16;
 
-    let styled_lines: Vec<Line> = dialog
-        .lines
-        .iter()
-        .map(|raw| {
-            if raw.is_empty() {
-                Line::raw("")
-            } else if let Some(header) = raw.strip_prefix("##") {
-                Line::from(Span::styled(
-                    header.to_string(),
-                    Style::default()
-                        .fg(palette.menu_mnemonic_fg)
-                        .add_modifier(Modifier::BOLD),
-                ))
-            } else if let Some((key, desc)) = raw.split_once('\t') {
-                let key_part = key.trim_start();
-                let indent_len = raw.len() - raw.trim_start().len();
-                let indent = " ".repeat(indent_len);
-                Line::from(vec![
-                    Span::raw(indent),
-                    Span::styled(key_part.to_string(), overlay_key_hint_style(palette)),
-                    Span::raw("  "),
-                    Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
-                ])
-            } else if raw == " ____  ________  ____             __               " {
-                Line::from(vec![
-                    Span::raw(" "),
-                    Span::styled(
-                        "____  ________  ____             __               ",
+    let has_two_col = dialog.lines.iter().any(|l| l == "##COLSTART");
+    if has_two_col {
+        render_two_column_help(frame, inner, &dialog.lines, scroll, palette);
+    } else {
+        let styled_lines: Vec<Line> = dialog
+            .lines
+            .iter()
+            .map(|raw| {
+                if raw.is_empty() {
+                    Line::raw("")
+                } else if let Some(art) = raw.strip_prefix("##LOGO ") {
+                    Line::from(Span::styled(
+                        art.to_string(),
+                        Style::default()
+                            .fg(palette.accent_mauve)
+                            .add_modifier(Modifier::BOLD),
+                    ))
+                } else if let Some(header) = raw.strip_prefix("##") {
+                    Line::from(Span::styled(
+                        header.to_string(),
+                        Style::default()
+                            .fg(palette.menu_mnemonic_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ))
+                } else if let Some((key, desc)) = raw.split_once('\t') {
+                    let key_part = key.trim_start();
+                    let indent_len = raw.len() - raw.trim_start().len();
+                    let indent = " ".repeat(indent_len);
+                    Line::from(vec![
+                        Span::raw(indent),
+                        Span::styled(key_part.to_string(), overlay_key_hint_style(palette)),
+                        Span::raw("  "),
+                        Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
+                    ])
+                } else {
+                    Line::from(Span::styled(
+                        raw.clone(),
                         Style::default().fg(palette.text_primary),
-                    ),
-                ])
-            } else {
-                Line::from(Span::styled(
-                    raw.clone(),
-                    Style::default().fg(palette.text_primary),
-                ))
-            }
-        })
-        .collect();
+                    ))
+                }
+            })
+            .collect();
 
-    let paragraph = Paragraph::new(styled_lines)
-        .style(elevated_surface_style(palette))
-        .scroll((scroll, 0));
-    frame.render_widget(paragraph, inner);
+        let paragraph = Paragraph::new(styled_lines)
+            .style(elevated_surface_style(palette))
+            .scroll((scroll, 0));
+        frame.render_widget(paragraph, inner);
+    }
 
     // Render a scrollbar when content overflows the visible area.
     if dialog.lines.len() > visible_lines {
@@ -366,7 +497,8 @@ pub fn render_collision_dialog(
     };
 
     let block = Block::default()
-        .title("Resolve Collision")
+        .title(Title::from("Resolve Collision"))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(
             Style::default()
@@ -442,7 +574,8 @@ pub fn render_destructive_confirm(
                 .fg(palette.prompt_border)
                 .add_modifier(Modifier::BOLD),
         )
-        .title(" Destructive Action ")
+        .title(Title::from(" Destructive Action "))
+        .title_alignment(Alignment::Center)
         .style(Style::default().bg(palette.prompt_bg));
 
     let inner = block.inner(popup_area);
@@ -520,7 +653,11 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Span::styled(" Open With ", overlay_title_style(palette)))
+        .title(Title::from(Span::styled(
+            " Open With ",
+            overlay_title_style(palette),
+        )))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);

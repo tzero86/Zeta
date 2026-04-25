@@ -18,6 +18,8 @@ pub use preview_state::PreviewState;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
+
+use chrono::{FixedOffset, Utc};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -40,8 +42,92 @@ pub use bookmarks::BookmarksState;
 pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuContext, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
-pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
+pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState, SettingsTab};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
+
+// ---------------------------------------------------------------------------
+// Local clock helpers
+// ---------------------------------------------------------------------------
+
+static UTC_OFFSET_MINUTES: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+
+/// Detect the wall-clock UTC offset (in minutes east of UTC).
+///
+/// On a properly configured Linux system `chrono::Local` gives the right answer.
+/// On WSL the system timezone is often left as UTC; in that case we query
+/// Windows via PowerShell (one-time startup cost, then cached).
+fn detect_utc_offset_minutes() -> i32 {
+    // Fast path: /etc/localtime is configured correctly.
+    use chrono::Offset;
+    let secs = chrono::Local::now().offset().fix().local_minus_utc();
+    if secs != 0 {
+        return secs / 60;
+    }
+
+    // WSL fallback: spawn a tiny PowerShell command to read the Windows timezone.
+    #[cfg(target_os = "linux")]
+    {
+        let is_wsl = std::env::var("WSL_DISTRO_NAME").is_ok()
+            || std::path::Path::new("/proc/sys/fs/binfmt_misc/WSLInterop").exists();
+        if is_wsl {
+            for exe in ["pwsh.exe", "powershell.exe"] {
+                if let Ok(out) = std::process::Command::new(exe)
+                    .args([
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        "[int][System.TimeZoneInfo]::Local.GetUtcOffset((Get-Date)).TotalMinutes",
+                    ])
+                    .output()
+                {
+                    if let Ok(s) = std::str::from_utf8(&out.stdout) {
+                        if let Ok(m) = s.trim().parse::<i32>() {
+                            return m;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    0 // fall back to UTC
+}
+
+fn local_clock_string() -> String {
+    let mins = *UTC_OFFSET_MINUTES.get_or_init(detect_utc_offset_minutes);
+    let offset = FixedOffset::east_opt(mins * 60)
+        .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+    Utc::now()
+        .with_timezone(&offset)
+        .format("%-m/%-d/%y - %-I:%M%p")
+        .to_string()
+}
+
+
+#[derive(Clone, Debug)]
+pub struct StatusZones {
+    pub git_branch: Option<String>,
+    pub entry_detail: Option<String>,
+    pub message: String,
+    pub marks: Option<MarksInfo>,
+    pub progress: Option<FileOpProgress>,
+    pub workspace: String,
+    pub clock: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MarksInfo {
+    pub count: usize,
+    pub total_bytes: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct FileOpProgress {
+    pub operation: String,
+    pub current: u64,
+    pub total: u64,
+    pub current_name: String,
+}
 
 #[derive(Debug)]
 struct PendingBatchOperation {
@@ -219,6 +305,9 @@ impl AppState {
     }
 
     pub fn bootstrap(loaded_config: LoadedConfig, started_at: Instant) -> Result<Self> {
+        // Detect local timezone once up-front so the first render doesn't block.
+        UTC_OFFSET_MINUTES.get_or_init(detect_utc_offset_minutes);
+
         let cwd = fs::current_dir()?;
         let secondary = cwd
             .parent()
@@ -383,7 +472,8 @@ impl AppState {
         if let Action::SettingsRebindCapture(key_event) = action {
             if let Some(ModalState::Settings(s)) = &self.overlay.modal {
                 if let Some(rebind_idx) = s.rebind_mode {
-                    let entries = self.settings_entries();
+                    let active_tab = s.active_tab;
+                    let entries = self.settings_entries_for_tab(active_tab);
                     if let Some(SettingsField::KeymapBinding { field, .. }) =
                         entries.get(rebind_idx).map(|e| &e.field)
                     {
@@ -1012,7 +1102,7 @@ impl AppState {
                         Vec::new()
                     }
                 };
-                
+
                 if !marks.is_empty() {
                     // Batch operation: trash multiple marked items
                     // Set source_path to first item for display (renderer shows this, not source_paths)
@@ -1026,8 +1116,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("Press Enter to confirm, or Esc to cancel");
+                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -1037,7 +1126,7 @@ impl AppState {
 
                     let state = crate::state::dialog::DestructiveConfirmState::new(
                         crate::state::dialog::DestructiveAction::Delete,
-                        &[entry.path.clone()],
+                        std::slice::from_ref(&entry.path),
                         refresh,
                     );
 
@@ -1059,7 +1148,7 @@ impl AppState {
                         Vec::new()
                     }
                 };
-                
+
                 if !marks.is_empty() {
                     // Batch operation: permanently delete multiple marked items
                     // Set source_path to first item for display (renderer shows this, not source_paths)
@@ -1073,8 +1162,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("Press Enter to confirm, or Esc to cancel");
+                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -1084,7 +1172,7 @@ impl AppState {
 
                     let state = crate::state::dialog::DestructiveConfirmState::new(
                         crate::state::dialog::DestructiveAction::PermanentDelete,
-                        &[entry.path.clone()],
+                        std::slice::from_ref(&entry.path),
                         refresh,
                     );
 
@@ -1476,20 +1564,52 @@ impl AppState {
                 self.status_message = String::from("discarded editor changes");
             }
             Action::SettingsToggleCurrent => {
-                if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                    let selection = s.selection;
-                    let entries = self.settings_entries();
-                    if let Some(entry) = entries.get(selection).cloned() {
-                        if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
-                            // Begin rebind: enter key-capture mode for this entry.
-                            if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
-                                s.rebind_mode = Some(selection);
-                            }
-                            self.status_message =
-                                String::from("press new key combo (Esc to cancel)");
-                        } else {
-                            self.apply_settings_entry(entry);
+                let (selection, active_tab) =
+                    if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                        (s.selection, s.active_tab)
+                    } else {
+                        return Ok(commands);
+                    };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if let Some(entry) = entries.get(selection).cloned() {
+                    if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
+                        // Begin rebind: enter key-capture mode for this entry.
+                        if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                            s.rebind_mode = Some(selection);
                         }
+                        self.status_message = String::from("press new key combo (Esc to cancel)");
+                    } else {
+                        self.apply_settings_entry(entry);
+                    }
+                }
+            }
+            Action::SettingsMoveDown => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = (s.selection + 1) % entries.len();
+                    }
+                }
+            }
+            Action::SettingsMoveUp => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = if s.selection == 0 {
+                            entries.len() - 1
+                        } else {
+                            s.selection - 1
+                        };
                     }
                 }
             }
@@ -1507,6 +1627,26 @@ impl AppState {
                     s.rebind_mode = None;
                 }
                 self.status_message = String::from("rebind cancelled");
+            }
+            Action::SettingsNextTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.next();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsPrevTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.prev();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsSelectTab(n) => {
+                if let Some(s) = self.settings_mut() {
+                    if let Some(tab) = crate::state::settings::SettingsTab::from_number(*n) {
+                        s.active_tab = tab;
+                        s.selection = 0;
+                    }
+                }
             }
             // Auto-preview after navigation
             Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
@@ -1532,12 +1672,13 @@ impl AppState {
                 self.panes.active_pane_mut().extend_selection_up();
             }
             Action::ToggleDetailsView => {
-                let pane = self.panes.active_pane_mut();
-                pane.details_view = !pane.details_view;
-                self.status_message = if self.panes.active_pane().details_view {
-                    String::from("details view on")
+                let new_state = !self.panes.active_pane().details_view;
+                self.panes.left.details_view = new_state;
+                self.panes.right.details_view = new_state;
+                self.status_message = if new_state {
+                    String::from("rich columns: enabled (both panes)")
                 } else {
-                    String::from("details view off")
+                    String::from("rich columns: hidden (both panes)")
                 };
             }
             Action::BeginInlineRename => {
@@ -2193,7 +2334,8 @@ impl AppState {
                     ThemePreset::Oxide => ThemePreset::Matrix,
                     ThemePreset::Matrix => ThemePreset::Norton,
                     ThemePreset::Norton => ThemePreset::Dracula,
-                    ThemePreset::Dracula => ThemePreset::Zeta,
+                    ThemePreset::Dracula => ThemePreset::CatppuccinMocha,
+                    ThemePreset::CatppuccinMocha => ThemePreset::Zeta,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
@@ -2202,16 +2344,16 @@ impl AppState {
             }
             SettingsField::IconMode(current) => {
                 let next = match current {
-                    IconMode::Unicode => IconMode::Ascii,
+                    IconMode::Unicode => IconMode::NerdFont,
+                    IconMode::NerdFont => IconMode::Ascii,
                     IconMode::Ascii => IconMode::Unicode,
-                    IconMode::Custom => IconMode::Unicode,
                 };
                 self.icon_mode = next;
                 self.config.icon_mode = next;
                 self.status_message = match next {
                     IconMode::Unicode => String::from("icons set to unicode"),
                     IconMode::Ascii => String::from("icons set to ASCII"),
-                    IconMode::Custom => String::from("icons set to custom"),
+                    IconMode::NerdFont => String::from("icons set to NerdFont"),
                 };
                 let _ = self.config.save(Path::new(&self.config_path));
             }
@@ -2672,6 +2814,93 @@ impl AppState {
         )
     }
 
+    pub fn status_zones(&self) -> StatusZones {
+        let active_pane_id = match self.panes.focus {
+            PaneFocus::Left | PaneFocus::Preview => crate::pane::PaneId::Left,
+            PaneFocus::Right => crate::pane::PaneId::Right,
+        };
+
+        let git_branch = self
+            .git_status(active_pane_id)
+            .map(|g| format!(" ⎇ {} ", g.branch));
+
+        let entry_detail = self.panes.active_pane().selected_entry().map(|e| {
+            let icon = crate::icon::icon_for_entry(
+                e.kind,
+                e.path.extension().and_then(|x| x.to_str()),
+                self.icon_mode(),
+            );
+            let name = e
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&e.name);
+            let size_str = e.size_bytes.map(format_file_size).unwrap_or_default();
+            #[cfg(unix)]
+            let perms = format_permissions_unix(&e.path);
+            #[cfg(not(unix))]
+            let perms = String::new();
+            if perms.is_empty() {
+                format!(" {} {}  {} ", icon, name, size_str)
+            } else {
+                format!(" {} {}  {} {} ", icon, name, perms, size_str)
+            }
+        });
+
+        let marks = {
+            let pane = self.panes.active_pane();
+            let count = pane.marked_count();
+            if count > 0 {
+                let total_bytes: u64 = pane
+                    .marked
+                    .iter()
+                    .filter_map(|path| {
+                        pane.entries
+                            .iter()
+                            .find(|e| &e.path == path)
+                            .and_then(|e| e.size_bytes)
+                    })
+                    .sum();
+                Some(MarksInfo { count, total_bytes })
+            } else {
+                None
+            }
+        };
+
+        let progress = self.file_operation_status.as_ref().map(|status| {
+            let current_name = status
+                .current_path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or(".")
+                .to_string();
+            FileOpProgress {
+                operation: status.operation.to_string(),
+                current: status.completed,
+                total: status.total,
+                current_name,
+            }
+        });
+
+        let workspace = format!(
+            " ws {}/{} ",
+            self.active_workspace_index() + 1,
+            self.workspace_count()
+        );
+
+        let clock = local_clock_string();
+
+        StatusZones {
+            git_branch,
+            entry_detail,
+            message: format!(" {} ", self.status_message),
+            marks,
+            progress,
+            workspace,
+            clock,
+        }
+    }
+
     pub fn settings_entries(&self) -> Vec<SettingsEntry> {
         vec![
             SettingsEntry {
@@ -2687,6 +2916,7 @@ impl AppState {
                     "neon" => ThemePreset::Neon,
                     "monochrome" => ThemePreset::Monochrome,
                     "dracula" => ThemePreset::Dracula,
+                    "catppuccin_mocha" => ThemePreset::CatppuccinMocha,
                     _ => ThemePreset::Neon,
                 }),
             },
@@ -2695,7 +2925,7 @@ impl AppState {
                 value: match self.icon_mode {
                     IconMode::Unicode => String::from("unicode"),
                     IconMode::Ascii => String::from("ascii"),
-                    IconMode::Custom => String::from("custom"),
+                    IconMode::NerdFont => String::from("nerdfont"),
                 },
                 hint: "Space",
                 field: SettingsField::IconMode(self.icon_mode),
@@ -2821,9 +3051,57 @@ impl AppState {
         ]
     }
 
+    pub fn settings_entries_for_tab(&self, tab: SettingsTab) -> Vec<SettingsEntry> {
+        let all = self.settings_entries();
+        match tab {
+            SettingsTab::Appearance => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::Theme(_) | SettingsField::IconMode(_)
+                    )
+                })
+                .collect(),
+            SettingsTab::Panels => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::PaneLayout(_)
+                            | SettingsField::PreviewPanel
+                            | SettingsField::PreviewOnSelection
+                            | SettingsField::TerminalOpenByDefault
+                    )
+                })
+                .collect(),
+            SettingsTab::Editor => all
+                .into_iter()
+                .filter(|e| {
+                    matches!(
+                        e.field,
+                        SettingsField::EditorTabWidth(_) | SettingsField::EditorWordWrap
+                    )
+                })
+                .collect(),
+            SettingsTab::Keymaps => all
+                .into_iter()
+                .filter(|e| matches!(e.field, SettingsField::KeymapBinding { .. }))
+                .collect(),
+        }
+    }
+
     // =========================================================================
     // Private Helpers
     // =========================================================================
+
+    fn settings_mut(&mut self) -> Option<&mut crate::state::settings::SettingsState> {
+        if let Some(crate::state::overlay::ModalState::Settings(ref mut s)) = self.overlay.modal {
+            Some(s)
+        } else {
+            None
+        }
+    }
 
     #[allow(dead_code)]
     fn summarize_paths(paths: &[PathBuf]) -> String {
@@ -3100,8 +3378,6 @@ mod tests {
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
         WorkspaceState,
     };
-    use crate::state::dialog::DestructiveAction;
-
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
             title: String::from("left"),
@@ -3131,7 +3407,7 @@ mod tests {
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
-            details_view: false,
+            details_view: true,
             rename_state: None,
             scan_cache: None,
         }
@@ -3423,7 +3699,7 @@ mod tests {
             cache_filter_query: std::cell::RefCell::new(String::new()),
             mode: crate::pane::PaneMode::Real,
             mark_anchor: None,
-            details_view: false,
+            details_view: true,
             rename_state: None,
             scan_cache: None,
         };
@@ -4855,12 +5131,13 @@ mod tests {
 
         // Should have opened batch Trash PromptState
         let is_trash_prompt = match &state.overlay.modal {
-            Some(ModalState::Prompt(p)) => {
-                p.kind == PromptKind::Trash && p.source_paths.len() == 3
-            }
+            Some(ModalState::Prompt(p)) => p.kind == PromptKind::Trash && p.source_paths.len() == 3,
             _ => false,
         };
-        assert!(is_trash_prompt, "Expected Trash PromptState with 3 source_paths");
+        assert!(
+            is_trash_prompt,
+            "Expected Trash PromptState with 3 source_paths"
+        );
 
         // Submit the trash prompt to dispatch operations
         let commands = state
@@ -4899,6 +5176,40 @@ mod tests {
         assert!(
             matches!(state.overlay.modal, Some(ModalState::DestructiveConfirm(_))),
             "destructive confirm state should be in overlay"
+        );
+    }
+
+    #[test]
+    fn status_zones_workspace_format() {
+        let ws = format!(" ws {}/{} ", 1, 4);
+        assert!(ws.starts_with(" ws "));
+        assert!(ws.contains('/'));
+    }
+
+    #[test]
+    fn toggle_details_view_message_matches_new_state() {
+        let mut state = test_state();
+        // Default is details_view = true (ON)
+        assert!(state.panes.active_pane().details_view, "starts ON");
+
+        // Toggle OFF → message should say "off" (view is now off)
+        state.apply(Action::ToggleDetailsView).unwrap();
+        assert!(!state.panes.left.details_view, "now OFF");
+        assert!(!state.panes.right.details_view, "right also OFF");
+        assert!(
+            state.status_message.contains("hidden"),
+            "msg when turning off: {:?}",
+            state.status_message
+        );
+
+        // Toggle ON → message should say "enabled" (view is now on)
+        state.apply(Action::ToggleDetailsView).unwrap();
+        assert!(state.panes.left.details_view, "now ON");
+        assert!(state.panes.right.details_view, "right also ON");
+        assert!(
+            state.status_message.contains("enabled"),
+            "msg when turning on: {:?}",
+            state.status_message
         );
     }
 }

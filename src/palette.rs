@@ -245,6 +245,12 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "View / Layout",
+            label: "Toggle details view (rich columns ↔ tree)",
+            hint: "Ctrl+L",
+            action: Action::ToggleDetailsView,
+        },
+        PaletteEntry {
+            category: "View / Layout",
             label: "Layout: side by side",
             hint: "",
             action: Action::SetPaneLayout(PaneLayout::SideBySide),

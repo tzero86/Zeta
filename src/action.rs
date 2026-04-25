@@ -185,6 +185,12 @@ pub enum Action {
     SettingsCancelRebind,
     /// A key event captured during rebind mode — becomes the new binding.
     SettingsRebindCapture(crossterm::event::KeyEvent),
+    /// Advance the settings panel to the next tab (Tab key).
+    SettingsNextTab,
+    /// Move the settings panel to the previous tab (Shift+Tab).
+    SettingsPrevTab,
+    /// Jump directly to a numbered tab (1–4 keys).
+    SettingsSelectTab(usize),
     CycleSortMode,
     ToggleDiffMode,
     DiffSyncToOther,
@@ -592,6 +598,12 @@ impl Action {
         match key_event.code {
             KeyCode::Esc => Some(Self::CloseSettingsPanel),
             KeyCode::Enter | KeyCode::Char(' ') => Some(Self::SettingsToggleCurrent),
+            KeyCode::Tab => Some(Self::SettingsNextTab),
+            KeyCode::BackTab => Some(Self::SettingsPrevTab),
+            KeyCode::Char(ch @ '1'..='4') => {
+                let n = (ch as usize) - ('0' as usize);
+                Some(Self::SettingsSelectTab(n))
+            }
             KeyCode::Up => Some(Self::SettingsMoveUp),
             KeyCode::Down => Some(Self::SettingsMoveDown),
             _ => None,

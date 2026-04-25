@@ -1,0 +1,132 @@
+<h2>Pane Entry Layout</h2>
+<p class="subtitle">How should each file/folder row look? All options use the Catppuccin Mocha palette + Nerd Font icons (with Unicode fallback). Pick what feels right for information density vs. breathing room.</p>
+
+<div class="cards">
+
+  <div class="card" data-choice="compact-icons" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:10px;font-family:monospace;font-size:11.5px;color:#cdd6f4;line-height:1.7">
+        <div style="color:#6c7086;border-bottom:1px solid #313244;padding-bottom:3px;margin-bottom:5px;font-size:10px"> ~/projects/zeta  ⎇ main</div>
+        <!-- selected row -->
+        <div style="background:#313244;display:flex;justify-content:space-between;padding:0 4px;border-radius:2px">
+          <span><span style="color:#89b4fa"> 󰉋 </span><span style="color:#cdd6f4;font-weight:bold">src</span><span style="color:#6c7086">/</span></span>
+          <span style="color:#6c7086">dir</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#fab387"> 󰏗 </span><span style="color:#cdd6f4">Cargo.toml</span></span>
+          <span style="color:#6c7086">1.2 KB</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#a6e3a1"> 󰍔 </span><span style="color:#cdd6f4">main.rs</span></span>
+          <span style="color:#6c7086">4.8 KB</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#f38ba8"> 󰍔 </span><span style="color:#cdd6f4">lib.rs</span></span>
+          <span style="color:#6c7086">12 KB</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#94e2d5"> 󰌘 </span><span style="color:#cdd6f4">README.md</span></span>
+          <span style="color:#6c7086">3.1 KB</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#cba6f7"> 󰁯 </span><span style="color:#cdd6f4">archive.tar.gz</span></span>
+          <span style="color:#6c7086">88 KB</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span><span style="color:#94e2d5"> 󰌹 </span><span style="color:#89b4fa">link</span><span style="color:#6c7086"> → target</span></span>
+          <span style="color:#6c7086">—</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Compact Icons</h3>
+      <p>Colored icon per file type + name + right-aligned size. Clean, scannable. Close to current density but much richer visually.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="rich-columns" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:10px;font-family:monospace;font-size:11px;color:#cdd6f4;line-height:1.7">
+        <div style="color:#6c7086;border-bottom:1px solid #313244;padding-bottom:3px;margin-bottom:5px;font-size:10px"> ~/projects/zeta  ⎇ main  │  6 items</div>
+        <div style="color:#45475a;font-size:10px;display:flex;justify-content:space-between;padding:0 4px;margin-bottom:2px">
+          <span style="flex:3">Name</span><span style="flex:1;text-align:right">Size</span><span style="flex:2;text-align:right">Modified</span><span style="flex:1;text-align:center">Git</span>
+        </div>
+        <div style="background:#313244;display:flex;justify-content:space-between;padding:0 4px;border-radius:2px">
+          <span style="flex:3"><span style="color:#89b4fa"> 󰉋 </span><span style="font-weight:bold">src</span>/</span>
+          <span style="flex:1;text-align:right;color:#6c7086">—</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 24</span>
+          <span style="flex:1;text-align:center;color:#a6e3a1">M</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span style="flex:3"><span style="color:#fab387"> 󰏗 </span>Cargo.toml</span>
+          <span style="flex:1;text-align:right;color:#6c7086">1.2K</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 23</span>
+          <span style="flex:1;text-align:center;color:#6c7086">·</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span style="flex:3"><span style="color:#a6e3a1"> 󰍔 </span>main.rs</span>
+          <span style="flex:1;text-align:right;color:#6c7086">4.8K</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 24</span>
+          <span style="flex:1;text-align:center;color:#f9e2af">?</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span style="flex:3"><span style="color:#f38ba8"> 󰍔 </span>lib.rs</span>
+          <span style="flex:1;text-align:right;color:#6c7086">12K</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 22</span>
+          <span style="flex:1;text-align:center;color:#6c7086">·</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span style="flex:3"><span style="color:#cba6f7"> 󰁯 </span>archive.tar.gz</span>
+          <span style="flex:1;text-align:right;color:#6c7086">88K</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 20</span>
+          <span style="flex:1;text-align:center;color:#6c7086">·</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:0 4px">
+          <span style="flex:3"><span style="color:#94e2d5"> 󰌹 </span><span style="color:#89b4fa">link</span> → target</span>
+          <span style="flex:1;text-align:right;color:#6c7086">—</span>
+          <span style="flex:2;text-align:right;color:#6c7086">Apr 18</span>
+          <span style="flex:1;text-align:center;color:#6c7086">·</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Rich Columns</h3>
+      <p>Colored icon + aligned columns: Name | Size | Modified | Git. Column headers visible. Power user density — like a good ls -la, but pretty.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="two-line" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div style="background:#1e1e2e;padding:10px;font-family:monospace;font-size:11px;color:#cdd6f4;line-height:1.5">
+        <div style="color:#6c7086;border-bottom:1px solid #313244;padding-bottom:3px;margin-bottom:5px;font-size:10px"> ~/projects/zeta  ⎇ main</div>
+        <!-- selected entry - 2 line -->
+        <div style="background:#313244;padding:2px 4px;border-radius:2px;margin-bottom:4px">
+          <div><span style="color:#89b4fa"> 󰉋 </span><span style="font-weight:bold;color:#cdd6f4">src</span><span style="color:#6c7086">/</span></div>
+          <div style="padding-left:22px;color:#6c7086;font-size:10px">dir · 4 items · Apr 24 14:32  <span style="color:#a6e3a1">M</span></div>
+        </div>
+        <div style="padding:2px 4px;margin-bottom:4px">
+          <div><span style="color:#fab387"> 󰏗 </span><span style="color:#cdd6f4">Cargo.toml</span></div>
+          <div style="padding-left:22px;color:#6c7086;font-size:10px">config · 1.2 KB · Apr 23 09:11</div>
+        </div>
+        <div style="padding:2px 4px;margin-bottom:4px">
+          <div><span style="color:#a6e3a1"> 󰍔 </span><span style="color:#cdd6f4">main.rs</span></div>
+          <div style="padding-left:22px;color:#6c7086;font-size:10px">rust · 4.8 KB · Apr 24 11:05  <span style="color:#f9e2af">?</span></div>
+        </div>
+        <div style="padding:2px 4px">
+          <div><span style="color:#cba6f7"> 󰁯 </span><span style="color:#cdd6f4">archive.tar.gz</span></div>
+          <div style="padding-left:22px;color:#6c7086;font-size:10px">archive · 88 KB · Apr 20 16:40</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Two-Line Entries</h3>
+      <p>Each entry gets two lines: icon + name on top, metadata (type · size · date · git) beneath in muted text. More breathing room, richer context per item.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:12px">
+  <p class="subtitle">💡 The icons shown above are Nerd Font glyphs (󰉋 󰍔 󰌘 etc.). With Unicode fallback: 📁 • ↗. With ASCII fallback: [D] [F] [L].<br>
+  All options support the mark indicator (★ or ✓) on the left for batch operations.</p>
+</div>

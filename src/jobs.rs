@@ -1183,6 +1183,47 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
+fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    use image::ImageReader;
+    use std::io::Cursor;
+
+    let reader = match ImageReader::new(Cursor::new(bytes)).with_guessed_format() {
+        Ok(r) => r,
+        Err(e) => return crate::preview::ViewBuffer::from_plain(&format!("[image: {e}]")),
+    };
+    let img = match reader.decode() {
+        Ok(img) => img,
+        Err(e) => return crate::preview::ViewBuffer::from_plain(&format!("[image: {e}]")),
+    };
+
+    let orig_w = img.width();
+    let orig_h = img.height();
+
+    // Pre-scale wide images to cap memory (max 800px wide), preserving aspect ratio.
+    // Final viewport-sized scaling happens at render time.
+    let pixels = if orig_w > 800 {
+        let scale = 800.0_f32 / orig_w as f32;
+        let pre_h = ((orig_h as f32 * scale) as u32).max(1);
+        img.resize_exact(800, pre_h, image::imageops::FilterType::Lanczos3)
+            .to_rgba8()
+    } else {
+        img.to_rgba8()
+    };
+
+    let filename = path
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("image")
+        .to_owned();
+
+    crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData::new(
+        filename,
+        orig_w,
+        orig_h,
+        std::sync::Arc::new(pixels),
+    ))
+}
+
 fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
@@ -1200,6 +1241,16 @@ fn load_preview_from_bytes(
         return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
 
+    // Render image files as halfblock art before the binary check intercepts them.
+    let extension = path.extension().and_then(|e| e.to_str());
+    let is_image_ext = matches!(
+        extension,
+        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
+    );
+    if is_image_ext {
+        return load_image_preview(bytes, path);
+    }
+
     if looks_like_binary(bytes) {
         let size_bytes = std::fs::metadata(path)
             .map(|m| m.len())
@@ -1209,7 +1260,6 @@ fn load_preview_from_bytes(
     }
 
     let text = String::from_utf8_lossy(bytes);
-    let extension = path.extension().and_then(|e| e.to_str());
 
     // Markdown: store raw text for AST rendering at display time.
     if extension == Some("md") {
