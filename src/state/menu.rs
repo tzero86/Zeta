@@ -57,11 +57,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 mnemonic: 'v',
             },
             MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
-            },
-            MenuTab {
                 id: MenuId::Help,
                 label: " Help ",
                 mnemonic: 'h',
@@ -83,11 +78,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 id: MenuId::View,
                 label: " View ",
                 mnemonic: 'v',
-            },
-            MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
             },
             MenuTab {
                 id: MenuId::Help,
@@ -518,8 +508,26 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
 
 #[cfg(test)]
 mod tests {
-    use super::{menu_items_for, MenuContext};
+    use super::{menu_items_for, menu_tabs, MenuContext};
     use crate::action::{Action, MenuId};
+
+    #[test]
+    fn themes_not_in_pane_menu_tabs() {
+        let tabs = menu_tabs(MenuContext::Pane);
+        assert!(
+            !tabs.iter().any(|t| t.id == MenuId::Themes),
+            "Themes must not appear as a top-level tab in pane context"
+        );
+    }
+
+    #[test]
+    fn themes_not_in_editor_menu_tabs() {
+        let tabs = menu_tabs(MenuContext::Editor);
+        assert!(
+            !tabs.iter().any(|t| t.id == MenuId::Themes),
+            "Themes must not appear as a top-level tab in editor context"
+        );
+    }
 
     #[test]
     fn navigate_menu_starts_with_workspace_switch_items() {
