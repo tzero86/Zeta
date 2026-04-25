@@ -369,13 +369,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         render_open_with_popup(frame, areas[1], items, selection, palette);
     }
 
-    let status = Paragraph::new(Line::raw(state.status_line())).style(
-        Style::default()
-            .fg(palette.status_fg)
-            .bg(palette.status_bg)
-            .add_modifier(Modifier::BOLD),
-    );
-    frame.render_widget(status, areas[2]);
+    render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);
 
     // Debug panel renders last so it always floats above everything else.
@@ -393,6 +387,115 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         hint_bar: areas[3],
         menu_popup: menu_popup_rect,
         terminal_panel: terminal_area,
+    }
+}
+
+fn render_status_bar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    palette: crate::config::ThemePalette,
+) {
+    let zones = state.status_zones();
+    let mut spans = Vec::new();
+
+    if let Some(ref progress) = zones.progress {
+        let op_text = format!(
+            " {} {}/{} — {} ",
+            progress.operation, progress.current, progress.total, progress.current_name,
+        );
+        let bar_width = (area.width as usize).saturating_sub(op_text.len() + 2);
+        let filled = if progress.total > 0 {
+            (progress.current * bar_width as u64 / progress.total) as usize
+        } else {
+            0
+        };
+        let empty = bar_width.saturating_sub(filled);
+        spans.push(Span::styled(
+            format!("{}{}{} ", op_text, "─".repeat(filled), "░".repeat(empty)),
+            Style::default().fg(palette.status_fg).bg(palette.status_bg),
+        ));
+    } else {
+        if let Some(ref git) = zones.git_branch {
+            spans.push(Span::styled(
+                git.clone(),
+                Style::default()
+                    .fg(palette.border_focus)
+                    .bg(palette.status_git_bg),
+            ));
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.modal_halo)
+                    .bg(palette.status_bg),
+            ));
+        }
+        if let Some(ref entry) = zones.entry_detail {
+            spans.push(Span::styled(
+                entry.clone(),
+                Style::default()
+                    .fg(palette.text_primary)
+                    .bg(palette.status_entry_bg),
+            ));
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.modal_halo)
+                    .bg(palette.status_bg),
+            ));
+        }
+        spans.push(Span::styled(
+            zones.message.clone(),
+            Style::default()
+                .fg(palette.text_subtext)
+                .bg(palette.status_bg),
+        ));
+        if let Some(ref marks) = zones.marks {
+            let size_str = if marks.total_bytes > 0 {
+                format!(" ✦ {} · {} ", marks.count, format_size(marks.total_bytes))
+            } else {
+                format!(" ✦ {} ", marks.count)
+            };
+            spans.push(Span::styled(
+                "│",
+                Style::default()
+                    .fg(palette.modal_halo)
+                    .bg(palette.status_bg),
+            ));
+            spans.push(Span::styled(
+                size_str,
+                Style::default()
+                    .fg(palette.accent_yellow)
+                    .bg(palette.status_bg),
+            ));
+        }
+        spans.push(Span::styled(
+            "│",
+            Style::default()
+                .fg(palette.modal_halo)
+                .bg(palette.status_bg),
+        ));
+        spans.push(Span::styled(
+            zones.workspace.clone(),
+            Style::default()
+                .fg(palette.accent_mauve)
+                .bg(palette.status_workspace_bg)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.0} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} B", bytes)
     }
 }
 

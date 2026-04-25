@@ -43,6 +43,31 @@ pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState};
 pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
 
+/// Structured data for the four status bar zones.
+#[derive(Clone, Debug)]
+pub struct StatusZones {
+    pub git_branch: Option<String>,
+    pub entry_detail: Option<String>,
+    pub message: String,
+    pub marks: Option<MarksInfo>,
+    pub progress: Option<FileOpProgress>,
+    pub workspace: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct MarksInfo {
+    pub count: usize,
+    pub total_bytes: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct FileOpProgress {
+    pub operation: String,
+    pub current: u64,
+    pub total: u64,
+    pub current_name: String,
+}
+
 #[derive(Debug)]
 struct PendingBatchOperation {
     pane: PaneId,
@@ -2671,6 +2696,90 @@ impl AppState {
         )
     }
 
+    pub fn status_zones(&self) -> StatusZones {
+        let active_pane_id = match self.panes.focus {
+            PaneFocus::Left | PaneFocus::Preview => crate::pane::PaneId::Left,
+            PaneFocus::Right => crate::pane::PaneId::Right,
+        };
+
+        let git_branch = self
+            .git_status(active_pane_id)
+            .map(|g| format!(" ⎇ {} ", g.branch));
+
+        let entry_detail = self.panes.active_pane().selected_entry().map(|e| {
+            let icon = crate::icon::icon_for_entry(
+                e.kind,
+                e.path.extension().and_then(|x| x.to_str()),
+                self.icon_mode(),
+            );
+            let name = e
+                .path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&e.name);
+            let size_str = e.size_bytes.map(format_file_size).unwrap_or_default();
+            #[cfg(unix)]
+            let perms = format_permissions_unix(&e.path);
+            #[cfg(not(unix))]
+            let perms = String::new();
+            if perms.is_empty() {
+                format!(" {} {}  {} ", icon, name, size_str)
+            } else {
+                format!(" {} {}  {} {} ", icon, name, perms, size_str)
+            }
+        });
+
+        let marks = {
+            let pane = self.panes.active_pane();
+            let count = pane.marked_count();
+            if count > 0 {
+                let total_bytes: u64 = pane
+                    .marked
+                    .iter()
+                    .filter_map(|path| {
+                        pane.entries
+                            .iter()
+                            .find(|e| &e.path == path)
+                            .and_then(|e| e.size_bytes)
+                    })
+                    .sum();
+                Some(MarksInfo { count, total_bytes })
+            } else {
+                None
+            }
+        };
+
+        let progress = self.file_operation_status.as_ref().map(|status| {
+            let current_name = status
+                .current_path
+                .file_name()
+                .and_then(|v| v.to_str())
+                .unwrap_or(".")
+                .to_string();
+            FileOpProgress {
+                operation: status.operation.to_string(),
+                current: status.completed,
+                total: status.total,
+                current_name,
+            }
+        });
+
+        let workspace = format!(
+            " ws:{}/{} ",
+            self.active_workspace_index() + 1,
+            self.workspace_count()
+        );
+
+        StatusZones {
+            git_branch,
+            entry_detail,
+            message: format!(" {} ", self.status_message),
+            marks,
+            progress,
+            workspace,
+        }
+    }
+
     pub fn settings_entries(&self) -> Vec<SettingsEntry> {
         vec![
             SettingsEntry {
@@ -4901,5 +5010,12 @@ mod tests {
             matches!(state.overlay.modal, Some(ModalState::DestructiveConfirm(_))),
             "destructive confirm state should be in overlay"
         );
+    }
+
+    #[test]
+    fn status_zones_workspace_format() {
+        let ws = format!(" ws:{}/{} ", 1, 4);
+        assert!(ws.starts_with(" ws:"));
+        assert!(ws.contains('/'));
     }
 }
