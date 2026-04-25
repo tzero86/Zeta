@@ -601,7 +601,7 @@ mod tests {
     #[test]
     fn top_bar_workspace_indicator_has_four_pills_and_highlights_active() {
         let p = test_palette();
-        let spans = workspace_switcher_spans(2, 4, true, p);
+        let spans = workspace_switcher_spans(2, 4, None, true, p);
 
         let labels = spans
             .iter()
