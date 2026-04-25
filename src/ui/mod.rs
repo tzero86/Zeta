@@ -536,6 +536,19 @@ mod tests {
             search_match_bg: Color::Rgb(80, 64, 0),
             search_match_active_bg: Color::Rgb(185, 140, 10),
             text_sel_bg: Color::Rgb(35, 85, 145),
+            text_subtext: Color::Rgb(220, 221, 222),
+            accent_mauve: Color::Rgb(230, 231, 232),
+            accent_teal: Color::Rgb(240, 241, 242),
+            accent_green: Color::Rgb(250, 251, 252),
+            accent_yellow: Color::Rgb(10, 20, 30),
+            accent_peach: Color::Rgb(40, 50, 60),
+            accent_red: Color::Rgb(70, 80, 90),
+            modal_halo: Color::Rgb(100, 110, 120),
+            pane_filter_bg: Color::Rgb(130, 140, 150),
+            pane_filter_border: Color::Rgb(160, 170, 180),
+            status_git_bg: Color::Rgb(190, 200, 210),
+            status_entry_bg: Color::Rgb(220, 230, 240),
+            status_workspace_bg: Color::Rgb(250, 10, 20),
         }
     }
 

@@ -2193,7 +2193,8 @@ impl AppState {
                     ThemePreset::Oxide => ThemePreset::Matrix,
                     ThemePreset::Matrix => ThemePreset::Norton,
                     ThemePreset::Norton => ThemePreset::Dracula,
-                    ThemePreset::Dracula => ThemePreset::Zeta,
+                    ThemePreset::Dracula => ThemePreset::CatppuccinMocha,
+                    ThemePreset::CatppuccinMocha => ThemePreset::Zeta,
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
@@ -2687,6 +2688,7 @@ impl AppState {
                     "neon" => ThemePreset::Neon,
                     "monochrome" => ThemePreset::Monochrome,
                     "dracula" => ThemePreset::Dracula,
+                    "catppuccin_mocha" => ThemePreset::CatppuccinMocha,
                     _ => ThemePreset::Neon,
                 }),
             },
