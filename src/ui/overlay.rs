@@ -372,57 +372,49 @@ pub fn render_dialog(
     let max_scroll = dialog.lines.len().saturating_sub(visible_lines);
     let scroll = dialog.scroll.min(max_scroll) as u16;
 
-    let styled_lines: Vec<Line> = dialog
-        .lines
-        .iter()
-        .map(|raw| {
-            if raw.is_empty() {
-                Line::raw("")
-            } else if let Some(art) = raw.strip_prefix("##LOGO ") {
-                Line::from(Span::styled(
-                    art.to_string(),
-                    Style::default()
-                        .fg(palette.accent_mauve)
-                        .add_modifier(Modifier::BOLD),
-                ))
-            } else if let Some(header) = raw.strip_prefix("##") {
-                Line::from(Span::styled(
-                    header.to_string(),
-                    Style::default()
-                        .fg(palette.menu_mnemonic_fg)
-                        .add_modifier(Modifier::BOLD),
-                ))
-            } else if let Some((key, desc)) = raw.split_once('\t') {
-                let key_part = key.trim_start();
-                let indent_len = raw.len() - raw.trim_start().len();
-                let indent = " ".repeat(indent_len);
-                Line::from(vec![
-                    Span::raw(indent),
-                    Span::styled(key_part.to_string(), overlay_key_hint_style(palette)),
-                    Span::raw("  "),
-                    Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
-                ])
-            } else if raw == " ____  ________  ____             __               " {
-                Line::from(vec![
-                    Span::raw(" "),
-                    Span::styled(
-                        "____  ________  ____             __               ",
-                        Style::default().fg(palette.text_primary),
-                    ),
-                ])
-            } else {
-                Line::from(Span::styled(
-                    raw.clone(),
-                    Style::default().fg(palette.text_primary),
-                ))
-            }
-        })
-        .collect();
-
     let has_two_col = dialog.lines.iter().any(|l| l == "##COLSTART");
     if has_two_col {
         render_two_column_help(frame, inner, &dialog.lines, scroll, palette);
     } else {
+        let styled_lines: Vec<Line> = dialog
+            .lines
+            .iter()
+            .map(|raw| {
+                if raw.is_empty() {
+                    Line::raw("")
+                } else if let Some(art) = raw.strip_prefix("##LOGO ") {
+                    Line::from(Span::styled(
+                        art.to_string(),
+                        Style::default()
+                            .fg(palette.accent_mauve)
+                            .add_modifier(Modifier::BOLD),
+                    ))
+                } else if let Some(header) = raw.strip_prefix("##") {
+                    Line::from(Span::styled(
+                        header.to_string(),
+                        Style::default()
+                            .fg(palette.menu_mnemonic_fg)
+                            .add_modifier(Modifier::BOLD),
+                    ))
+                } else if let Some((key, desc)) = raw.split_once('\t') {
+                    let key_part = key.trim_start();
+                    let indent_len = raw.len() - raw.trim_start().len();
+                    let indent = " ".repeat(indent_len);
+                    Line::from(vec![
+                        Span::raw(indent),
+                        Span::styled(key_part.to_string(), overlay_key_hint_style(palette)),
+                        Span::raw("  "),
+                        Span::styled(desc.to_string(), Style::default().fg(palette.text_primary)),
+                    ])
+                } else {
+                    Line::from(Span::styled(
+                        raw.clone(),
+                        Style::default().fg(palette.text_primary),
+                    ))
+                }
+            })
+            .collect();
+
         let paragraph = Paragraph::new(styled_lines)
             .style(elevated_surface_style(palette))
             .scroll((scroll, 0));
