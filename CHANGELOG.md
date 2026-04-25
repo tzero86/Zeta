@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **WSL NerdFont detection**: `detect_icon_mode()` previously used `fc-list` (Linux font system) which would erroneously detect NerdFont on WSL even though the Windows Terminal renders Windows-side fonts. On WSL, icon mode now defaults to Unicode. Users who have NerdFonts installed on Windows Terminal can opt in via `ZETA_ICON_MODE=nerd`.
+- **Rich Columns not shown by default**: `details_view` now defaults to `true` so all panes open in Rich Columns mode (icon · git · name · size · date) as specified in the UI/UX design. Previously panes opened in tree/compact mode requiring manual Ctrl+L to enable columns.
+- **Clippy warnings**: Merged identical `if/else` arms in menu bar item builder; replaced `&[entry.path.clone()]` with `std::slice::from_ref(&entry.path)` in delete handlers; removed unused `DestructiveAction` import.
+
 ## [0.5.0] - 2025-05-01
 
 ### Added
