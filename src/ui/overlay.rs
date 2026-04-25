@@ -15,22 +15,6 @@ use crate::ui::styles::{
     overlay_key_hint_style, overlay_title_style,
 };
 
-pub fn expanded_modal_backdrop(area: Rect, popup: Rect) -> Rect {
-    let halo = (((popup.width.min(popup.height)) as f32) * 0.10) as u16;
-    let pad_x = halo.max(2);
-    let pad_y = halo.max(1);
-    let x = popup.x.saturating_sub(pad_x).max(area.x);
-    let y = popup.y.saturating_sub(pad_y).max(area.y);
-    let right = (popup.x + popup.width + pad_x).min(area.x + area.width);
-    let bottom = (popup.y + popup.height + pad_y).min(area.y + area.height);
-    Rect {
-        x,
-        y,
-        width: right.saturating_sub(x),
-        height: bottom.saturating_sub(y),
-    }
-}
-
 pub fn render_modal_backdrop(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -159,10 +143,8 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(
-            Title::from(Span::styled(prompt.title, overlay_title_style(palette)))
-                .alignment(Alignment::Center),
-        )
+        .title(Title::from(Span::styled(prompt.title, overlay_title_style(palette))))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -288,10 +270,8 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(
-            Title::from(Span::styled(dialog.title, overlay_title_style(palette)))
-                .alignment(Alignment::Center),
-        )
+        .title(Title::from(Span::styled(dialog.title, overlay_title_style(palette))))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -383,7 +363,8 @@ pub fn render_collision_dialog(
     };
 
     let block = Block::default()
-        .title(Title::from("Resolve Collision").alignment(Alignment::Center))
+        .title(Title::from("Resolve Collision"))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(
             Style::default()
@@ -459,7 +440,8 @@ pub fn render_destructive_confirm(
                 .fg(palette.prompt_border)
                 .add_modifier(Modifier::BOLD),
         )
-        .title(Title::from(" Destructive Action ").alignment(Alignment::Center))
+        .title(Title::from(" Destructive Action "))
+        .title_alignment(Alignment::Center)
         .style(Style::default().bg(palette.prompt_bg));
 
     let inner = block.inner(popup_area);
@@ -537,10 +519,8 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(
-            Title::from(Span::styled(" Open With ", overlay_title_style(palette)))
-                .alignment(Alignment::Center),
-        )
+        .title(Title::from(Span::styled(" Open With ", overlay_title_style(palette))))
+        .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
