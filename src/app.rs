@@ -868,6 +868,12 @@ fn route_mouse_event(
             {
                 return Some(Action::EditorMoveUp);
             }
+            if matches!(focus, FocusLayer::GitDiffContent) {
+                return Some(Action::GitDiffScrollUp);
+            }
+            if matches!(focus, FocusLayer::GitDiffFileList) {
+                return Some(Action::GitDiffSelectPrev);
+            }
             if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
                 return Some(Action::MoveSelectionUp);
@@ -903,6 +909,12 @@ fn route_mouse_event(
                     .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::EditorMoveDown);
+            }
+            if matches!(focus, FocusLayer::GitDiffContent) {
+                return Some(Action::GitDiffScrollDown);
+            }
+            if matches!(focus, FocusLayer::GitDiffFileList) {
+                return Some(Action::GitDiffSelectNext);
             }
             if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {

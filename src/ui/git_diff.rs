@@ -126,12 +126,20 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
+    // Compute the minimum digit width needed to display the largest line number.
+    let max_line_num = numbered
+        .iter()
+        .flat_map(|(old, new, _)| old.iter().chain(new.iter()).copied())
+        .max()
+        .unwrap_or(1);
+    let digit_width = format!("{max_line_num}").len().max(1);
+
     // Pass 2: skip to effective_scroll, take inner_height, render each triple
     let lines: Vec<Line> = numbered
         .iter()
         .skip(effective_scroll)
         .take(inner_height)
-        .map(|(old, new, dl)| render_line_with_gutter(*old, *new, dl, palette))
+        .map(|(old, new, dl)| render_line_with_gutter(*old, *new, dl, palette, digit_width))
         .collect();
 
     let title = state
@@ -176,19 +184,20 @@ fn render_line_with_gutter(
     new: Option<u32>,
     dl: &DiffLine,
     palette: ThemePalette,
+    digit_width: usize,
 ) -> Line<'static> {
     use DiffLineKind::*;
 
-    let gutter_style = Style::default().fg(palette.text_muted);
-    let sep_style = Style::default().fg(palette.text_muted);
+    let gutter_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
+    let sep_style = Style::default().fg(palette.text_muted).bg(palette.tools_bg);
 
     let old_str = match old {
-        Some(n) => format!("{:>4}", n),
-        None => "    ".to_string(),
+        Some(n) => format!("{n:>digit_width$}"),
+        None => " ".repeat(digit_width),
     };
     let new_str = match new {
-        Some(n) => format!("{:>4}", n),
-        None => "    ".to_string(),
+        Some(n) => format!("{n:>digit_width$}"),
+        None => " ".repeat(digit_width),
     };
 
     let line_style = match dl.kind {
