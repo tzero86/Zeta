@@ -3,6 +3,7 @@ mod code_view;
 mod debug;
 mod editor;
 mod finder;
+pub mod git_diff;
 pub(crate) mod highlight;
 pub mod markdown;
 mod menu_bar;
@@ -120,55 +121,59 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut markdown_preview_panel_rect = None;
 
     if !editor_fullscreen {
-        let ratio = state.pane_split_ratio() as u16;
-        let panes = Layout::default()
-            .direction(pane_direction)
-            .constraints([
-                Constraint::Percentage(ratio),
-                Constraint::Percentage(100 - ratio),
-            ])
-            .split(pane_area);
-
-        left_pane_rect = panes[0];
-        right_pane_rect = panes[1];
-
-        let left_focused = state.focus() == PaneId::Left;
-        let right_focused = state.focus() == PaneId::Right;
-
-        let is_stacked = state.pane_layout() == PaneLayout::Stacked;
-        let (first_label, second_label) = if is_stacked {
-            ("Top", "Bottom")
+        if state.git_diff_active {
+            git_diff::render_git_diff_view(frame, pane_area, state);
         } else {
-            ("Left", "Right")
-        };
+            let ratio = state.pane_split_ratio() as u16;
+            let panes = Layout::default()
+                .direction(pane_direction)
+                .constraints([
+                    Constraint::Percentage(ratio),
+                    Constraint::Percentage(100 - ratio),
+                ])
+                .split(pane_area);
 
-        render_pane(
-            frame,
-            panes[0],
-            RenderPaneArgs {
-                pane: state.left_pane(),
-                label: first_label,
-                is_focused: left_focused,
-                is_left: true,
-                borders: Borders::TOP | Borders::LEFT | Borders::BOTTOM,
-                state,
-                git: state.git_status(PaneId::Left),
-            },
-        );
+            left_pane_rect = panes[0];
+            right_pane_rect = panes[1];
 
-        render_pane(
-            frame,
-            panes[1],
-            RenderPaneArgs {
-                pane: state.right_pane(),
-                label: second_label,
-                is_focused: right_focused,
-                is_left: false,
-                borders: Borders::ALL,
-                state,
-                git: state.git_status(PaneId::Right),
-            },
-        );
+            let left_focused = state.focus() == PaneId::Left;
+            let right_focused = state.focus() == PaneId::Right;
+
+            let is_stacked = state.pane_layout() == PaneLayout::Stacked;
+            let (first_label, second_label) = if is_stacked {
+                ("Top", "Bottom")
+            } else {
+                ("Left", "Right")
+            };
+
+            render_pane(
+                frame,
+                panes[0],
+                RenderPaneArgs {
+                    pane: state.left_pane(),
+                    label: first_label,
+                    is_focused: left_focused,
+                    is_left: true,
+                    borders: Borders::TOP | Borders::LEFT | Borders::BOTTOM,
+                    state,
+                    git: state.git_status(PaneId::Left),
+                },
+            );
+
+            render_pane(
+                frame,
+                panes[1],
+                RenderPaneArgs {
+                    pane: state.right_pane(),
+                    label: second_label,
+                    is_focused: right_focused,
+                    is_left: false,
+                    borders: Borders::ALL,
+                    state,
+                    git: state.git_status(PaneId::Right),
+                },
+            );
+        }
     }
 
     if let Some(tools_area) = tools_area_opt {
@@ -491,11 +496,8 @@ fn render_status_bar(
     } else {
         let clock_text = format!(" {} ", zones.clock);
         let right_width = (clock_text.chars().count() + 1) as u16; // +1 for │ divider
-        let [body_area, clock_area] = Layout::horizontal([
-            Constraint::Min(0),
-            Constraint::Length(right_width),
-        ])
-        .areas(area);
+        let [body_area, clock_area] =
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(area);
         frame.render_widget(Paragraph::new(Line::from(spans)), body_area);
         frame.render_widget(
             Paragraph::new(Line::from(vec![
@@ -566,6 +568,19 @@ fn render_key_hints(
             ("\u{2191}\u{2193}", "Navigate"),
             ("Enter", "Open"),
             ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::GitDiffFileList => &[
+            ("\u{2191}\u{2193}/j/k", "Navigate"),
+            ("PgUp/PgDn", "Page"),
+            ("Tab", "Switch Pane"),
+            ("Ctrl+D", "Close Diff"),
+        ],
+        crate::state::FocusLayer::GitDiffContent => &[
+            ("\u{2191}\u{2193}/j/k", "Scroll"),
+            ("PgUp/PgDn", "Page"),
+            ("d", "Page Down"),
+            ("Tab", "Switch Pane"),
+            ("Ctrl+D", "Close Diff"),
         ],
         crate::state::FocusLayer::Editor => &[
             ("Ctrl+S", "Save"),
