@@ -1,9 +1,9 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
     Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Wrap,
+    ScrollbarState, Wrap, block::Title,
 };
 use ratatui::Frame;
 
@@ -11,8 +11,8 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
-    elevated_surface_style, modal_backdrop_style, overlay_footer_style, overlay_key_hint_style,
-    overlay_title_style,
+    elevated_surface_style, modal_backdrop_style, modal_halo_style, overlay_footer_style,
+    overlay_key_hint_style, overlay_title_style,
 };
 
 pub fn expanded_modal_backdrop(area: Rect, popup: Rect) -> Rect {
@@ -37,11 +37,22 @@ pub fn render_modal_backdrop(
     popup: Rect,
     palette: ThemePalette,
 ) {
-    let backdrop = expanded_modal_backdrop(area, popup);
-    frame.render_widget(Clear, backdrop);
+    // Full-area dim pass
+    frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new("").style(modal_backdrop_style(palette)),
-        backdrop,
+        area,
+    );
+    // Halo ring: one-cell border around the modal
+    let halo = Rect {
+        x: popup.x.saturating_sub(1).max(area.x),
+        y: popup.y.saturating_sub(1).max(area.y),
+        width: (popup.width + 2).min(area.width.saturating_sub(popup.x.saturating_sub(area.x))),
+        height: (popup.height + 2).min(area.height.saturating_sub(popup.y.saturating_sub(area.y))),
+    };
+    frame.render_widget(
+        Paragraph::new("").style(modal_halo_style(palette)),
+        halo,
     );
 }
 
@@ -148,7 +159,10 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(Span::styled(prompt.title, overlay_title_style(palette)))
+        .title(
+            Title::from(Span::styled(prompt.title, overlay_title_style(palette)))
+                .alignment(Alignment::Center),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -274,7 +288,10 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(Span::styled(dialog.title, overlay_title_style(palette)))
+        .title(
+            Title::from(Span::styled(dialog.title, overlay_title_style(palette)))
+                .alignment(Alignment::Center),
+        )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
         .style(elevated_surface_style(palette));
@@ -366,7 +383,7 @@ pub fn render_collision_dialog(
     };
 
     let block = Block::default()
-        .title("Resolve Collision")
+        .title(Title::from("Resolve Collision").alignment(Alignment::Center))
         .borders(Borders::ALL)
         .border_style(
             Style::default()
@@ -442,7 +459,7 @@ pub fn render_destructive_confirm(
                 .fg(palette.prompt_border)
                 .add_modifier(Modifier::BOLD),
         )
-        .title(" Destructive Action ")
+        .title(Title::from(" Destructive Action ").alignment(Alignment::Center))
         .style(Style::default().bg(palette.prompt_bg));
 
     let inner = block.inner(popup_area);
@@ -520,7 +537,10 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Span::styled(" Open With ", overlay_title_style(palette)))
+        .title(
+            Title::from(Span::styled(" Open With ", overlay_title_style(palette)))
+                .alignment(Alignment::Center),
+        )
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));
     let inner = block.inner(popup_area);
