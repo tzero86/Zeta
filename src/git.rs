@@ -152,6 +152,92 @@ pub fn fetch_status(path: &Path) -> Option<RepoStatus> {
     Some(RepoStatus::new(root, branch, file_statuses))
 }
 
+/// Fetch all files with pending changes (staged + unstaged + untracked).
+///
+/// Combines `git diff HEAD --numstat` (tracked changes) with
+/// `git status --porcelain=v1 -u` (untracked files).
+/// Returns `None` when `path` is not inside a repo or `git` is unavailable.
+pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
+    let root = detect_repo(path)?;
+
+    // Get +/- counts for tracked changes
+    let numstat_out = run_git(&root, &["diff", "HEAD", "--numstat"])?;
+    let counts = parse_numstat(&String::from_utf8_lossy(&numstat_out.stdout));
+
+    // Get status + untracked from porcelain
+    let status_out = run_git(&root, &["status", "--porcelain=v1", "-u", "--no-optional-locks"])
+        .or_else(|| run_git(&root, &["status", "--porcelain=v1", "-u"]))?;
+    let statuses = parse_porcelain(&String::from_utf8_lossy(&status_out.stdout));
+
+    let mut files: Vec<GitDiffFile> = statuses
+        .into_iter()
+        .map(|(rel_path, status)| {
+            let key = rel_path.display().to_string().replace('\\', "/");
+            let (added, removed) = counts.get(&key).copied().unwrap_or((0, 0));
+            GitDiffFile { path: rel_path, status, added, removed }
+        })
+        .collect();
+
+    // Sort: modified/added first, then deleted, then untracked; alpha within groups
+    files.sort_by(|a, b| {
+        status_sort_key(a.status).cmp(&status_sort_key(b.status))
+            .then(a.path.cmp(&b.path))
+    });
+
+    Some(files)
+}
+
+fn status_sort_key(s: FileStatus) -> u8 {
+    match s {
+        FileStatus::Conflicted => 0,
+        FileStatus::Modified   => 1,
+        FileStatus::Added      => 2,
+        FileStatus::Renamed    => 3,
+        FileStatus::Deleted    => 4,
+        FileStatus::Untracked  => 5,
+    }
+}
+
+/// Fetch the unified diff for a single file.
+///
+/// For tracked files: runs `git diff HEAD -- <path>`.
+/// For untracked files: reads the file directly and marks all lines as Added.
+pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<DiffLine> {
+    if is_untracked {
+        let full_path = match detect_repo(path) {
+            Some(root) => root.join(rel_path),
+            None => rel_path.to_path_buf(),
+        };
+        return match std::fs::read_to_string(&full_path) {
+            Ok(content) => content
+                .lines()
+                .map(|l| DiffLine { kind: DiffLineKind::Added, content: format!("+{l}") })
+                .collect(),
+            Err(_) => vec![DiffLine {
+                kind: DiffLineKind::Context,
+                content: String::from("(binary or unreadable file)"),
+            }],
+        };
+    }
+
+    let root = match detect_repo(path) {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    let output = run_git(
+        &root,
+        &["diff", "HEAD", "--", &rel_path.display().to_string()],
+    );
+
+    match output {
+        Some(o) if o.status.success() => {
+            parse_unified_diff(&String::from_utf8_lossy(&o.stdout))
+        }
+        _ => Vec::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -314,7 +400,6 @@ fn classify(x: char, y: char) -> FileStatus {
 
 /// Parse `git diff HEAD --numstat` output into a map of path → (added, removed).
 /// Pure function — no subprocess calls.
-#[allow(dead_code)]
 pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
     let mut map = HashMap::new();
     for line in output.lines() {
@@ -334,7 +419,6 @@ pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
 
 /// Parse the stdout of `git diff` (unified format) into a vec of typed lines.
 /// Pure function — no subprocess calls.
-#[allow(dead_code)]
 pub(crate) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
     output
         .lines()
