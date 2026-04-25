@@ -73,7 +73,7 @@ pub fn render_diff_file_list(f: &mut Frame, area: Rect, state: &AppState) {
     f.render_stateful_widget(list, area, &mut list_state);
 }
 
-/// Right pane: scrollable unified diff with colour-coded lines.
+/// Right pane: scrollable unified diff with colour-coded lines and line-number gutter.
 pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     let palette = state.theme().palette;
     let focused = state.git_diff_focus_content;
@@ -90,12 +90,48 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     let max_scroll = state.git_diff_lines.len().saturating_sub(inner_height);
     let effective_scroll = state.git_diff_scroll.min(max_scroll);
 
-    let lines: Vec<Line> = state
+    // Pass 1: walk the FULL git_diff_lines list, tracking line counters
+    let mut old_line: u32 = 0;
+    let mut new_line: u32 = 0;
+
+    let numbered: Vec<(Option<u32>, Option<u32>, &DiffLine)> = state
         .git_diff_lines
+        .iter()
+        .map(|dl| {
+            use DiffLineKind::*;
+            match dl.kind {
+                HunkHeader => {
+                    // Parse "@@ -OLD_START,... +NEW_START,... @@" to reset counters
+                    if let Some((old_start, new_start)) = parse_hunk_header(&dl.content) {
+                        old_line = old_start.saturating_sub(1);
+                        new_line = new_start.saturating_sub(1);
+                    }
+                    (None, None, dl)
+                }
+                FileHeader => (None, None, dl),
+                Added => {
+                    new_line += 1;
+                    (None, Some(new_line), dl)
+                }
+                Removed => {
+                    old_line += 1;
+                    (Some(old_line), None, dl)
+                }
+                Context => {
+                    old_line += 1;
+                    new_line += 1;
+                    (Some(old_line), Some(new_line), dl)
+                }
+            }
+        })
+        .collect();
+
+    // Pass 2: skip to effective_scroll, take inner_height, render each triple
+    let lines: Vec<Line> = numbered
         .iter()
         .skip(effective_scroll)
         .take(inner_height)
-        .map(|dl| diff_line_to_ratatui(dl, palette))
+        .map(|(old, new, dl)| render_line_with_gutter(*old, *new, dl, palette))
         .collect();
 
     let title = state
@@ -113,15 +149,91 @@ pub fn render_diff_content(f: &mut Frame, area: Rect, state: &AppState) {
     f.render_widget(paragraph, area);
 }
 
-fn diff_line_to_ratatui(dl: &DiffLine, palette: ThemePalette) -> Line<'static> {
-    let style = match dl.kind {
-        DiffLineKind::Added => Style::default().fg(Color::Green),
-        DiffLineKind::Removed => Style::default().fg(Color::Red),
-        DiffLineKind::HunkHeader => Style::default().fg(Color::Cyan),
-        DiffLineKind::FileHeader => Style::default()
+/// Parse "@@ -OLD_START[,OLD_COUNT] +NEW_START[,NEW_COUNT] @@" and return (old_start, new_start).
+fn parse_hunk_header(content: &str) -> Option<(u32, u32)> {
+    // Example: "@@ -10,6 +10,8 @@ fn foo()"
+    let inner = content.strip_prefix("@@ ")?.split(" @@").next()?;
+    let mut parts = inner.split_whitespace();
+    let old_part = parts.next()?; // "-10,6" or "-10"
+    let new_part = parts.next()?; // "+10,8" or "+10"
+    let old_start: u32 = old_part
+        .trim_start_matches('-')
+        .split(',')
+        .next()?
+        .parse()
+        .ok()?;
+    let new_start: u32 = new_part
+        .trim_start_matches('+')
+        .split(',')
+        .next()?
+        .parse()
+        .ok()?;
+    Some((old_start, new_start))
+}
+
+fn render_line_with_gutter(
+    old: Option<u32>,
+    new: Option<u32>,
+    dl: &DiffLine,
+    palette: ThemePalette,
+) -> Line<'static> {
+    use DiffLineKind::*;
+
+    let gutter_style = Style::default().fg(palette.text_muted);
+    let sep_style = Style::default().fg(palette.text_muted);
+
+    let old_str = match old {
+        Some(n) => format!("{:>4}", n),
+        None => "    ".to_string(),
+    };
+    let new_str = match new {
+        Some(n) => format!("{:>4}", n),
+        None => "    ".to_string(),
+    };
+
+    let line_style = match dl.kind {
+        Added => Style::default().fg(Color::Green),
+        Removed => Style::default().fg(Color::Red),
+        HunkHeader => Style::default().fg(Color::Cyan),
+        FileHeader => Style::default()
             .fg(palette.text_primary)
             .add_modifier(Modifier::BOLD),
-        DiffLineKind::Context => Style::default().fg(palette.text_muted),
+        Context => Style::default().fg(palette.text_muted),
     };
-    Line::from(Span::styled(dl.content.clone(), style))
+
+    Line::from(vec![
+        Span::styled(old_str, gutter_style),
+        Span::styled(" ", sep_style),
+        Span::styled(new_str, gutter_style),
+        Span::styled(" │ ", sep_style),
+        Span::styled(dl.content.clone(), line_style),
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_hunk_header_standard() {
+        assert_eq!(parse_hunk_header("@@ -10,6 +10,8 @@"), Some((10, 10)));
+    }
+
+    #[test]
+    fn parse_hunk_header_with_context() {
+        assert_eq!(
+            parse_hunk_header("@@ -10,6 +10,8 @@ fn foo()"),
+            Some((10, 10))
+        );
+    }
+
+    #[test]
+    fn parse_hunk_header_single_line() {
+        assert_eq!(parse_hunk_header("@@ -1 +1 @@"), Some((1, 1)));
+    }
+
+    #[test]
+    fn parse_hunk_header_invalid_returns_none() {
+        assert_eq!(parse_hunk_header("not a hunk header"), None);
+    }
 }
