@@ -5370,11 +5370,10 @@ mod tests {
         let mut state = test_state();
         // Initially inactive
         assert!(!state.git_diff_active);
-        // Toggle on - if no git repo, should stay inactive (graceful)
+        // Toggle on - we're in a git repo, so this should activate
         state.apply(Action::ToggleGitDiff).unwrap();
-        // Toggle off from active state (set manually to test deactivation)
-        state.git_diff_active = true;
-        state.git_diff_files = vec![];
+        assert!(state.git_diff_active, "should activate when in a git repo");
+        // Toggle off from active state
         state.apply(Action::ToggleGitDiff).unwrap();
         assert!(!state.git_diff_active);
         assert!(state.git_diff_files.is_empty());
@@ -5439,5 +5438,61 @@ mod tests {
         state.git_diff_scroll = 5;
         state.apply(Action::GitDiffContentPageUp).unwrap();
         assert_eq!(state.git_diff_scroll, 0); // saturating_sub(20) from 5
+    }
+
+    #[test]
+    fn git_diff_page_down_clamps_at_last_file() {
+        let mut state = test_state();
+        state.git_diff_files = vec![
+            crate::git::GitDiffFile {
+                path: PathBuf::from("a.rs"),
+                added: 1,
+                removed: 0,
+                status: crate::git::FileStatus::Modified,
+            },
+            crate::git::GitDiffFile {
+                path: PathBuf::from("b.rs"),
+                added: 2,
+                removed: 1,
+                status: crate::git::FileStatus::Modified,
+            },
+        ];
+        state.git_diff_selected = 1; // already at last
+        state.apply(Action::GitDiffPageDown).unwrap();
+        assert_eq!(state.git_diff_selected, 1); // clamped at last index
+    }
+
+    #[test]
+    fn git_diff_page_up_clamps_at_zero() {
+        let mut state = test_state();
+        state.git_diff_files = vec![
+            crate::git::GitDiffFile {
+                path: PathBuf::from("a.rs"),
+                added: 1,
+                removed: 0,
+                status: crate::git::FileStatus::Modified,
+            },
+        ];
+        state.git_diff_selected = 0;
+        state.apply(Action::GitDiffPageUp).unwrap();
+        assert_eq!(state.git_diff_selected, 0); // saturating_sub(10) from 0
+    }
+
+    #[test]
+    fn git_diff_content_page_down_clamps_at_end() {
+        let mut state = test_state();
+        state.git_diff_lines = vec![
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Context,
+                content: "line1".into(),
+            },
+            crate::git::DiffLine {
+                kind: crate::git::DiffLineKind::Context,
+                content: "line2".into(),
+            },
+        ];
+        state.git_diff_scroll = 1; // already at last index
+        state.apply(Action::GitDiffContentPageDown).unwrap();
+        assert_eq!(state.git_diff_scroll, 1); // clamped at last index
     }
 }
