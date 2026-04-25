@@ -324,7 +324,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     if details_view {
         let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
         let icon_slot = format_icon_slot(icon, icon_mode);
-        let icon_slot_width = display_width(&icon_slot);
+        let icon_slot_width = icon_slot_width(icon, icon_mode);
         let mark_prefix = if is_marked { "* " } else { "  " };
         let (git_char, git_colour) = match git_status {
             Some(s) => (s.symbol(), s.colour()),
@@ -377,7 +377,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     }
     let row_styles = pane_row_styles(is_focused, is_marked, entry.kind, palette);
     let guide = if is_last { "  " } else { "│ " };
-    let branch = if is_last { "└" } else { "├" };
+    let _branch = if is_last { "└" } else { "├" };
     // icon already bound above
     // Tree-view branch connector: always one of two static strings, no format!() needed.
     let branch_span: &'static str = if is_last { "\u{2514} " } else { "\u{251c} " };
@@ -396,8 +396,13 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
     });
     let meta = format_entry_meta(entry);
     let icon_slot = format_icon_slot(icon, icon_mode);
-    let prefix = format!("{}{}{} {} ", guide, branch, mark_prefix, icon_slot);
-    let prefix_width = display_width(&prefix) + 2; // +2 for git indicator + space
+    let icon_slot_w = icon_slot_width(icon, icon_mode);
+    let prefix_display_width = display_width(guide)
+        + display_width(branch_span)
+        + display_width(mark_prefix)
+        + icon_slot_w
+        + 1; // space after icon
+    let prefix_width = prefix_display_width + 2; // +2 for git indicator + space
                                                    // Git status indicator — always 1 char wide so column alignment is stable.
     let (git_char, git_colour) = match git_status {
         Some(s) => (s.symbol(), s.colour()),
@@ -497,8 +502,27 @@ pub fn pane_row_styles(
 
 pub fn format_icon_slot(icon: &str, icon_mode: IconMode) -> String {
     match icon_mode {
-        IconMode::Unicode | IconMode::NerdFont => format!("{icon}  "),
+        // Unicode glyphs are single-width per unicode-width; add 2 spaces for a
+        // consistent 3-column slot.
+        IconMode::Unicode => format!("{icon}  "),
+        // Ascii icons like "[D]" / "[F]" are already multi-char and consume
+        // correct layout width on their own — no extra padding needed.
         IconMode::Ascii => icon.to_string(),
+        // NerdFont PUA glyphs (U+E000–U+F8FF) render as double-wide (2 terminal
+        // columns) in fonts configured with NerdFont, but unicode-width reports
+        // them as ambiguous (width 1). Reserve the extra column explicitly by
+        // only adding 1 trailing space so the total terminal width = 2 + 1 = 3.
+        IconMode::NerdFont => format!("{icon} "),
+    }
+}
+
+/// Returns the logical column width that `format_icon_slot` occupies in the terminal.
+/// For NerdFont mode, PUA glyphs are treated as double-wide (2 cols) + 1 space = 3.
+/// For other modes, delegates to `display_width`.
+pub fn icon_slot_width(icon: &str, icon_mode: IconMode) -> usize {
+    match icon_mode {
+        IconMode::NerdFont => 3, // 2 (double-wide glyph) + 1 (space gap)
+        _ => display_width(&format_icon_slot(icon, icon_mode)),
     }
 }
 

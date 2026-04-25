@@ -2279,9 +2279,9 @@ impl AppState {
             }
             SettingsField::IconMode(current) => {
                 let next = match current {
-                    IconMode::Unicode => IconMode::Ascii,
+                    IconMode::Unicode => IconMode::NerdFont,
+                    IconMode::NerdFont => IconMode::Ascii,
                     IconMode::Ascii => IconMode::Unicode,
-                    IconMode::NerdFont => IconMode::Unicode,
                 };
                 self.icon_mode = next;
                 self.config.icon_mode = next;

@@ -1216,12 +1216,12 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
         .unwrap_or("image")
         .to_owned();
 
-    crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData {
+    crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData::new(
         filename,
-        orig_width: orig_w,
-        orig_height: orig_h,
-        pixels: std::sync::Arc::new(pixels),
-    })
+        orig_w,
+        orig_h,
+        std::sync::Arc::new(pixels),
+    ))
 }
 
 fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {

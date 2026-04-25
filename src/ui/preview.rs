@@ -1,4 +1,3 @@
-use image;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -367,16 +366,14 @@ fn render_image_preview(
         return;
     }
 
-    // Scale pre-decoded pixels to exact viewport size (Lanczos3 for quality).
-    // Each terminal row = 2 pixel rows via ▀ halfblock.
+    // Scale pre-decoded pixels to exact viewport size.
+    // Uses a per-image cache keyed by (target_w, target_h) so the resize only
+    // runs once per viewport size — subsequent frames hit the cache.
+    // Triangle (bilinear) is used: ~10× faster than Lanczos3 and visually
+    // indistinguishable at terminal halfblock resolution (~1 pixel per cell).
     let target_w = image_area.width as u32;
     let target_h = image_area.height as u32 * 2;
-    let resized = image::imageops::resize(
-        data.pixels.as_ref(),
-        target_w,
-        target_h,
-        image::imageops::FilterType::Lanczos3,
-    );
+    let resized = data.scaled_for(target_w, target_h);
 
     let start = view
         .scroll_row

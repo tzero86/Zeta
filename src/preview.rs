@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use image;
 use ratatui::style::{Color, Modifier};
@@ -7,15 +7,72 @@ use ratatui::style::{Color, Modifier};
 use crate::highlight::HighlightToken;
 use crate::highlight::{normalize_preview_text, HighlightedLine};
 
+/// Cached result of scaling `ImagePreviewData::pixels` to a specific viewport.
+#[derive(Debug)]
+struct ScaleCache {
+    target_w: u32,
+    target_h: u32,
+    scaled: image::RgbaImage,
+}
+
 /// Pre-decoded image pixels for viewport-adaptive halfblock rendering.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ImagePreviewData {
     pub filename: String,
     pub orig_width: u32,
     pub orig_height: u32,
     /// Decoded RGBA pixels (possibly pre-scaled, max 800px wide).
-    /// Scaled to exact viewport size at render time with Lanczos3.
+    /// Scaled to exact viewport size at render time; result cached in
+    /// `scale_cache` so the resize only runs when the viewport changes.
     pub pixels: Arc<image::RgbaImage>,
+    /// Last viewport-scaled render, keyed by (target_w, target_h).
+    /// Mutex is used so `ImagePreviewData` is Sync (required for Arc<...>).
+    /// The lock is only ever acquired from the UI render thread, so contention
+    /// is impossible and the overhead is negligible.
+    scale_cache: Mutex<Option<ScaleCache>>,
+}
+
+impl ImagePreviewData {
+    pub fn new(filename: String, orig_width: u32, orig_height: u32, pixels: Arc<image::RgbaImage>) -> Self {
+        Self {
+            filename,
+            orig_width,
+            orig_height,
+            pixels,
+            scale_cache: Mutex::new(None),
+        }
+    }
+
+    /// Return the image scaled to `(target_w, target_h)`.
+    /// Uses the cached result if dimensions haven't changed; otherwise resamples
+    /// with `Triangle` (bilinear) — fast enough for the UI thread, visually
+    /// indistinguishable from Lanczos3 at terminal halfblock resolution.
+    pub fn scaled_for(&self, target_w: u32, target_h: u32) -> image::RgbaImage {
+        let mut cache = self.scale_cache.lock().unwrap_or_else(|e| e.into_inner());
+        if !cache.as_ref().is_some_and(|c| c.target_w == target_w && c.target_h == target_h) {
+            let scaled = image::imageops::resize(
+                self.pixels.as_ref(),
+                target_w,
+                target_h,
+                image::imageops::FilterType::Triangle,
+            );
+            *cache = Some(ScaleCache { target_w, target_h, scaled });
+        }
+        cache.as_ref().unwrap().scaled.clone()
+    }
+}
+
+impl Clone for ImagePreviewData {
+    fn clone(&self) -> Self {
+        // Cloning intentionally drops the render cache; the new instance will
+        // repopulate it on first render.
+        Self::new(
+            self.filename.clone(),
+            self.orig_width,
+            self.orig_height,
+            Arc::clone(&self.pixels),
+        )
+    }
 }
 
 impl PartialEq for ImagePreviewData {

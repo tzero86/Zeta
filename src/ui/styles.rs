@@ -51,34 +51,6 @@ pub fn command_palette_entry_hint_style(palette: ThemePalette) -> Style {
     Style::default().fg(palette.key_hint_fg)
 }
 
-pub fn dim_text_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.text_muted)
-}
-
-pub fn subtext_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.text_subtext)
-}
-
-pub fn accent_mauve_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.accent_mauve)
-}
-
-pub fn accent_teal_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.accent_teal)
-}
-
-pub fn accent_green_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.accent_green)
-}
-
-pub fn accent_yellow_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.accent_yellow)
-}
-
-pub fn accent_peach_style(palette: ThemePalette) -> Style {
-    Style::default().fg(palette.accent_peach)
-}
-
 pub fn key_pill_style(palette: ThemePalette) -> Style {
     Style::default()
         .fg(palette.accent_yellow)
@@ -113,13 +85,6 @@ pub fn pane_filter_strip_style(palette: ThemePalette) -> Style {
 pub fn pane_column_header_style(palette: ThemePalette) -> Style {
     Style::default()
         .fg(palette.text_muted)
-        .add_modifier(Modifier::BOLD)
-}
-
-pub fn category_badge_style(palette: ThemePalette) -> Style {
-    Style::default()
-        .fg(palette.surface_bg)
-        .bg(palette.accent_teal)
         .add_modifier(Modifier::BOLD)
 }
 
