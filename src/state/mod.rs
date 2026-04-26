@@ -3508,6 +3508,7 @@ mod tests {
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
         WorkspaceState,
     };
+    use ratatui_image::picker::Picker;
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
             title: String::from("left"),

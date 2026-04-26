@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{block::Title, Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use crate::config::ThemePalette;
@@ -136,7 +136,7 @@ pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'
         Span::styled(" Editor ", badge_style),
     ]);
     let block = Block::default()
-        .title(Title::from(title_line))
+        .title(title_line)
         .borders(Borders::ALL)
         .border_style(border_style);
     let inner = block.inner(area);
