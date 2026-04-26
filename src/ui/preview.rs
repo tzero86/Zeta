@@ -1,7 +1,7 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{block::Title, Block, Borders, Paragraph, Wrap};
+use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use unicode_width::UnicodeWidthChar;
 
@@ -245,7 +245,7 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
         Span::styled(" Preview ", badge_style),
     ]);
     let block = Block::default()
-        .title(Title::from(title_line))
+        .title(title_line)
         .borders(Borders::ALL)
         .border_style(border_style)
         .style(Style::default().bg(palette.tools_bg));
@@ -270,6 +270,34 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                             Paragraph::new(header).style(
                                 Style::default()
                                     .fg(palette.text_primary)
+                                    .bg(palette.tools_bg),
+                            ),
+                            inner,
+                        );
+                    }
+                } else if v.is_archive() {
+                    if let Some(data) = &v.archive_data {
+                        let text = format!(
+                            "{} archive ({} entries)",
+                            data.format.label(),
+                            data.total_entries
+                        );
+                        frame.render_widget(
+                            Paragraph::new(text).style(
+                                Style::default()
+                                    .fg(palette.text_primary)
+                                    .bg(palette.tools_bg),
+                            ),
+                            inner,
+                        );
+                    }
+                } else if v.is_hex_dump() {
+                    if let Some(data) = &v.hex_dump_data {
+                        let text = format!("Binary file ({} bytes)", data.total_bytes);
+                        frame.render_widget(
+                            Paragraph::new(text).style(
+                                Style::default()
+                                    .fg(palette.text_muted)
                                     .bg(palette.tools_bg),
                             ),
                             inner,
@@ -314,6 +342,10 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                 }
             } else if v.is_image() {
                 render_image_preview(frame, inner, v, palette);
+            } else if v.is_archive() {
+                render_archive_preview(frame, inner, v, palette);
+            } else if v.is_hex_dump() {
+                render_hex_dump_preview(frame, inner, v, palette);
             } else {
                 let height = inner.height as usize;
                 let (first_line_num, window) = v.visible_window(height);
@@ -336,7 +368,7 @@ fn render_image_preview(
         return;
     };
 
-    // Header row
+    // Header row: filename and original dimensions.
     if area.height > 0 {
         let header = Span::styled(
             format!(
@@ -348,7 +380,8 @@ fn render_image_preview(
                 .add_modifier(Modifier::BOLD),
         );
         frame.render_widget(
-            Paragraph::new(Line::from(vec![header])).style(Style::default().bg(palette.surface_bg)),
+            Paragraph::new(Line::from(vec![header]))
+                .style(Style::default().bg(palette.surface_bg)),
             Rect {
                 x: area.x,
                 y: area.y,
@@ -367,46 +400,199 @@ fn render_image_preview(
         return;
     }
 
-    // Scale pre-decoded pixels to exact viewport size.
-    // Uses a per-image cache keyed by (target_w, target_h) so the resize only
-    // runs once per viewport size — subsequent frames hit the cache.
-    // Triangle (bilinear) is used: ~10× faster than Lanczos3 and visually
-    // indistinguishable at terminal halfblock resolution (~1 pixel per cell).
-    let target_w = image_area.width as u32;
-    let target_h = image_area.height as u32 * 2;
-    let resized = data.scaled_for(target_w, target_h);
+    let mut proto = data.lock_protocol();
+    let image_widget = ratatui_image::StatefulImage::<
+        ratatui_image::protocol::StatefulProtocol,
+    >::default();
+    frame.render_stateful_widget(image_widget, image_area, &mut *proto);
+}
 
-    let start = view
-        .scroll_row
-        .min((target_h / 2).saturating_sub(1) as usize);
-    for cell_row in start..(target_h / 2) as usize {
-        let y = image_area.y + (cell_row - start) as u16;
-        if y >= image_area.y + image_area.height {
+fn render_archive_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &ViewBuffer,
+    palette: ThemePalette,
+) {
+    let Some(data) = &view.archive_data else {
+        return;
+    };
+    if area.height == 0 {
+        return;
+    }
+
+    // Header row
+    let header_text = format!(
+        " {}  ({} entries) ",
+        data.format.label(),
+        data.total_entries
+    );
+    frame.render_widget(
+        Paragraph::new(header_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .add_modifier(Modifier::BOLD)
+                .bg(palette.surface_bg),
+        ),
+        Rect { x: area.x, y: area.y, width: area.width, height: 1 },
+    );
+
+    if area.height < 2 {
+        return;
+    }
+
+    let list_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(2),
+        ..area
+    };
+
+    let start = view.scroll_row.min(data.entries.len().saturating_sub(1));
+    let end = (start + list_area.height as usize).min(data.entries.len());
+
+    for (row_idx, entry) in data.entries[start..end].iter().enumerate() {
+        let y = list_area.y + row_idx as u16;
+        if y >= list_area.y + list_area.height {
             break;
         }
-        let py_upper = cell_row as u32 * 2;
-        let py_lower = py_upper + 1;
-        let spans: Vec<Span> = (0..target_w)
-            .map(|x| {
-                let up = resized.get_pixel(x, py_upper);
-                let dn = resized.get_pixel(x, py_lower);
-                Span::styled(
-                    "\u{2580}",
-                    Style::default()
-                        .fg(ratatui::style::Color::Rgb(up[0], up[1], up[2]))
-                        .bg(ratatui::style::Color::Rgb(dn[0], dn[1], dn[2])),
-                )
-            })
-            .collect();
-        frame.render_widget(
-            Paragraph::new(Line::from(spans)).style(Style::default().bg(palette.surface_bg)),
-            Rect {
-                x: image_area.x,
-                y,
-                width: image_area.width,
-                height: 1,
-            },
+
+        let (icon, color) = if entry.is_dir {
+            (" ", palette.accent_teal)
+        } else {
+            (" ", palette.text_primary)
+        };
+
+        let size_str = if entry.is_dir {
+            String::new()
+        } else {
+            format_file_size(entry.size)
+        };
+
+        let line_text = format!(
+            "{}{:<width$} {}",
+            icon,
+            entry.path,
+            size_str,
+            width = (area.width as usize).saturating_sub(14),
         );
+        frame.render_widget(
+            Paragraph::new(line_text).style(Style::default().fg(color).bg(palette.surface_bg)),
+            Rect { x: area.x, y, width: area.width, height: 1 },
+        );
+    }
+
+    // Footer
+    let footer_y = area.y + area.height - 1;
+    let capped = if data.total_entries > data.entries.len() {
+        format!(
+            " {} entries (showing first {}) ",
+            data.total_entries,
+            data.entries.len()
+        )
+    } else {
+        format!(" {} entries ", data.total_entries)
+    };
+    frame.render_widget(
+        Paragraph::new(capped).style(
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        ),
+        Rect { x: area.x, y: footer_y, width: area.width, height: 1 },
+    );
+}
+
+fn render_hex_dump_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &ViewBuffer,
+    palette: ThemePalette,
+) {
+    let Some(data) = &view.hex_dump_data else {
+        return;
+    };
+    if area.height == 0 {
+        return;
+    }
+
+    // Header row
+    let header_text = format!(" HEX  {} bytes ", data.total_bytes);
+    frame.render_widget(
+        Paragraph::new(header_text).style(
+            Style::default()
+                .fg(palette.text_primary)
+                .add_modifier(Modifier::BOLD)
+                .bg(palette.surface_bg),
+        ),
+        Rect { x: area.x, y: area.y, width: area.width, height: 1 },
+    );
+
+    if area.height < 2 {
+        return;
+    }
+
+    let list_area = Rect {
+        y: area.y + 1,
+        height: area.height.saturating_sub(2),
+        ..area
+    };
+
+    let start = view.scroll_row.min(data.rows.len().saturating_sub(1));
+    let end = (start + list_area.height as usize).min(data.rows.len());
+
+    for (row_idx, hex_row) in data.rows[start..end].iter().enumerate() {
+        let y = list_area.y + row_idx as u16;
+        if y >= list_area.y + list_area.height {
+            break;
+        }
+        let spans = vec![
+            Span::styled(
+                format!("{} ", hex_row.offset),
+                Style::default().fg(palette.text_muted).bg(palette.surface_bg),
+            ),
+            Span::styled(
+                format!("{} ", hex_row.hex_part),
+                Style::default().fg(palette.accent_teal).bg(palette.surface_bg),
+            ),
+            Span::styled(
+                format!("|{}|", hex_row.ascii_part),
+                Style::default().fg(palette.accent_yellow).bg(palette.surface_bg),
+            ),
+        ];
+        frame.render_widget(
+            Paragraph::new(Line::from(spans)),
+            Rect { x: area.x, y, width: area.width, height: 1 },
+        );
+    }
+
+    // Footer
+    let footer_y = area.y + area.height - 1;
+    let footer_text = if data.truncated {
+        format!(" Showing first 4 KB of {} bytes ", data.total_bytes)
+    } else {
+        format!(" {} bytes ", data.total_bytes)
+    };
+    frame.render_widget(
+        Paragraph::new(footer_text).style(
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.surface_bg),
+        ),
+        Rect { x: area.x, y: footer_y, width: area.width, height: 1 },
+    );
+}
+
+fn format_file_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
     }
 }
 
