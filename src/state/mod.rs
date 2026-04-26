@@ -890,6 +890,8 @@ impl AppState {
                                 self.git_diff_lines = lines;
                             }
                         }
+                    } else {
+                        self.status_message = String::from("Git diff: not a git repository");
                     }
                 }
             }

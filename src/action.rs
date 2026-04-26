@@ -496,6 +496,7 @@ impl Action {
             KeyCode::F(7) => Some(Self::OpenNewDirectoryPrompt),
             KeyCode::F(9) => Some(Self::ToggleDiffMode),
             KeyCode::F(10) => Some(Self::Quit),
+            KeyCode::F(11) => Some(Self::ToggleEditorFullscreen),
             KeyCode::F(12) => Some(Self::ToggleDebugPanel),
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiffSyncToOther)
@@ -715,7 +716,7 @@ impl Action {
             return Some(Self::ToggleTerminal);
         }
 
-        // F11 toggles between terminal as a normal pane and fullscreen mode.
+        // F11 and Shift+F11 toggle between terminal as a normal pane and fullscreen mode.
         // This is an app-level feature and must not reach the shell.
         if key_event.code == KeyCode::F(11) {
             return Some(Self::ToggleTerminalFullscreen);
