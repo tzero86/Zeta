@@ -806,46 +806,54 @@ impl ThemePalette {
     }
 
     fn norton() -> Self {
-        // Classic Norton Commander: navy blue, gold, white, blue
+        // Authentic Norton Commander DOS palette using CGA colors:
+        // Panels:     Dark Blue  #0000AA bg, White text
+        // Borders:    Bright Cyan #55FFFF
+        // Dirs:       Bright Cyan #55FFFF
+        // Symlinks:   Bright Green #55FF55
+        // Selection:  Dark Cyan #00AAAA bg, Black text
+        // Menu bar:   Dark Cyan #00AAAA bg, Black text
+        // Popups:     Bright Blue #5555FF bg, White text
+        // Key hints:  Bright Yellow #FFFF55
         Self {
-            menu_bg: Color::Rgb(0, 14, 64),
-            menu_fg: Color::White,
-            menu_active_bg: Color::Rgb(59, 87, 183),
-            menu_mnemonic_fg: Color::Rgb(255, 220, 60),
-            border_focus: Color::Rgb(243, 205, 57),
-            border_editor_focus: Color::Rgb(112, 181, 255),
-            selection_bg: Color::Rgb(255, 220, 60),
-            selection_fg: Color::Black,
-            surface_bg: Color::Rgb(7, 23, 70),
-            tools_bg: Color::Rgb(32, 42, 87),
-            prompt_bg: Color::Rgb(62, 61, 100),
-            prompt_border: Color::Rgb(112, 181, 255),
-            text_primary: Color::White,
-            text_muted: Color::Rgb(222, 222, 169),
-            directory_fg: Color::Rgb(112, 225, 255),
-            symlink_fg: Color::Rgb(44, 213, 255),
-            file_fg: Color::White,
-            status_bg: Color::Rgb(59, 87, 183),
-            status_fg: Color::White,
-            logo_accent: Color::Rgb(255, 220, 60),
-            key_hint_fg: Color::Rgb(243, 205, 57),
+            menu_bg: Color::Rgb(0, 170, 170),           // #00AAAA Dark Cyan — top menu bar
+            menu_fg: Color::Rgb(0, 0, 0),               // Black text on cyan menu
+            menu_active_bg: Color::Rgb(85, 85, 255),    // #5555FF Bright Blue — popup menu bg
+            menu_mnemonic_fg: Color::Rgb(255, 255, 85), // #FFFF55 Bright Yellow — mnemonic keys
+            border_focus: Color::Rgb(85, 255, 255),     // #55FFFF Bright Cyan — panel frames
+            border_editor_focus: Color::Rgb(255, 255, 255), // White — editor frame
+            selection_bg: Color::Rgb(0, 170, 170),      // #00AAAA Dark Cyan — selected item bg
+            selection_fg: Color::Rgb(0, 0, 0),          // Black text on selection
+            surface_bg: Color::Rgb(0, 0, 170),          // #0000AA Dark Blue — main panel bg
+            tools_bg: Color::Rgb(0, 0, 140),            // Slightly darker blue for sidebar
+            prompt_bg: Color::Rgb(85, 85, 255),         // #5555FF Bright Blue — dialogs
+            prompt_border: Color::Rgb(85, 255, 255),    // #55FFFF Bright Cyan — dialog border
+            text_primary: Color::Rgb(255, 255, 255),    // White — normal file text
+            text_muted: Color::Rgb(170, 170, 170),      // #AAAAAA Light Gray — secondary text
+            directory_fg: Color::Rgb(85, 255, 255),     // #55FFFF Bright Cyan — directory names
+            symlink_fg: Color::Rgb(85, 255, 85),        // #55FF55 Bright Green — symlinks
+            file_fg: Color::Rgb(255, 255, 255),         // White — file names
+            status_bg: Color::Rgb(0, 170, 170),         // #00AAAA Dark Cyan — status bar
+            status_fg: Color::Rgb(0, 0, 0),             // Black text on status
+            logo_accent: Color::Rgb(255, 255, 85),      // #FFFF55 Bright Yellow — logo
+            key_hint_fg: Color::Rgb(255, 255, 85),      // #FFFF55 Bright Yellow — F-key labels
             syntect_theme: "base16-ocean.dark",
-            search_match_bg: Color::Rgb(80, 64, 0),
-            search_match_active_bg: Color::Rgb(185, 140, 10),
-            text_sel_bg: Color::Rgb(35, 85, 145),
-            text_subtext: Color::Rgb(155, 165, 185),
-            accent_mauve: Color::Rgb(160, 100, 220),
-            accent_teal: Color::Rgb(80, 190, 190),
-            accent_green: Color::Rgb(80, 180, 100),
-            accent_yellow: Color::Rgb(210, 180, 80),
-            accent_peach: Color::Rgb(220, 140, 80),
-            accent_red: Color::Rgb(220, 80, 80),
-            modal_halo: Color::Rgb(45, 50, 60),
-            pane_filter_bg: Color::Rgb(28, 36, 50),
-            pane_filter_border: Color::Rgb(60, 100, 160),
-            status_git_bg: Color::Rgb(28, 36, 56),
-            status_entry_bg: Color::Rgb(32, 30, 52),
-            status_workspace_bg: Color::Rgb(40, 30, 58),
+            search_match_bg: Color::Rgb(85, 85, 0),
+            search_match_active_bg: Color::Rgb(170, 170, 0),
+            text_sel_bg: Color::Rgb(0, 170, 170),       // #00AAAA Cyan text selection
+            text_subtext: Color::Rgb(170, 170, 170),    // #AAAAAA Light Gray
+            accent_mauve: Color::Rgb(255, 85, 255),     // #FF55FF Bright Magenta
+            accent_teal: Color::Rgb(85, 255, 255),      // #55FFFF Bright Cyan
+            accent_green: Color::Rgb(85, 255, 85),      // #55FF55 Bright Green
+            accent_yellow: Color::Rgb(255, 255, 85),    // #FFFF55 Bright Yellow
+            accent_peach: Color::Rgb(255, 85, 85),      // #FF5555 Bright Red
+            accent_red: Color::Rgb(255, 85, 85),        // #FF5555 Bright Red
+            modal_halo: Color::Rgb(0, 0, 100),          // Very dark blue overlay
+            pane_filter_bg: Color::Rgb(0, 0, 140),      // Dark Blue filter bg
+            pane_filter_border: Color::Rgb(85, 255, 255), // Bright Cyan filter border
+            status_git_bg: Color::Rgb(0, 0, 140),
+            status_entry_bg: Color::Rgb(0, 0, 120),
+            status_workspace_bg: Color::Rgb(0, 0, 100),
         }
     }
     fn zeta() -> Self {
