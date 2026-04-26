@@ -81,10 +81,7 @@ impl App {
         // Query terminal for graphics capabilities now that we are in alternate screen.
         // Falls back to halfblocks if the query fails or times out.
         self.state.set_image_picker(
-            Picker::from_query_stdio().unwrap_or_else(|e| {
-                log::debug!("terminal graphics query failed ({e}), falling back to halfblocks");
-                Picker::halfblocks()
-            }),
+            Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks()),
         );
 
         while !self.state.should_quit() {
