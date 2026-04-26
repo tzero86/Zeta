@@ -12,6 +12,7 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::{Frame, Terminal};
+use ratatui_image::picker::Picker;
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
@@ -79,9 +80,10 @@ impl App {
 
         // Query terminal for graphics capabilities now that we are in alternate screen.
         // Falls back silently to halfblocks if the query fails or times out.
-        self.state.image_picker =
-            ratatui_image::picker::Picker::from_query_stdio()
-                .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+        self.state.set_image_picker(
+            Picker::from_query_stdio()
+                .unwrap_or_else(|_| Picker::halfblocks()),
+        );
 
         while !self.state.should_quit() {
             // Process events first; draw only when state actually changed.

@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Result;
+use ratatui_image::picker::Picker;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{
@@ -253,14 +254,14 @@ pub struct AppState {
     /// The event loop skips `terminal.draw()` when this is false, avoiding
     /// unconditional 60 fps redraws on resource-constrained machines.
     needs_redraw: bool,
+    /// Detected terminal graphics protocol picker.
+    /// Initialized to halfblocks at bootstrap; upgraded after the terminal
+    /// enters alternate screen in `App::run()`.
+    image_picker: Picker,
     /// Whether the floating debug panel is visible (toggled by F12).
     pub debug_visible: bool,
     /// Live debug state: last key, last action, action log.
     pub debug: DebugState,
-    /// Detected terminal graphics protocol picker.
-    /// Initialized to halfblocks at bootstrap; upgraded after the terminal
-    /// enters alternate screen in `App::run()`.
-    pub image_picker: ratatui_image::picker::Picker,
 }
 
 impl AppState {
@@ -414,9 +415,9 @@ impl AppState {
             startup_time_ms: started_at.elapsed().as_millis(),
             should_quit: false,
             needs_redraw: true,
+            image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
-            image_picker: ratatui_image::picker::Picker::halfblocks(),
         })
     }
 
@@ -2837,6 +2838,14 @@ impl AppState {
         self.redraw_count += 1;
     }
 
+    pub fn image_picker(&self) -> &Picker {
+        &self.image_picker
+    }
+
+    pub fn set_image_picker(&mut self, picker: Picker) {
+        self.image_picker = picker;
+    }
+
     pub fn redraw_count(&self) -> u64 {
         self.redraw_count
     }
@@ -3915,9 +3924,9 @@ mod tests {
             startup_time_ms: 0,
             should_quit: false,
             needs_redraw: true,
+            image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
-            image_picker: ratatui_image::picker::Picker::halfblocks(),
         }
     }
 
