@@ -32,6 +32,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 tempfile = "3"
 portable-pty = "0.9"
 vt100 = "0.15"
+ratatui-image = { version = "10", features = ["crossterm"] }
 
 [target.'cfg(windows)'.dependencies]
 conpty = "0.7"
