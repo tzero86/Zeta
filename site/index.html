@@ -62,7 +62,7 @@
     .hero-content {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: center;
       max-width: 680px;
       width: 100%;
       position: relative;
@@ -70,56 +70,17 @@
       padding-top: 2rem;
     }
 
+    .hero-sublabel {
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      color: var(--accent);
+      text-transform: lowercase;
+      margin-bottom: 0.5rem;
+      text-align: center;
+      width: 100%;
+    }
+
     /* ── Faded hero screenshot ── */
-    .hero-screenshot {
-      width: 100%;
-      max-width: 820px;
-      margin-top: 2rem;
-      position: relative;
-      /* pull content up into the fade zone */
-      margin-bottom: -7rem;
-      z-index: 1;
-    }
-
-    .hero-screenshot img {
-      display: block;
-      width: 100%;
-      height: auto;
-      mask-image: linear-gradient(
-        to bottom,
-        black 0%,
-        black 42%,
-        transparent 88%
-      );
-      -webkit-mask-image: linear-gradient(
-        to bottom,
-        black 0%,
-        black 42%,
-        transparent 88%
-      );
-      filter: brightness(0.92);
-    }
-
-    /* scanline overlay */
-    .hero-screenshot::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: repeating-linear-gradient(
-        to bottom,
-        transparent 0px,
-        transparent 3px,
-        rgba(0, 0, 0, 0.07) 3px,
-        rgba(0, 0, 0, 0.07) 4px
-      );
-      pointer-events: none;
-      mask-image: linear-gradient(to bottom, black 0%, transparent 88%);
-      -webkit-mask-image: linear-gradient(to bottom, black 0%, transparent 88%);
-    }
-
-    @media (max-width: 600px) {
-      .hero-screenshot { margin-bottom: -4rem; }
-    }
 
     h1, .hero-title {
       font-size: clamp(2.5rem, 8vw, 4.5rem);
@@ -142,7 +103,7 @@
     }
 
     .cursor {
-      color: var(--accent);
+      color: var(--accent2);
       animation: blink 0.8s step-end infinite;
     }
 
@@ -159,6 +120,7 @@
       gap: 1rem;
       background: var(--surface);
       border: 1px solid var(--border);
+      border-left: 2px solid var(--accent2);
       padding: 0.75rem 1rem;
       width: 100%;
       overflow-x: auto;
@@ -187,6 +149,45 @@
     }
 
     .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Terminal chrome hero frame ── */
+    .term-frame {
+      width: 100%;
+      max-width: 820px;
+      margin: 2.5rem auto 0;
+      border: 1px solid rgba(130, 170, 255, 0.25);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .term-titlebar {
+      background: var(--surface);
+      padding: 0.5rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .term-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    .term-path {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-left: 0.5rem;
+    }
+
+    .term-body img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
 
     .repo-link {
       display: inline-block;
