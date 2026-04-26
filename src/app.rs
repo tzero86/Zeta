@@ -77,6 +77,12 @@ impl App {
     pub fn run(&mut self) -> Result<()> {
         let mut terminal = TerminalSession::enter()?;
 
+        // Query terminal for graphics capabilities now that we are in alternate screen.
+        // Falls back silently to halfblocks if the query fails or times out.
+        self.state.image_picker =
+            ratatui_image::picker::Picker::from_query_stdio()
+                .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+
         while !self.state.should_quit() {
             // Process events first; draw only when state actually changed.
             self.process_next_event()?;

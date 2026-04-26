@@ -257,6 +257,10 @@ pub struct AppState {
     pub debug_visible: bool,
     /// Live debug state: last key, last action, action log.
     pub debug: DebugState,
+    /// Detected terminal graphics protocol picker.
+    /// Initialized to halfblocks at bootstrap; upgraded after the terminal
+    /// enters alternate screen in `App::run()`.
+    pub image_picker: ratatui_image::picker::Picker,
 }
 
 impl AppState {
@@ -412,6 +416,7 @@ impl AppState {
             needs_redraw: true,
             debug_visible: false,
             debug: DebugState::default(),
+            image_picker: ratatui_image::picker::Picker::halfblocks(),
         })
     }
 
@@ -3912,6 +3917,7 @@ mod tests {
             needs_redraw: true,
             debug_visible: false,
             debug: DebugState::default(),
+            image_picker: ratatui_image::picker::Picker::halfblocks(),
         }
     }
 
