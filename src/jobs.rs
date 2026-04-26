@@ -1187,6 +1187,7 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
 }
 
 /// Map a file extension (lowercase) to an `ArchiveFormat`, or `None` if not an archive.
+#[cfg(test)]
 fn archive_format_for_ext(ext: &str) -> Option<crate::preview::ArchiveFormat> {
     match ext {
         "zip" => Some(crate::preview::ArchiveFormat::Zip),
@@ -1368,17 +1369,23 @@ fn load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffe
     load_hex_dump_preview_internal(bytes, path)
 }
 
-/// Test helper: exposed for integration tests.
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
 pub fn test_load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
     load_archive_preview(bytes, path)
 }
 
-/// Test helper: exposed for integration tests.
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
 pub fn test_load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
     load_hex_dump_preview_internal(bytes, path)
 }
 
-/// Test helper: exposed for integration tests.
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
 pub fn test_load_image_preview(
     bytes: &[u8],
     path: &std::path::Path,
