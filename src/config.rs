@@ -833,8 +833,8 @@ impl ThemePalette {
             directory_fg: Color::Rgb(85, 255, 255),     // #55FFFF Bright Cyan — directory names
             symlink_fg: Color::Rgb(85, 255, 85),        // #55FF55 Bright Green — symlinks
             file_fg: Color::Rgb(255, 255, 255),         // White — file names
-            status_bg: Color::Rgb(0, 170, 170),         // #00AAAA Dark Cyan — status bar
-            status_fg: Color::Rgb(0, 0, 0),             // Black text on status
+            status_bg: Color::Rgb(0, 0, 170),           // #0000AA Dark Blue — status bar bg
+            status_fg: Color::Rgb(255, 255, 255),       // White text on status
             logo_accent: Color::Rgb(255, 255, 85),      // #FFFF55 Bright Yellow — logo
             key_hint_fg: Color::Rgb(255, 255, 85),      // #FFFF55 Bright Yellow — F-key labels
             syntect_theme: "base16-ocean.dark",
@@ -842,7 +842,7 @@ impl ThemePalette {
             search_match_active_bg: Color::Rgb(170, 170, 0),
             text_sel_bg: Color::Rgb(0, 170, 170),       // #00AAAA Cyan text selection
             text_subtext: Color::Rgb(170, 170, 170),    // #AAAAAA Light Gray
-            accent_mauve: Color::Rgb(255, 85, 255),     // #FF55FF Bright Magenta
+            accent_mauve: Color::Rgb(85, 255, 255),     // #55FFFF Bright Cyan — clock text
             accent_teal: Color::Rgb(85, 255, 255),      // #55FFFF Bright Cyan
             accent_green: Color::Rgb(85, 255, 85),      // #55FF55 Bright Green
             accent_yellow: Color::Rgb(255, 255, 85),    // #FFFF55 Bright Yellow
@@ -851,9 +851,9 @@ impl ThemePalette {
             modal_halo: Color::Rgb(0, 0, 100),          // Very dark blue overlay
             pane_filter_bg: Color::Rgb(0, 0, 140),      // Dark Blue filter bg
             pane_filter_border: Color::Rgb(85, 255, 255), // Bright Cyan filter border
-            status_git_bg: Color::Rgb(0, 0, 140),
-            status_entry_bg: Color::Rgb(0, 0, 120),
-            status_workspace_bg: Color::Rgb(0, 0, 100),
+            status_git_bg: Color::Rgb(0, 0, 140),       // Slightly darker blue
+            status_entry_bg: Color::Rgb(0, 0, 120),     // Darker blue
+            status_workspace_bg: Color::Rgb(0, 0, 100), // Darkest blue
         }
     }
     fn zeta() -> Self {
