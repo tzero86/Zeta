@@ -13,6 +13,7 @@ use crate::state::settings::SettingsState;
 use crate::state::ssh::SshConnectionState;
 use crate::state::types::MenuItem;
 
+/// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
 fn flyout_trigger(item: &MenuItem) -> Option<MenuId> {
     if let Action::OpenMenu(id) = item.action {
         Some(id)
@@ -479,13 +480,20 @@ impl OverlayState {
                     flyout,
                 }) = &self.modal
                 {
-                    Some((*id, *selection, flyout.is_some()))
+                    Some((*id, *selection, *flyout))
                 } else {
                     None
                 };
-                if let Some((id, sel, flyout_open)) = snapshot {
-                    if flyout_open {
-                        commands.push(Command::DispatchAction(Action::MenuActivate));
+                if let Some((id, sel, flyout_opt)) = snapshot {
+                    if let Some((flyout_id, flyout_sel)) = flyout_opt {
+                        // Flyout is open — activate the flyout item directly
+                        if let Some(item) = menu_items_for(flyout_id, self.menu_context)
+                            .get(flyout_sel)
+                            .cloned()
+                        {
+                            self.close_all();
+                            commands.push(Command::DispatchAction(item.action.clone()));
+                        }
                     } else {
                         let items = menu_items_for(id, self.menu_context);
                         if let Some(sub_id) = items.get(sel).and_then(flyout_trigger) {
@@ -493,7 +501,7 @@ impl OverlayState {
                                 *flyout = Some((sub_id, 0));
                             }
                         } else {
-                            // Not a trigger — switch to next tab directly
+                            // Not a trigger — inline MenuNext logic (tab switch forward)
                             if let Some(ModalState::Menu {
                                 id,
                                 selection,
@@ -512,18 +520,18 @@ impl OverlayState {
                 }
             }
             Action::MenuExitFlyout => {
-                let flyout_is_open = if let Some(ModalState::Menu { flyout, .. }) = &self.modal {
-                    flyout.is_some()
+                let snapshot = if let Some(ModalState::Menu { flyout, .. }) = &self.modal {
+                    Some(flyout.is_some())
                 } else {
-                    false
+                    None
                 };
-                if let Some(ModalState::Menu { .. }) = &self.modal {
+                if let Some(flyout_is_open) = snapshot {
                     if flyout_is_open {
                         if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
                             *flyout = None;
                         }
                     } else {
-                        // No flyout open — switch to previous tab directly
+                        // No flyout — switch to previous tab (inline MenuPrevious logic)
                         if let Some(ModalState::Menu {
                             id,
                             selection,
@@ -929,18 +937,21 @@ mod tests {
     }
 
     #[test]
-    fn enter_flyout_on_trigger_opens_flyout() {
+    fn enter_flyout_on_trigger_activates_flyout_item() {
         let mut s = open_view_menu();
         for _ in 0..4 {
             s.apply(&Action::MenuMoveDown).unwrap();
         }
-        let flyout_before = s.menu_flyout();
-        s.apply(&Action::MenuEnterFlyout).unwrap();
-        // flyout stays open, focus now in flyout
-        assert_eq!(
-            s.menu_flyout(),
-            flyout_before,
-            "flyout stays open after MenuEnterFlyout"
+        assert!(s.menu_flyout().is_some(), "flyout must be open on trigger");
+        // MenuEnterFlyout when flyout is already open activates the selected item
+        let cmds = s.apply(&Action::MenuEnterFlyout).unwrap();
+        assert!(
+            !cmds.is_empty(),
+            "MenuEnterFlyout on open flyout must dispatch action"
+        );
+        assert!(
+            s.modal.is_none(),
+            "menu closes after activating flyout item via MenuEnterFlyout"
         );
     }
 
@@ -1012,5 +1023,35 @@ mod tests {
         assert!(s.menu_flyout().is_some());
         s.apply(&Action::MenuNext).unwrap();
         assert!(s.menu_flyout().is_none(), "MenuNext must clear flyout");
+    }
+
+    #[test]
+    fn mnemonic_in_flyout_activates_flyout_item() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        // Find the first mnemonic character in the Themes submenu and use it
+        let flyout_items = s.menu_flyout_items();
+        assert!(!flyout_items.is_empty(), "Themes submenu must have items");
+        let first_mnemonic = flyout_items[0].mnemonic;
+        let cmds = s.apply(&Action::MenuMnemonic(first_mnemonic)).unwrap();
+        assert!(
+            !cmds.is_empty(),
+            "mnemonic in flyout must dispatch theme action"
+        );
+        assert!(s.modal.is_none(), "menu closes after mnemonic in flyout");
+    }
+
+    #[test]
+    fn menu_previous_clears_flyout() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        s.apply(&Action::MenuPrevious).unwrap();
+        assert!(s.menu_flyout().is_none(), "MenuPrevious must clear flyout");
     }
 }
