@@ -7,6 +7,72 @@ use ratatui::style::{Color, Modifier};
 use crate::highlight::HighlightToken;
 use crate::highlight::{normalize_preview_text, HighlightedLine};
 
+/// Format identifier for archive previews.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ArchiveFormat {
+    Zip,
+    Tar,
+    TarGz,
+    TarBz2,
+    TarXz,
+}
+
+impl ArchiveFormat {
+    pub fn label(&self) -> &'static str {
+        match self {
+            ArchiveFormat::Zip => "ZIP",
+            ArchiveFormat::Tar => "TAR",
+            ArchiveFormat::TarGz => "TAR.GZ",
+            ArchiveFormat::TarBz2 => "TAR.BZ2",
+            ArchiveFormat::TarXz => "TAR.XZ",
+        }
+    }
+}
+
+/// A single entry inside an archive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArchiveEntry {
+    pub path: String,
+    pub size: u64,
+    /// Present only for ZIP archives.
+    pub compressed_size: Option<u64>,
+    pub is_dir: bool,
+}
+
+/// File listing extracted from an archive for preview.
+/// Capped at `MAX_ARCHIVE_ENTRIES` entries.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArchiveListing {
+    pub format: ArchiveFormat,
+    pub entries: Vec<ArchiveEntry>,
+    /// Total entries in the archive (may exceed `entries.len()` if capped).
+    pub total_entries: usize,
+}
+
+pub const MAX_ARCHIVE_ENTRIES: usize = 1_000;
+
+/// One row of a hex dump (16 bytes per row).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HexRow {
+    /// Pre-formatted offset string, e.g. `"00000000"`.
+    pub offset: String,
+    /// Pre-formatted hex bytes with spacing, e.g. `"ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01"`.
+    pub hex_part: String,
+    /// Printable ASCII representation; non-printable bytes are `.`.
+    pub ascii_part: String,
+}
+
+/// Pre-computed hex dump of the first 4 KB of a binary file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HexDumpData {
+    pub rows: Vec<HexRow>,
+    pub total_bytes: usize,
+    /// True when the file exceeds 4 KB and only a prefix is shown.
+    pub truncated: bool,
+}
+
+pub const HEX_DUMP_MAX_BYTES: usize = 4096;
+
 /// Cached result of scaling `ImagePreviewData::pixels` to a specific viewport.
 #[derive(Debug)]
 struct ScaleCache {
@@ -115,6 +181,8 @@ pub struct ViewBuffer {
     pub markdown_source: Option<String>,
     /// Pre-decoded image for halfblock rendering; `None` for non-image buffers.
     pub image_data: Option<Arc<ImagePreviewData>>,
+    pub archive_data: Option<Arc<ArchiveListing>>,
+    pub hex_dump_data: Option<Arc<HexDumpData>>,
 }
 
 impl ViewBuffer {
@@ -130,6 +198,8 @@ impl ViewBuffer {
             total_lines,
             markdown_source: Some(source),
             image_data: None,
+            archive_data: None,
+            hex_dump_data: None,
         }
     }
 
@@ -148,6 +218,16 @@ impl ViewBuffer {
         self.image_data.is_some()
     }
 
+    /// Returns `true` if this buffer holds an archive file listing.
+    pub fn is_archive(&self) -> bool {
+        self.archive_data.is_some()
+    }
+
+    /// Returns `true` if this buffer holds a hex dump.
+    pub fn is_hex_dump(&self) -> bool {
+        self.hex_dump_data.is_some()
+    }
+
     /// Build from pre-decoded image pixel data.
     pub fn from_image_data(data: ImagePreviewData) -> Self {
         // Estimate total cell-rows: half the pixel height (halfblock = 2 rows/cell)
@@ -158,6 +238,8 @@ impl ViewBuffer {
             total_lines,
             markdown_source: None,
             image_data: Some(Arc::new(data)),
+            archive_data: None,
+            hex_dump_data: None,
         }
     }
 
@@ -175,6 +257,8 @@ impl ViewBuffer {
             total_lines,
             markdown_source: None,
             image_data: None,
+            archive_data: None,
+            hex_dump_data: None,
         }
     }
 
@@ -192,6 +276,36 @@ impl ViewBuffer {
             total_lines,
             markdown_source: None,
             image_data: None,
+            archive_data: None,
+            hex_dump_data: None,
+        }
+    }
+
+    /// Build from a pre-computed archive listing.
+    pub fn from_archive(data: ArchiveListing) -> Self {
+        let total_lines = data.entries.len() + 2; // header + entries + footer
+        Self {
+            lines: Arc::from([]),
+            scroll_row: 0,
+            total_lines,
+            markdown_source: None,
+            image_data: None,
+            archive_data: Some(Arc::new(data)),
+            hex_dump_data: None,
+        }
+    }
+
+    /// Build from a pre-computed hex dump.
+    pub fn from_hex_dump(data: HexDumpData) -> Self {
+        let total_lines = data.rows.len() + 2; // header + rows + footer
+        Self {
+            lines: Arc::from([]),
+            scroll_row: 0,
+            total_lines,
+            markdown_source: None,
+            image_data: None,
+            archive_data: None,
+            hex_dump_data: Some(Arc::new(data)),
         }
     }
 
@@ -336,5 +450,50 @@ mod tests {
         // Scrolling up again at zero should stay at zero.
         buf.scroll_up(1);
         assert_eq!(buf.scroll_row, 0);
+    }
+
+    #[test]
+    fn archive_listing_is_detected() {
+        let listing = ArchiveListing {
+            format: ArchiveFormat::Zip,
+            entries: vec![
+                ArchiveEntry {
+                    path: "README.md".into(),
+                    size: 1024,
+                    compressed_size: Some(512),
+                    is_dir: false,
+                },
+                ArchiveEntry {
+                    path: "src/".into(),
+                    size: 0,
+                    compressed_size: Some(0),
+                    is_dir: true,
+                },
+            ],
+            total_entries: 2,
+        };
+        let vb = ViewBuffer::from_archive(listing);
+        assert!(vb.is_archive());
+        assert!(!vb.is_image());
+        assert!(!vb.is_hex_dump());
+        assert!(!vb.is_markdown());
+    }
+
+    #[test]
+    fn hex_dump_is_detected() {
+        let data = HexDumpData {
+            rows: vec![HexRow {
+                offset: "00000000".into(),
+                hex_part: "ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01".into(),
+                ascii_part: "..JFIF......".into(),
+            }],
+            total_bytes: 16,
+            truncated: false,
+        };
+        let vb = ViewBuffer::from_hex_dump(data);
+        assert!(vb.is_hex_dump());
+        assert!(!vb.is_archive());
+        assert!(!vb.is_image());
+        assert_eq!(vb.total_lines, 3); // 1 row + 2 (header + footer)
     }
 }
