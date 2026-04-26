@@ -1313,7 +1313,7 @@ fn load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer
 pub(crate) fn build_hex_row(offset: usize, chunk: &[u8]) -> crate::preview::HexRow {
     // Build each 8-byte group independently so the double-space separator is always
     // preserved — even when `chunk` ends exactly at the group boundary (8 bytes).
-    let mut build_group = |start: usize| -> String {
+    let build_group = |start: usize| -> String {
         let mut s = String::new();
         for i in start..start + 8 {
             if i > start {
