@@ -1,5 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+#[cfg(test)]
 use image;
 use ratatui::style::{Color, Modifier};
 
@@ -73,29 +74,18 @@ pub struct HexDumpData {
 
 pub const HEX_DUMP_MAX_BYTES: usize = 4096;
 
-/// Cached result of scaling `ImagePreviewData::pixels` to a specific viewport.
-#[derive(Debug)]
-struct ScaleCache {
-    target_w: u32,
-    target_h: u32,
-    scaled: image::RgbaImage,
-}
+use ratatui_image::protocol::StatefulProtocol;
 
-/// Pre-decoded image pixels for viewport-adaptive halfblock rendering.
-#[derive(Debug)]
+/// Pre-decoded image with protocol-specific encoding for terminal graphics rendering.
+/// `ratatui-image` auto-detects Kitty → Sixels → iTerm2 → halfblock based on the terminal.
 pub struct ImagePreviewData {
     pub filename: String,
     pub orig_width: u32,
     pub orig_height: u32,
-    /// Decoded RGBA pixels (possibly pre-scaled, max 800px wide).
-    /// Scaled to exact viewport size at render time; result cached in
-    /// `scale_cache` so the resize only runs when the viewport changes.
-    pub pixels: Arc<image::RgbaImage>,
-    /// Last viewport-scaled render, keyed by (target_w, target_h).
-    /// Mutex is used so `ImagePreviewData` is Sync (required for Arc<...>).
-    /// The lock is only ever acquired from the UI render thread, so contention
-    /// is impossible and the overhead is negligible.
-    scale_cache: Mutex<Option<ScaleCache>>,
+    /// Shared protocol state. `Arc` allows O(1) clone (ViewBuffer cache).
+    /// `Mutex` provides interior mutability so `render_stateful_widget` can
+    /// mutate the protocol from an immutable `&ViewBuffer` borrow on the UI thread.
+    protocol: std::sync::Arc<std::sync::Mutex<StatefulProtocol>>,
 }
 
 impl ImagePreviewData {
@@ -103,53 +93,41 @@ impl ImagePreviewData {
         filename: String,
         orig_width: u32,
         orig_height: u32,
-        pixels: Arc<image::RgbaImage>,
+        protocol: StatefulProtocol,
     ) -> Self {
         Self {
             filename,
             orig_width,
             orig_height,
-            pixels,
-            scale_cache: Mutex::new(None),
+            protocol: std::sync::Arc::new(std::sync::Mutex::new(protocol)),
         }
     }
 
-    /// Return the image scaled to `(target_w, target_h)`.
-    /// Uses the cached result if dimensions haven't changed; otherwise resamples
-    /// with `Triangle` (bilinear) — fast enough for the UI thread, visually
-    /// indistinguishable from Lanczos3 at terminal halfblock resolution.
-    pub fn scaled_for(&self, target_w: u32, target_h: u32) -> image::RgbaImage {
-        let mut cache = self.scale_cache.lock().unwrap_or_else(|e| e.into_inner());
-        if !cache
-            .as_ref()
-            .is_some_and(|c| c.target_w == target_w && c.target_h == target_h)
-        {
-            let scaled = image::imageops::resize(
-                self.pixels.as_ref(),
-                target_w,
-                target_h,
-                image::imageops::FilterType::Triangle,
-            );
-            *cache = Some(ScaleCache {
-                target_w,
-                target_h,
-                scaled,
-            });
-        }
-        cache.as_ref().unwrap().scaled.clone()
+    /// Acquire a lock on the stateful protocol for rendering.
+    /// Only called from the UI render thread — contention is impossible.
+    pub fn lock_protocol(&self) -> std::sync::MutexGuard<'_, StatefulProtocol> {
+        self.protocol.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
 impl Clone for ImagePreviewData {
     fn clone(&self) -> Self {
-        // Cloning intentionally drops the render cache; the new instance will
-        // repopulate it on first render.
-        Self::new(
-            self.filename.clone(),
-            self.orig_width,
-            self.orig_height,
-            Arc::clone(&self.pixels),
-        )
+        Self {
+            filename: self.filename.clone(),
+            orig_width: self.orig_width,
+            orig_height: self.orig_height,
+            protocol: std::sync::Arc::clone(&self.protocol),
+        }
+    }
+}
+
+impl std::fmt::Debug for ImagePreviewData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ImagePreviewData")
+            .field("filename", &self.filename)
+            .field("orig_width", &self.orig_width)
+            .field("orig_height", &self.orig_height)
+            .finish_non_exhaustive()
     }
 }
 
@@ -495,5 +473,17 @@ mod tests {
         assert!(!vb.is_archive());
         assert!(!vb.is_image());
         assert_eq!(vb.total_lines, 3); // 1 row + 2 (header + footer)
+    }
+
+    #[test]
+    fn image_preview_data_stores_protocol() {
+        use ratatui_image::picker::Picker;
+        let picker = Picker::halfblocks();
+        let img = image::DynamicImage::new_rgba8(4, 4);
+        let proto = picker.new_resize_protocol(img);
+        let data = ImagePreviewData::new("test.png".into(), 4, 4, proto);
+        assert_eq!(data.filename, "test.png");
+        assert_eq!(data.orig_width, 4);
+        assert_eq!(data.orig_height, 4);
     }
 }
