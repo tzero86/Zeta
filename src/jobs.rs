@@ -1311,28 +1311,23 @@ fn load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer
 /// `offset` is the byte offset of the first byte in `chunk`.
 /// `chunk` may be shorter than 16 bytes for the final row.
 pub(crate) fn build_hex_row(offset: usize, chunk: &[u8]) -> crate::preview::HexRow {
-    // Format the 16-byte hex field in two 8-byte groups separated by an extra space.
-    let mut hex_parts: Vec<String> = Vec::with_capacity(16);
-    for (i, b) in chunk.iter().enumerate() {
-        hex_parts.push(format!("{:02x}", b));
-        if i == 7 {
-            hex_parts.push(String::new()); // extra space between groups
+    // Build each 8-byte group independently so the double-space separator is always
+    // preserved — even when `chunk` ends exactly at the group boundary (8 bytes).
+    let mut build_group = |start: usize| -> String {
+        let mut s = String::new();
+        for i in start..start + 8 {
+            if i > start {
+                s.push(' ');
+            }
+            if i < chunk.len() {
+                s.push_str(&format!("{:02x}", chunk[i]));
+            } else {
+                s.push_str("  "); // placeholder for missing byte
+            }
         }
-    }
-    // Pad to full 16-byte width.
-    let full_len = 16;
-    let actual_bytes = chunk.len();
-    for i in actual_bytes..full_len {
-        hex_parts.push("  ".into()); // two spaces for missing byte
-        if i == 7 {
-            hex_parts.push(String::new());
-        }
-    }
-    // Join with single spaces (the empty string entries produce double-spaces at the group boundary).
-    let hex_part = hex_parts.join(" ").trim_end().to_owned();
-    // Pad hex_part to the reference width of a full row.
-    let reference_width = "ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01".len();
-    let hex_part = format!("{:<width$}", hex_part, width = reference_width);
+        s
+    };
+    let hex_part = format!("{}  {}", build_group(0), build_group(8));
 
     let ascii_part: String = chunk
         .iter()
