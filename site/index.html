@@ -554,6 +554,64 @@
       pointer-events: none;
     }
 
+    /* ── What's New ── */
+    section.whats-new {
+      padding: 5rem 2rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .whats-new-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1.25rem;
+      margin-top: 0;
+    }
+
+    .whats-new-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      position: relative;
+      transition: border-color 0.15s;
+    }
+
+    .whats-new-card:hover {
+      border-color: var(--accent);
+    }
+
+    .new-badge {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      color: #0d1117;
+      background: var(--accent2);
+      padding: 0.15rem 0.45rem;
+      font-weight: 700;
+    }
+
+    .whats-new-card .wn-icon {
+      font-size: 1.4rem;
+      line-height: 1;
+      margin-bottom: 0.25rem;
+    }
+
+    .whats-new-card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .whats-new-card p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
     /* ── Trust badges ── */
     .trust-badges {
       display: flex;
@@ -661,6 +719,37 @@
   </section>
 
   <!-- Features -->
+  <!-- What's New -->
+  <section class="whats-new">
+    <div class="section-inner">
+      <p class="section-label animate">// what's new</p>
+      <div class="whats-new-grid">
+
+        <div class="whats-new-card animate">
+          <span class="new-badge">NEW</span>
+          <div class="wn-icon">⟨±⟩</div>
+          <h3>Git Diff Viewer</h3>
+          <p>View all changed files and their diffs without leaving the terminal. Side-by-side coloured hunks with a line-number gutter, full keyboard navigation, and mouse scroll support.</p>
+        </div>
+
+        <div class="whats-new-card animate">
+          <span class="new-badge">NEW</span>
+          <div class="wn-icon">▤</div>
+          <h3>View → Themes Flyout</h3>
+          <p>Switch themes live from a nested flyout submenu under View — no config file editing, no restart. Navigate with arrow keys and preview themes without leaving the keyboard.</p>
+        </div>
+
+        <div class="whats-new-card animate">
+          <span class="new-badge">NEW</span>
+          <div class="wn-icon">🖥</div>
+          <h3>Norton Commander Theme</h3>
+          <p>Authentic CGA/DOS palette — dark blue panels (#0000AA), bright cyan borders (#55FFFF), yellow key hints (#FFFF55). The real thing, not a loose approximation.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
   <!-- Prerequisites -->
   <section class="prereqs">
     <div class="section-inner">
