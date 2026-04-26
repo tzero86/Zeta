@@ -3,8 +3,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
+    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
@@ -236,10 +236,7 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(Span::styled(
-            prompt.title,
-            overlay_title_style(palette),
-        ))
+        .title(Span::styled(prompt.title, overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -477,10 +474,7 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(Span::styled(
-            dialog.title,
-            overlay_title_style(palette),
-        ))
+        .title(Span::styled(dialog.title, overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -733,10 +727,7 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Span::styled(
-            " Open With ",
-            overlay_title_style(palette),
-        ))
+        .title(Span::styled(" Open With ", overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));

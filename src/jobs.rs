@@ -1260,9 +1260,7 @@ fn load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer
                 crate::preview::ArchiveFormat::TarBz2 => {
                     Box::new(bzip2::read::BzDecoder::new(cursor))
                 }
-                crate::preview::ArchiveFormat::TarXz => {
-                    Box::new(xz2::read::XzDecoder::new(cursor))
-                }
+                crate::preview::ArchiveFormat::TarXz => Box::new(xz2::read::XzDecoder::new(cursor)),
                 _ => Box::new(cursor),
             };
             let mut archive = tar::Archive::new(reader);
@@ -1332,7 +1330,13 @@ pub(crate) fn build_hex_row(offset: usize, chunk: &[u8]) -> crate::preview::HexR
 
     let ascii_part: String = chunk
         .iter()
-        .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            }
+        })
         .collect();
 
     crate::preview::HexRow {
@@ -1431,10 +1435,7 @@ fn load_image_preview(
 
     let protocol = picker.new_resize_protocol(img);
     crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData::new(
-        filename,
-        orig_w,
-        orig_h,
-        protocol,
+        filename, orig_w, orig_h, protocol,
     ))
 }
 
@@ -2929,8 +2930,13 @@ mod tests {
 
     #[test]
     fn hex_dump_formats_row_correctly() {
-        let row = build_hex_row(0, &[0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46,
-                                      0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01]);
+        let row = build_hex_row(
+            0,
+            &[
+                0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+                0x00, 0x01,
+            ],
+        );
         assert_eq!(row.offset, "00000000");
         assert!(row.hex_part.contains("ff d8 ff e0"));
         assert!(row.hex_part.contains("49 46 00 01"));
@@ -2949,7 +2955,10 @@ mod tests {
         let row = build_hex_row(16, &[0xde, 0xad, 0xbe]);
         assert_eq!(row.offset, "00000010");
         // hex_part should be padded to the same width as a full row
-        assert_eq!(row.hex_part.len(), "ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01".len());
+        assert_eq!(
+            row.hex_part.len(),
+            "ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01".len()
+        );
     }
 
     #[test]

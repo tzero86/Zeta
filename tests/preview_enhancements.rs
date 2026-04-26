@@ -12,10 +12,7 @@ fn png_1x1_bytes() -> Vec<u8> {
     let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
     let mut buf = Vec::new();
     image::DynamicImage::ImageRgba8(img)
-        .write_to(
-            &mut std::io::Cursor::new(&mut buf),
-            image::ImageFormat::Png,
-        )
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
         .unwrap();
     buf
 }
@@ -61,10 +58,7 @@ fn halfblocks_picker_always_succeeds() {
 
 #[test]
 fn zip_archive_produces_archive_listing() {
-    let zip_bytes = make_zip_bytes(&[
-        ("README.md", b"# hello"),
-        ("src/main.rs", b"fn main() {}"),
-    ]);
+    let zip_bytes = make_zip_bytes(&[("README.md", b"# hello"), ("src/main.rs", b"fn main() {}")]);
     let path = std::path::Path::new("project.zip");
     let vb = zeta::jobs::test_load_archive_preview(&zip_bytes, path);
     assert!(vb.is_archive(), "ZIP should produce Archive buffer");

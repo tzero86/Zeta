@@ -296,9 +296,7 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
                         let text = format!("Binary file ({} bytes)", data.total_bytes);
                         frame.render_widget(
                             Paragraph::new(text).style(
-                                Style::default()
-                                    .fg(palette.text_muted)
-                                    .bg(palette.tools_bg),
+                                Style::default().fg(palette.text_muted).bg(palette.tools_bg),
                             ),
                             inner,
                         );
@@ -380,8 +378,7 @@ fn render_image_preview(
                 .add_modifier(Modifier::BOLD),
         );
         frame.render_widget(
-            Paragraph::new(Line::from(vec![header]))
-                .style(Style::default().bg(palette.surface_bg)),
+            Paragraph::new(Line::from(vec![header])).style(Style::default().bg(palette.surface_bg)),
             Rect {
                 x: area.x,
                 y: area.y,
@@ -401,9 +398,8 @@ fn render_image_preview(
     }
 
     let mut proto = data.lock_protocol();
-    let image_widget = ratatui_image::StatefulImage::<
-        ratatui_image::protocol::StatefulProtocol,
-    >::default();
+    let image_widget =
+        ratatui_image::StatefulImage::<ratatui_image::protocol::StatefulProtocol>::default();
     frame.render_stateful_widget(image_widget, image_area, &mut *proto);
 }
 
@@ -433,7 +429,12 @@ fn render_archive_preview(
                 .add_modifier(Modifier::BOLD)
                 .bg(palette.surface_bg),
         ),
-        Rect { x: area.x, y: area.y, width: area.width, height: 1 },
+        Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        },
     );
 
     if area.height < 2 {
@@ -476,7 +477,12 @@ fn render_archive_preview(
         );
         frame.render_widget(
             Paragraph::new(line_text).style(Style::default().fg(color).bg(palette.surface_bg)),
-            Rect { x: area.x, y, width: area.width, height: 1 },
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
         );
     }
 
@@ -497,7 +503,12 @@ fn render_archive_preview(
                 .fg(palette.text_muted)
                 .bg(palette.surface_bg),
         ),
-        Rect { x: area.x, y: footer_y, width: area.width, height: 1 },
+        Rect {
+            x: area.x,
+            y: footer_y,
+            width: area.width,
+            height: 1,
+        },
     );
 }
 
@@ -523,7 +534,12 @@ fn render_hex_dump_preview(
                 .add_modifier(Modifier::BOLD)
                 .bg(palette.surface_bg),
         ),
-        Rect { x: area.x, y: area.y, width: area.width, height: 1 },
+        Rect {
+            x: area.x,
+            y: area.y,
+            width: area.width,
+            height: 1,
+        },
     );
 
     if area.height < 2 {
@@ -547,20 +563,31 @@ fn render_hex_dump_preview(
         let spans = vec![
             Span::styled(
                 format!("{} ", hex_row.offset),
-                Style::default().fg(palette.text_muted).bg(palette.surface_bg),
+                Style::default()
+                    .fg(palette.text_muted)
+                    .bg(palette.surface_bg),
             ),
             Span::styled(
                 format!("{} ", hex_row.hex_part),
-                Style::default().fg(palette.accent_teal).bg(palette.surface_bg),
+                Style::default()
+                    .fg(palette.accent_teal)
+                    .bg(palette.surface_bg),
             ),
             Span::styled(
                 format!("|{}|", hex_row.ascii_part),
-                Style::default().fg(palette.accent_yellow).bg(palette.surface_bg),
+                Style::default()
+                    .fg(palette.accent_yellow)
+                    .bg(palette.surface_bg),
             ),
         ];
         frame.render_widget(
             Paragraph::new(Line::from(spans)),
-            Rect { x: area.x, y, width: area.width, height: 1 },
+            Rect {
+                x: area.x,
+                y,
+                width: area.width,
+                height: 1,
+            },
         );
     }
 
@@ -577,7 +604,12 @@ fn render_hex_dump_preview(
                 .fg(palette.text_muted)
                 .bg(palette.surface_bg),
         ),
-        Rect { x: area.x, y: footer_y, width: area.width, height: 1 },
+        Rect {
+            x: area.x,
+            y: footer_y,
+            width: area.width,
+            height: 1,
+        },
     );
 }
 
