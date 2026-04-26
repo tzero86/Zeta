@@ -118,6 +118,7 @@ pub struct PreviewRequest {
     pub syntect_theme: String,
     pub archive: Option<PathBuf>,
     pub inner_path: Option<PathBuf>,
+    pub picker: ratatui_image::picker::Picker,
 }
 
 #[derive(Clone, Debug)]
@@ -498,7 +499,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .spawn(move || {
                 for req in preview_rx {
                     let view = if req.archive.is_none() {
-                        load_preview_content(&req.path, &req.syntect_theme)
+                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
                     } else if let (Some(archive_path), Some(inner_path)) =
                         (req.archive.clone(), req.inner_path.clone())
                     {
@@ -523,6 +524,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                                         &buf,
                                                         &inner_path,
                                                         &req.syntect_theme,
+                                                        &req.picker,
                                                     )
                                                 }
                                                 Err(_) => crate::preview::ViewBuffer::from_plain(
@@ -568,6 +570,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                             &buf,
                                             &inner_path,
                                             &req.syntect_theme,
+                                            &req.picker,
                                         )
                                     } else {
                                         crate::preview::ViewBuffer::from_plain("[empty file]")
@@ -577,7 +580,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                             Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
                         }
                     } else {
-                        load_preview_content(&req.path, &req.syntect_theme)
+                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
                     };
                     if result_tx_preview
                         .send(JobResult::PreviewLoaded {
@@ -1183,7 +1186,11 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+fn load_image_preview(
+    bytes: &[u8],
+    path: &Path,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
     use image::ImageReader;
     use std::io::Cursor;
 
@@ -1200,14 +1207,12 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
     let orig_h = img.height();
 
     // Pre-scale wide images to cap memory (max 800px wide), preserving aspect ratio.
-    // Final viewport-sized scaling happens at render time.
-    let pixels = if orig_w > 800 {
+    let img = if orig_w > 800 {
         let scale = 800.0_f32 / orig_w as f32;
         let pre_h = ((orig_h as f32 * scale) as u32).max(1);
         img.resize_exact(800, pre_h, image::imageops::FilterType::Lanczos3)
-            .to_rgba8()
     } else {
-        img.to_rgba8()
+        img
     };
 
     let filename = path
@@ -1216,26 +1221,32 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
         .unwrap_or("image")
         .to_owned();
 
+    let protocol = picker.new_resize_protocol(img);
     crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData::new(
         filename,
         orig_w,
         orig_h,
-        std::sync::Arc::new(pixels),
+        protocol,
     ))
 }
 
-fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
+fn load_preview_content(
+    path: &Path,
+    syntect_theme: &str,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
     };
-    load_preview_from_bytes(&bytes, path, syntect_theme)
+    load_preview_from_bytes(&bytes, path, syntect_theme, picker)
 }
 
 fn load_preview_from_bytes(
     bytes: &[u8],
     path: &Path,
     syntect_theme: &str,
+    picker: &ratatui_image::picker::Picker,
 ) -> crate::preview::ViewBuffer {
     if bytes.is_empty() {
         return crate::preview::ViewBuffer::from_plain("[empty file]");
@@ -1248,7 +1259,7 @@ fn load_preview_from_bytes(
         Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
     );
     if is_image_ext {
-        return load_image_preview(bytes, path);
+        return load_image_preview(bytes, path, picker);
     }
 
     if looks_like_binary(bytes) {

@@ -520,6 +520,7 @@ impl App {
                         syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
                         archive,
                         inner_path: inner,
+                        picker: self.state.image_picker().clone(),
                     })
                     .context("failed to queue background preview job")?;
             }
