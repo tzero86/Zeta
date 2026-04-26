@@ -58,6 +58,35 @@ pub fn menu_popup_width(items: &[MenuItem]) -> u16 {
     (content_width as u16).saturating_add(2)
 }
 
+fn build_menu_row<'a>(
+    item: &'a MenuItem,
+    index: usize,
+    selection: usize,
+    inner_width: usize,
+    palette: ThemePalette,
+    shortcut_str: &'a str,
+) -> ListItem<'a> {
+    let selected = index == selection;
+    let base_style = if selected {
+        Style::default()
+            .fg(palette.menu_fg)
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(palette.text_primary)
+            .bg(palette.surface_bg)
+    };
+    let shortcut_width = shortcut_str.chars().count();
+    let label_width = inner_width.saturating_sub(shortcut_width + 2).max(1);
+    let row = format!(" {:<label_width$} {}", item.label, shortcut_str);
+    let pad = inner_width.saturating_sub(row.chars().count());
+    ListItem::new(Line::from(vec![Span::styled(
+        format!("{}{}", row, " ".repeat(pad)),
+        base_style,
+    )]))
+}
+
 pub fn render_menu_popup(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -96,32 +125,19 @@ pub fn render_menu_popup(
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let selected = index == selection;
-            let base_style = if selected {
-                Style::default()
-                    .fg(palette.menu_fg)
-                    .bg(palette.selection_bg)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(palette.text_primary)
-                    .bg(palette.surface_bg)
-            };
-
-            let content_width = inner.width as usize;
-            let shortcut_display = if matches!(item.action, Action::OpenMenu(_)) {
+            let shortcut_str = if matches!(item.action, Action::OpenMenu(_)) {
                 "►"
             } else {
                 item.shortcut
             };
-            let shortcut_width = shortcut_display.chars().count();
-            let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);
-            let row = format!(" {:<label_width$} {}", item.label, shortcut_display);
-            let pad = content_width.saturating_sub(row.chars().count());
-            ListItem::new(Line::from(vec![Span::styled(
-                format!("{}{}", row, " ".repeat(pad)),
-                base_style,
-            )]))
+            build_menu_row(
+                item,
+                index,
+                selection,
+                inner.width as usize,
+                palette,
+                shortcut_str,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -146,7 +162,7 @@ pub fn render_flyout_popup(
     }
 
     let width = menu_popup_width(items);
-    let height = items.len() as u16 + 2;
+    let height = (items.len() as u16 + 2).min(area.height.saturating_sub(parent_area.y));
 
     let flyout_x = if parent_area.x + parent_area.width + width <= area.x + area.width {
         parent_area.x + parent_area.width
@@ -173,26 +189,14 @@ pub fn render_flyout_popup(
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let selected = index == selection;
-            let base_style = if selected {
-                Style::default()
-                    .fg(palette.menu_fg)
-                    .bg(palette.selection_bg)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-                    .fg(palette.text_primary)
-                    .bg(palette.surface_bg)
-            };
-            let content_width = inner.width as usize;
-            let shortcut_width = item.shortcut.chars().count();
-            let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);
-            let row = format!(" {:<label_width$} {}", item.label, item.shortcut);
-            let pad = content_width.saturating_sub(row.chars().count());
-            ListItem::new(Line::from(vec![Span::styled(
-                format!("{}{}", row, " ".repeat(pad)),
-                base_style,
-            )]))
+            build_menu_row(
+                item,
+                index,
+                selection,
+                inner.width as usize,
+                palette,
+                item.shortcut,
+            )
         })
         .collect::<Vec<_>>();
 
