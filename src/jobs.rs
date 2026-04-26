@@ -1378,6 +1378,15 @@ pub fn test_load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::
     load_hex_dump_preview_internal(bytes, path)
 }
 
+/// Test helper: exposed for integration tests.
+pub fn test_load_image_preview(
+    bytes: &[u8],
+    path: &std::path::Path,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
+    load_image_preview(bytes, path, picker)
+}
+
 fn load_image_preview(
     bytes: &[u8],
     path: &Path,
