@@ -8,7 +8,7 @@ use ratatui::widgets::{
 };
 use ratatui::Frame;
 
-use crate::action::MenuId;
+use crate::action::{Action, MenuId};
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
@@ -108,6 +108,82 @@ pub fn render_menu_popup(
                     .bg(palette.surface_bg)
             };
 
+            let content_width = inner.width as usize;
+            let shortcut_display = if matches!(item.action, Action::OpenMenu(_)) {
+                "►"
+            } else {
+                item.shortcut
+            };
+            let shortcut_width = shortcut_display.chars().count();
+            let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);
+            let row = format!(" {:<label_width$} {}", item.label, shortcut_display);
+            let pad = content_width.saturating_sub(row.chars().count());
+            ListItem::new(Line::from(vec![Span::styled(
+                format!("{}{}", row, " ".repeat(pad)),
+                base_style,
+            )]))
+        })
+        .collect::<Vec<_>>();
+
+    let list = List::new(rows);
+    let mut state = ListState::default();
+    state.select(Some(selection.min(items.len().saturating_sub(1))));
+    frame.render_stateful_widget(list, inner, &mut state);
+}
+
+/// Render a flyout submenu popup to the right of `parent_area`.
+/// If the flyout would overflow the right edge of `area`, it flips to the left of the parent.
+pub fn render_flyout_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    parent_area: Rect,
+    items: &[MenuItem],
+    selection: usize,
+    palette: ThemePalette,
+) {
+    if items.is_empty() {
+        return;
+    }
+
+    let width = menu_popup_width(items);
+    let height = items.len() as u16 + 2;
+
+    let flyout_x = if parent_area.x + parent_area.width + width <= area.x + area.width {
+        parent_area.x + parent_area.width
+    } else {
+        parent_area.x.saturating_sub(width)
+    };
+
+    let flyout_area = Rect {
+        x: flyout_x,
+        y: parent_area.y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.surface_bg));
+    let inner = block.inner(flyout_area);
+    frame.render_widget(Clear, flyout_area);
+    frame.render_widget(block, flyout_area);
+
+    let rows = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            let selected = index == selection;
+            let base_style = if selected {
+                Style::default()
+                    .fg(palette.menu_fg)
+                    .bg(palette.selection_bg)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+                    .fg(palette.text_primary)
+                    .bg(palette.surface_bg)
+            };
             let content_width = inner.width as usize;
             let shortcut_width = item.shortcut.chars().count();
             let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);

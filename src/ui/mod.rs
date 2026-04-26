@@ -34,7 +34,7 @@ use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_line
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
-    render_menu_popup, render_open_with_popup, render_prompt,
+    render_flyout_popup, render_menu_popup, render_open_with_popup, render_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -317,6 +317,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             palette,
             menu_ctx,
         );
+        // Render flyout submenu if open
+        if let Some((_, flyout_sel)) = state.overlay.menu_flyout() {
+            let flyout_items = state.overlay.menu_flyout_items();
+            if !flyout_items.is_empty() {
+                render_flyout_popup(frame, areas[1], rect, &flyout_items, flyout_sel, palette);
+            }
+        }
     }
 
     if let Some(prompt) = state.prompt() {
