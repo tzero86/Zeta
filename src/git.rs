@@ -427,9 +427,23 @@ pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
         let removed = parts[1].parse::<usize>().unwrap_or(0);
         let path = parts[2].trim();
 
-        // Handle simple rename: "old.rs => new.rs" → key on destination
+        // Handle rename paths from numstat.
+        // Brace form:  "src/{old.rs => new.rs}"  or  "{old => new}/mod.rs"
+        // Simple form: "old.rs => new.rs"
+        // In both cases we key on the destination path.
         let resolved = if path.contains(" => ") {
-            path.split(" => ").nth(1).unwrap_or(path).trim().to_string()
+            if let (Some(open), Some(close)) = (path.find('{'), path.rfind('}')) {
+                let prefix = &path[..open];
+                let suffix = &path[close + 1..];
+                let inner = &path[open + 1..close];
+                if let Some(arrow) = inner.find(" => ") {
+                    format!("{}{}{}", prefix, &inner[arrow + 4..], suffix)
+                } else {
+                    path.to_string()
+                }
+            } else {
+                path.split(" => ").nth(1).unwrap_or(path).trim().to_string()
+            }
         } else {
             path.to_string()
         };
@@ -644,6 +658,23 @@ mod tests {
         let counts = parse_numstat(input);
         assert_eq!(counts.get("new_name.rs"), Some(&(5, 2)));
         assert!(!counts.contains_key("old_name.rs => new_name.rs"));
+    }
+
+    #[test]
+    fn parse_numstat_handles_brace_rename_with_prefix() {
+        // git diff --numstat output: src/{old.rs => new.rs}
+        let input = "3\t1\tsrc/{old.rs => new.rs}\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("src/new.rs"), Some(&(3, 1)));
+        assert!(!counts.contains_key("new.rs}"));
+    }
+
+    #[test]
+    fn parse_numstat_handles_brace_rename_with_suffix() {
+        // git diff --numstat output: {src/old => dst/new}/mod.rs
+        let input = "7\t4\t{src/old => dst/new}/mod.rs\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("dst/new/mod.rs"), Some(&(7, 4)));
     }
 
     #[test]
