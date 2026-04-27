@@ -50,6 +50,32 @@ impl FileStatus {
     }
 }
 
+/// A file that has pending git changes, shown in the diff viewer file list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GitDiffFile {
+    pub path: PathBuf,
+    pub status: FileStatus,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// The semantic kind of a single line in a unified diff.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiffLineKind {
+    Added,
+    Removed,
+    Context,
+    HunkHeader,
+    FileHeader,
+}
+
+/// A single parsed line from a unified diff.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiffLine {
+    pub kind: DiffLineKind,
+    pub content: String,
+}
+
 /// Snapshot of `git status` for one repository.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepoStatus {
@@ -124,6 +150,108 @@ pub fn fetch_status(path: &Path) -> Option<RepoStatus> {
         .unwrap_or_default();
 
     Some(RepoStatus::new(root, branch, file_statuses))
+}
+
+/// Fetch all files with pending changes (staged + unstaged + untracked).
+///
+/// Combines `git diff HEAD --numstat` (tracked changes) with
+/// `git status --porcelain=v1 -u` (untracked files).
+/// Returns `None` when `path` is not inside a repo or `git` is unavailable.
+pub fn fetch_diff_files(path: &Path) -> Option<Vec<GitDiffFile>> {
+    let root = detect_repo(path)?;
+
+    // Get +/- counts for tracked changes
+    let counts = run_git(&root, &["diff", "HEAD", "--numstat"])
+        .filter(|o| o.status.success())
+        .map(|o| parse_numstat(&String::from_utf8_lossy(&o.stdout)))
+        .unwrap_or_default();
+
+    // Get status + untracked from porcelain
+    let status_out = [
+        &["status", "--porcelain=v1", "-u", "--no-optional-locks"][..],
+        &["status", "--porcelain=v1", "-u"][..],
+    ]
+    .iter()
+    .filter_map(|args| run_git(&root, args))
+    .find(|o| o.status.success())?;
+    let statuses = parse_porcelain(&String::from_utf8_lossy(&status_out.stdout));
+
+    let mut files: Vec<GitDiffFile> = statuses
+        .into_iter()
+        .map(|(rel_path, status)| {
+            let key = rel_path.display().to_string().replace('\\', "/");
+            let (added, removed) = counts.get(&key).copied().unwrap_or((0, 0));
+            GitDiffFile {
+                path: rel_path,
+                status,
+                added,
+                removed,
+            }
+        })
+        .collect();
+
+    // Sort: conflicted → modified → added → renamed → deleted → untracked; alpha within groups
+    files.sort_by(|a, b| {
+        status_sort_key(a.status)
+            .cmp(&status_sort_key(b.status))
+            .then(a.path.cmp(&b.path))
+    });
+
+    Some(files)
+}
+
+fn status_sort_key(s: FileStatus) -> u8 {
+    match s {
+        FileStatus::Conflicted => 0,
+        FileStatus::Modified => 1,
+        FileStatus::Added => 2,
+        FileStatus::Renamed => 3,
+        FileStatus::Deleted => 4,
+        FileStatus::Untracked => 5,
+    }
+}
+
+/// Fetch the unified diff for a single file.
+///
+/// For tracked files: runs `git diff HEAD -- <path>`.
+/// For untracked files: reads the file directly and marks all lines as Added.
+///
+/// `is_untracked` must be `true` only for `FileStatus::Untracked` files.
+/// Staged-but-new files (`FileStatus::Added`) belong in the tracked branch.
+pub fn fetch_file_diff(path: &Path, rel_path: &Path, is_untracked: bool) -> Vec<DiffLine> {
+    let root = detect_repo(path);
+
+    if is_untracked {
+        let full_path = root.map_or_else(|| rel_path.to_path_buf(), |r| r.join(rel_path));
+        return match std::fs::read_to_string(&full_path) {
+            Ok(content) => content
+                .lines()
+                .map(|l| DiffLine {
+                    kind: DiffLineKind::Added,
+                    content: format!("+{l}"),
+                })
+                .collect(),
+            Err(_) => vec![DiffLine {
+                kind: DiffLineKind::Context,
+                content: String::from("(binary or unreadable file)"),
+            }],
+        };
+    }
+
+    let root = match root {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    let output = run_git(
+        &root,
+        &["diff", "HEAD", "--", &rel_path.display().to_string()],
+    );
+
+    match output {
+        Some(o) if o.status.success() => parse_unified_diff(&String::from_utf8_lossy(&o.stdout)),
+        _ => Vec::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -286,6 +414,84 @@ fn classify(x: char, y: char) -> FileStatus {
     FileStatus::Modified
 }
 
+/// Parse `git diff HEAD --numstat` output into a map of path → (added, removed).
+/// Pure function — no subprocess calls.
+pub(crate) fn parse_numstat(output: &str) -> HashMap<String, (usize, usize)> {
+    let mut map = HashMap::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let added = parts[0].parse::<usize>().unwrap_or(0);
+        let removed = parts[1].parse::<usize>().unwrap_or(0);
+        let path = parts[2].trim();
+
+        // Handle rename paths from numstat.
+        // Brace form:  "src/{old.rs => new.rs}"  or  "{old => new}/mod.rs"
+        // Simple form: "old.rs => new.rs"
+        // In both cases we key on the destination path.
+        let resolved = if path.contains(" => ") {
+            if let (Some(open), Some(close)) = (path.find('{'), path.rfind('}')) {
+                let prefix = &path[..open];
+                let suffix = &path[close + 1..];
+                let inner = &path[open + 1..close];
+                if let Some(arrow) = inner.find(" => ") {
+                    format!("{}{}{}", prefix, &inner[arrow + 4..], suffix)
+                } else {
+                    path.to_string()
+                }
+            } else {
+                path.split(" => ").nth(1).unwrap_or(path).trim().to_string()
+            }
+        } else {
+            path.to_string()
+        };
+
+        if !resolved.is_empty() {
+            map.insert(resolved, (added, removed));
+        }
+    }
+    map
+}
+
+/// Parse the stdout of `git diff` (unified format) into a vec of typed lines.
+/// Pure function — no subprocess calls.
+pub(crate) fn parse_unified_diff(output: &str) -> Vec<DiffLine> {
+    output
+        .lines()
+        .map(|line| {
+            let kind = if line.starts_with("diff ")
+                || line.starts_with("index ")
+                || line.starts_with("--- ")
+                || line.starts_with("+++ ")
+                || line.starts_with("new file mode")
+                || line.starts_with("deleted file mode")
+                || line.starts_with("old mode")
+                || line.starts_with("new mode")
+                || line.starts_with("similarity index")
+                || line.starts_with("rename from")
+                || line.starts_with("rename to")
+                || line.starts_with("Binary files")
+            {
+                DiffLineKind::FileHeader
+            } else if line.starts_with("@@") {
+                DiffLineKind::HunkHeader
+            } else if line.starts_with('+') {
+                DiffLineKind::Added
+            } else if line.starts_with('-') {
+                DiffLineKind::Removed
+            } else {
+                DiffLineKind::Context
+            };
+            DiffLine {
+                kind,
+                content: line.to_string(),
+            }
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -391,5 +597,147 @@ mod tests {
             status.status_for(Path::new("/repo/src/lib.rs")),
             Some(FileStatus::Modified)
         );
+    }
+
+    #[test]
+    fn diff_line_kind_covers_all_variants() {
+        for kind in [
+            DiffLineKind::Added,
+            DiffLineKind::Removed,
+            DiffLineKind::Context,
+            DiffLineKind::HunkHeader,
+            DiffLineKind::FileHeader,
+        ] {
+            let _ = match kind {
+                DiffLineKind::Added => "+",
+                DiffLineKind::Removed => "-",
+                DiffLineKind::Context => " ",
+                DiffLineKind::HunkHeader => "@",
+                DiffLineKind::FileHeader => "~",
+            };
+        }
+    }
+
+    #[test]
+    fn git_diff_file_fields_are_accessible() {
+        let f = GitDiffFile {
+            path: PathBuf::from("src/main.rs"),
+            status: FileStatus::Modified,
+            added: 5,
+            removed: 2,
+        };
+        assert_eq!(f.added, 5);
+        assert_eq!(f.removed, 2);
+        assert_eq!(f.status, FileStatus::Modified);
+        assert_eq!(f.path, PathBuf::from("src/main.rs"));
+    }
+
+    #[test]
+    fn parse_numstat_parses_modified_file() {
+        let out = "12\t3\tsrc/git.rs\n";
+        let map = parse_numstat(out);
+        assert_eq!(map.get("src/git.rs"), Some(&(12usize, 3usize)));
+    }
+
+    #[test]
+    fn parse_numstat_binary_file_gives_zeros() {
+        // git outputs "-\t-\tfile.bin" for binary files
+        let out = "-\t-\tassets/logo.png\n";
+        let map = parse_numstat(out);
+        assert_eq!(map.get("assets/logo.png"), Some(&(0usize, 0usize)));
+    }
+
+    #[test]
+    fn parse_numstat_empty_gives_empty_map() {
+        assert!(parse_numstat("").is_empty());
+    }
+
+    #[test]
+    fn parse_numstat_handles_simple_rename() {
+        let input = "5\t2\told_name.rs => new_name.rs\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("new_name.rs"), Some(&(5, 2)));
+        assert!(!counts.contains_key("old_name.rs => new_name.rs"));
+    }
+
+    #[test]
+    fn parse_numstat_handles_brace_rename_with_prefix() {
+        // git diff --numstat output: src/{old.rs => new.rs}
+        let input = "3\t1\tsrc/{old.rs => new.rs}\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("src/new.rs"), Some(&(3, 1)));
+        assert!(!counts.contains_key("new.rs}"));
+    }
+
+    #[test]
+    fn parse_numstat_handles_brace_rename_with_suffix() {
+        // git diff --numstat output: {src/old => dst/new}/mod.rs
+        let input = "7\t4\t{src/old => dst/new}/mod.rs\n";
+        let counts = parse_numstat(input);
+        assert_eq!(counts.get("dst/new/mod.rs"), Some(&(7, 4)));
+    }
+
+    #[test]
+    fn parse_unified_diff_added_line() {
+        let out = "+    let x = 1;\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].kind, DiffLineKind::Added);
+    }
+
+    #[test]
+    fn parse_unified_diff_removed_line() {
+        let out = "-    let x = 0;\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::Removed);
+    }
+
+    #[test]
+    fn parse_unified_diff_hunk_header() {
+        let out = "@@ -1,4 +1,5 @@ fn main() {\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::HunkHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_file_header() {
+        let out = "diff --git a/src/main.rs b/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_context_line() {
+        let out = " fn existing_function() {\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::Context);
+    }
+
+    #[test]
+    fn parse_unified_diff_triple_plus_is_file_header() {
+        let out = "+++ b/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_triple_minus_is_file_header() {
+        let out = "--- a/src/main.rs\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_new_file_mode_is_file_header() {
+        let out = "new file mode 100644\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
+    }
+
+    #[test]
+    fn parse_unified_diff_binary_files_is_file_header() {
+        let out = "Binary files a/assets/logo.png and b/assets/logo.png differ\n";
+        let lines = parse_unified_diff(out);
+        assert_eq!(lines[0].kind, DiffLineKind::FileHeader);
     }
 }

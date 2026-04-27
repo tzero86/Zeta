@@ -3,12 +3,12 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    block::Title, Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
+    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
-use crate::action::MenuId;
+use crate::action::{Action, MenuId};
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, CollisionState, DialogState, MenuContext, MenuItem, PromptState};
 use crate::ui::styles::{
@@ -58,6 +58,35 @@ pub fn menu_popup_width(items: &[MenuItem]) -> u16 {
     (content_width as u16).saturating_add(2)
 }
 
+fn build_menu_row<'a>(
+    item: &'a MenuItem,
+    index: usize,
+    selection: usize,
+    inner_width: usize,
+    palette: ThemePalette,
+    shortcut_str: &'a str,
+) -> ListItem<'a> {
+    let selected = index == selection;
+    let base_style = if selected {
+        Style::default()
+            .fg(palette.menu_fg)
+            .bg(palette.selection_bg)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(palette.text_primary)
+            .bg(palette.surface_bg)
+    };
+    let shortcut_width = shortcut_str.chars().count();
+    let label_width = inner_width.saturating_sub(shortcut_width + 2).max(1);
+    let row = format!(" {:<label_width$} {}", item.label, shortcut_str);
+    let pad = inner_width.saturating_sub(row.chars().count());
+    ListItem::new(Line::from(vec![Span::styled(
+        format!("{}{}", row, " ".repeat(pad)),
+        base_style,
+    )]))
+}
+
 pub fn render_menu_popup(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -96,27 +125,78 @@ pub fn render_menu_popup(
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let selected = index == selection;
-            let base_style = if selected {
-                Style::default()
-                    .fg(palette.menu_fg)
-                    .bg(palette.selection_bg)
-                    .add_modifier(Modifier::BOLD)
+            let shortcut_str = if matches!(item.action, Action::OpenMenu(_)) {
+                "►"
             } else {
-                Style::default()
-                    .fg(palette.text_primary)
-                    .bg(palette.surface_bg)
+                item.shortcut
             };
+            build_menu_row(
+                item,
+                index,
+                selection,
+                inner.width as usize,
+                palette,
+                shortcut_str,
+            )
+        })
+        .collect::<Vec<_>>();
 
-            let content_width = inner.width as usize;
-            let shortcut_width = item.shortcut.chars().count();
-            let label_width = content_width.saturating_sub(shortcut_width + 2).max(1);
-            let row = format!(" {:<label_width$} {}", item.label, item.shortcut);
-            let pad = content_width.saturating_sub(row.chars().count());
-            ListItem::new(Line::from(vec![Span::styled(
-                format!("{}{}", row, " ".repeat(pad)),
-                base_style,
-            )]))
+    let list = List::new(rows);
+    let mut state = ListState::default();
+    state.select(Some(selection.min(items.len().saturating_sub(1))));
+    frame.render_stateful_widget(list, inner, &mut state);
+}
+
+/// Render a flyout submenu popup to the right of `parent_area`.
+/// If the flyout would overflow the right edge of `area`, it flips to the left of the parent.
+pub fn render_flyout_popup(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    parent_area: Rect,
+    items: &[MenuItem],
+    selection: usize,
+    palette: ThemePalette,
+) {
+    if items.is_empty() {
+        return;
+    }
+
+    let width = menu_popup_width(items);
+    let height = (items.len() as u16 + 2).min(area.height.saturating_sub(parent_area.y));
+
+    let flyout_x = if parent_area.x + parent_area.width + width <= area.x + area.width {
+        parent_area.x + parent_area.width
+    } else {
+        parent_area.x.saturating_sub(width)
+    };
+
+    let flyout_area = Rect {
+        x: flyout_x,
+        y: parent_area.y,
+        width,
+        height,
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.prompt_border))
+        .style(Style::default().bg(palette.surface_bg));
+    let inner = block.inner(flyout_area);
+    frame.render_widget(Clear, flyout_area);
+    frame.render_widget(block, flyout_area);
+
+    let rows = items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            build_menu_row(
+                item,
+                index,
+                selection,
+                inner.width as usize,
+                palette,
+                item.shortcut,
+            )
         })
         .collect::<Vec<_>>();
 
@@ -156,10 +236,7 @@ pub fn render_prompt(
     };
 
     let block = Block::default()
-        .title(Title::from(Span::styled(
-            prompt.title,
-            overlay_title_style(palette),
-        )))
+        .title(Span::styled(prompt.title, overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -397,10 +474,7 @@ pub fn render_dialog(
     };
 
     let block = Block::default()
-        .title(Title::from(Span::styled(
-            dialog.title,
-            overlay_title_style(palette),
-        )))
+        .title(Span::styled(dialog.title, overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(palette.prompt_border))
@@ -497,7 +571,7 @@ pub fn render_collision_dialog(
     };
 
     let block = Block::default()
-        .title(Title::from("Resolve Collision"))
+        .title("Resolve Collision")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(
@@ -574,7 +648,7 @@ pub fn render_destructive_confirm(
                 .fg(palette.prompt_border)
                 .add_modifier(Modifier::BOLD),
         )
-        .title(Title::from(" Destructive Action "))
+        .title(" Destructive Action ")
         .title_alignment(Alignment::Center)
         .style(Style::default().bg(palette.prompt_bg));
 
@@ -653,10 +727,7 @@ pub fn render_open_with_popup(
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Title::from(Span::styled(
-            " Open With ",
-            overlay_title_style(palette),
-        )))
+        .title(Span::styled(" Open With ", overlay_title_style(palette)))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(elevated_surface_style(palette));

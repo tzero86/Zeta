@@ -118,6 +118,7 @@ pub struct PreviewRequest {
     pub syntect_theme: String,
     pub archive: Option<PathBuf>,
     pub inner_path: Option<PathBuf>,
+    pub picker: ratatui_image::picker::Picker,
 }
 
 #[derive(Clone, Debug)]
@@ -498,7 +499,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .spawn(move || {
                 for req in preview_rx {
                     let view = if req.archive.is_none() {
-                        load_preview_content(&req.path, &req.syntect_theme)
+                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
                     } else if let (Some(archive_path), Some(inner_path)) =
                         (req.archive.clone(), req.inner_path.clone())
                     {
@@ -523,6 +524,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                                         &buf,
                                                         &inner_path,
                                                         &req.syntect_theme,
+                                                        &req.picker,
                                                     )
                                                 }
                                                 Err(_) => crate::preview::ViewBuffer::from_plain(
@@ -568,6 +570,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                             &buf,
                                             &inner_path,
                                             &req.syntect_theme,
+                                            &req.picker,
                                         )
                                     } else {
                                         crate::preview::ViewBuffer::from_plain("[empty file]")
@@ -577,7 +580,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                             Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
                         }
                     } else {
-                        load_preview_content(&req.path, &req.syntect_theme)
+                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
                     };
                     if result_tx_preview
                         .send(JobResult::PreviewLoaded {
@@ -1183,7 +1186,223 @@ fn walk_recursive(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
     }
 }
 
-fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+/// Map a file extension (lowercase) to an `ArchiveFormat`, or `None` if not an archive.
+#[cfg(test)]
+fn archive_format_for_ext(ext: &str) -> Option<crate::preview::ArchiveFormat> {
+    match ext {
+        "zip" => Some(crate::preview::ArchiveFormat::Zip),
+        "tar" => Some(crate::preview::ArchiveFormat::Tar),
+        "tgz" => Some(crate::preview::ArchiveFormat::TarGz),
+        "tbz2" => Some(crate::preview::ArchiveFormat::TarBz2),
+        "txz" => Some(crate::preview::ArchiveFormat::TarXz),
+        _ => None,
+    }
+}
+
+/// Build an `ArchiveListing` for the given archive bytes.
+/// Handles compound extensions like `.tar.gz` by inspecting the full filename.
+fn load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    use crate::preview::{ArchiveEntry, ArchiveListing, MAX_ARCHIVE_ENTRIES};
+    use std::io::Cursor;
+
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    // Detect archive format — compound extensions take priority.
+    let format = if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        crate::preview::ArchiveFormat::TarGz
+    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+        crate::preview::ArchiveFormat::TarBz2
+    } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+        crate::preview::ArchiveFormat::TarXz
+    } else if name.ends_with(".tar") {
+        crate::preview::ArchiveFormat::Tar
+    } else {
+        crate::preview::ArchiveFormat::Zip
+    };
+
+    let mut entries: Vec<ArchiveEntry> = Vec::new();
+    let mut total_entries: usize = 0;
+    let mut had_error = false;
+
+    match format {
+        crate::preview::ArchiveFormat::Zip => {
+            let cursor = Cursor::new(bytes);
+            match zip::ZipArchive::new(cursor) {
+                Ok(mut archive) => {
+                    total_entries = archive.len();
+                    for i in 0..archive.len().min(MAX_ARCHIVE_ENTRIES) {
+                        if let Ok(file) = archive.by_index(i) {
+                            entries.push(ArchiveEntry {
+                                path: file.name().to_owned(),
+                                size: file.size(),
+                                compressed_size: Some(file.compressed_size()),
+                                is_dir: file.is_dir(),
+                            });
+                        }
+                    }
+                }
+                Err(_) => had_error = true,
+            }
+        }
+        crate::preview::ArchiveFormat::Tar
+        | crate::preview::ArchiveFormat::TarGz
+        | crate::preview::ArchiveFormat::TarBz2
+        | crate::preview::ArchiveFormat::TarXz => {
+            let cursor = Cursor::new(bytes);
+            let reader: Box<dyn std::io::Read> = match format {
+                crate::preview::ArchiveFormat::TarGz => {
+                    Box::new(flate2::read::GzDecoder::new(cursor))
+                }
+                crate::preview::ArchiveFormat::TarBz2 => {
+                    Box::new(bzip2::read::BzDecoder::new(cursor))
+                }
+                crate::preview::ArchiveFormat::TarXz => Box::new(xz2::read::XzDecoder::new(cursor)),
+                _ => Box::new(cursor),
+            };
+            let mut archive = tar::Archive::new(reader);
+            match archive.entries() {
+                Ok(iter) => {
+                    for entry in iter.flatten() {
+                        total_entries += 1;
+                        if entries.len() < MAX_ARCHIVE_ENTRIES {
+                            let path_str = entry
+                                .path()
+                                .ok()
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_default();
+                            let size = entry.header().size().unwrap_or(0);
+                            let is_dir = entry.header().entry_type().is_dir();
+                            entries.push(ArchiveEntry {
+                                path: path_str,
+                                size,
+                                compressed_size: None,
+                                is_dir,
+                            });
+                        }
+                    }
+                }
+                Err(_) => had_error = true,
+            }
+        }
+    }
+
+    if had_error && entries.is_empty() {
+        return crate::preview::ViewBuffer::from_plain("⚠ could not read archive");
+    }
+
+    let listing = ArchiveListing {
+        format,
+        entries,
+        total_entries,
+    };
+    let mut vb = crate::preview::ViewBuffer::from_archive(listing);
+    if had_error {
+        vb.total_lines = vb.total_lines.max(1);
+    }
+    vb
+}
+
+/// Build one 16-byte row of a hex dump.
+/// `offset` is the byte offset of the first byte in `chunk`.
+/// `chunk` may be shorter than 16 bytes for the final row.
+pub(crate) fn build_hex_row(offset: usize, chunk: &[u8]) -> crate::preview::HexRow {
+    // Build each 8-byte group independently so the double-space separator is always
+    // preserved — even when `chunk` ends exactly at the group boundary (8 bytes).
+    let build_group = |start: usize| -> String {
+        let mut s = String::new();
+        for i in start..start + 8 {
+            if i > start {
+                s.push(' ');
+            }
+            if i < chunk.len() {
+                s.push_str(&format!("{:02x}", chunk[i]));
+            } else {
+                s.push_str("  "); // placeholder for missing byte
+            }
+        }
+        s
+    };
+    let hex_part = format!("{}  {}", build_group(0), build_group(8));
+
+    let ascii_part: String = chunk
+        .iter()
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect();
+
+    crate::preview::HexRow {
+        offset: format!("{:08x}", offset),
+        hex_part,
+        ascii_part,
+    }
+}
+
+/// Build a `ViewBuffer::HexDump` for the first `HEX_DUMP_MAX_BYTES` of `bytes`.
+pub(crate) fn load_hex_dump_preview_internal(
+    bytes: &[u8],
+    _path: &Path,
+) -> crate::preview::ViewBuffer {
+    use crate::preview::HEX_DUMP_MAX_BYTES;
+
+    let total_bytes = bytes.len();
+    let visible = &bytes[..bytes.len().min(HEX_DUMP_MAX_BYTES)];
+    let rows: Vec<crate::preview::HexRow> = visible
+        .chunks(16)
+        .enumerate()
+        .map(|(i, chunk)| build_hex_row(i * 16, chunk))
+        .collect();
+
+    let data = crate::preview::HexDumpData {
+        rows,
+        total_bytes,
+        truncated: total_bytes > HEX_DUMP_MAX_BYTES,
+    };
+    crate::preview::ViewBuffer::from_hex_dump(data)
+}
+
+fn load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    load_hex_dump_preview_internal(bytes, path)
+}
+
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
+pub fn test_load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    load_archive_preview(bytes, path)
+}
+
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
+pub fn test_load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
+    load_hex_dump_preview_internal(bytes, path)
+}
+
+/// Test-only shim. Not part of the public API.
+/// Exposed as `pub` solely because integration tests compile as a separate crate.
+#[doc(hidden)]
+pub fn test_load_image_preview(
+    bytes: &[u8],
+    path: &std::path::Path,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
+    load_image_preview(bytes, path, picker)
+}
+
+fn load_image_preview(
+    bytes: &[u8],
+    path: &Path,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
     use image::ImageReader;
     use std::io::Cursor;
 
@@ -1200,14 +1419,12 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
     let orig_h = img.height();
 
     // Pre-scale wide images to cap memory (max 800px wide), preserving aspect ratio.
-    // Final viewport-sized scaling happens at render time.
-    let pixels = if orig_w > 800 {
+    let img = if orig_w > 800 {
         let scale = 800.0_f32 / orig_w as f32;
         let pre_h = ((orig_h as f32 * scale) as u32).max(1);
         img.resize_exact(800, pre_h, image::imageops::FilterType::Lanczos3)
-            .to_rgba8()
     } else {
-        img.to_rgba8()
+        img
     };
 
     let filename = path
@@ -1216,26 +1433,29 @@ fn load_image_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer {
         .unwrap_or("image")
         .to_owned();
 
+    let protocol = picker.new_resize_protocol(img);
     crate::preview::ViewBuffer::from_image_data(crate::preview::ImagePreviewData::new(
-        filename,
-        orig_w,
-        orig_h,
-        std::sync::Arc::new(pixels),
+        filename, orig_w, orig_h, protocol,
     ))
 }
 
-fn load_preview_content(path: &Path, syntect_theme: &str) -> crate::preview::ViewBuffer {
+fn load_preview_content(
+    path: &Path,
+    syntect_theme: &str,
+    picker: &ratatui_image::picker::Picker,
+) -> crate::preview::ViewBuffer {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
     };
-    load_preview_from_bytes(&bytes, path, syntect_theme)
+    load_preview_from_bytes(&bytes, path, syntect_theme, picker)
 }
 
 fn load_preview_from_bytes(
     bytes: &[u8],
     path: &Path,
     syntect_theme: &str,
+    picker: &ratatui_image::picker::Picker,
 ) -> crate::preview::ViewBuffer {
     if bytes.is_empty() {
         return crate::preview::ViewBuffer::from_plain("[empty file]");
@@ -1248,15 +1468,31 @@ fn load_preview_from_bytes(
         Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
     );
     if is_image_ext {
-        return load_image_preview(bytes, path);
+        return load_image_preview(bytes, path, picker);
+    }
+
+    // Archive files: show file listing.
+    let is_archive_ext = {
+        let lower = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        lower.ends_with(".zip")
+            || lower.ends_with(".tar")
+            || lower.ends_with(".tar.gz")
+            || lower.ends_with(".tgz")
+            || lower.ends_with(".tar.bz2")
+            || lower.ends_with(".tbz2")
+            || lower.ends_with(".tar.xz")
+            || lower.ends_with(".txz")
+    };
+    if is_archive_ext {
+        return load_archive_preview(bytes, path);
     }
 
     if looks_like_binary(bytes) {
-        let size_bytes = std::fs::metadata(path)
-            .map(|m| m.len())
-            .unwrap_or(bytes.len() as u64);
-        let label = format!("[binary file — {size_bytes} bytes]");
-        return crate::preview::ViewBuffer::from_plain(&label);
+        return load_hex_dump_preview(bytes, path);
     }
 
     let text = String::from_utf8_lossy(bytes);
@@ -2673,6 +2909,68 @@ mod tests {
         let _ = std::fs::remove_file(root.join("created.txt"));
         let _ = std::fs::remove_dir(&root);
         assert!(saw_change, "expected watcher to emit DirectoryChanged");
+    }
+
+    #[test]
+    fn archive_format_detected_by_extension() {
+        assert_eq!(
+            archive_format_for_ext("zip"),
+            Some(crate::preview::ArchiveFormat::Zip)
+        );
+        assert_eq!(
+            archive_format_for_ext("tar"),
+            Some(crate::preview::ArchiveFormat::Tar)
+        );
+        assert_eq!(
+            archive_format_for_ext("tgz"),
+            Some(crate::preview::ArchiveFormat::TarGz)
+        );
+        assert_eq!(archive_format_for_ext("rs"), None);
+    }
+
+    #[test]
+    fn hex_dump_formats_row_correctly() {
+        let row = build_hex_row(
+            0,
+            &[
+                0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00,
+                0x00, 0x01,
+            ],
+        );
+        assert_eq!(row.offset, "00000000");
+        assert!(row.hex_part.contains("ff d8 ff e0"));
+        assert!(row.hex_part.contains("49 46 00 01"));
+        // Gap between the two 8-byte groups
+        assert!(row.hex_part.contains("  "));
+        // Non-printable → dot
+        assert!(row.ascii_part.contains('.'));
+        // 'J' (0x4a) and 'F' (0x46) are printable
+        assert!(row.ascii_part.contains('J'));
+        assert!(row.ascii_part.contains('F'));
+    }
+
+    #[test]
+    fn hex_dump_pads_short_final_row() {
+        // 3 bytes — should produce a 16-byte-wide hex field with padding
+        let row = build_hex_row(16, &[0xde, 0xad, 0xbe]);
+        assert_eq!(row.offset, "00000010");
+        // hex_part should be padded to the same width as a full row
+        assert_eq!(
+            row.hex_part.len(),
+            "ff d8 ff e0 00 10 4a 46  49 46 00 01 01 00 00 01".len()
+        );
+    }
+
+    #[test]
+    fn load_hex_dump_preview_truncates_at_4kb() {
+        let data = vec![0u8; 8192]; // 8 KB of null bytes
+        let path = std::path::Path::new("blob.bin");
+        let vb = load_hex_dump_preview_internal(&data, path);
+        assert!(vb.is_hex_dump());
+        let dump = vb.hex_dump_data.as_ref().unwrap();
+        assert!(dump.truncated);
+        assert_eq!(dump.total_bytes, 8192);
+        assert_eq!(dump.rows.len(), crate::preview::HEX_DUMP_MAX_BYTES / 16);
     }
 
     #[test]

@@ -4,7 +4,7 @@ use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{block::Title, Block, Borders};
+use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
 
 pub fn render_terminal(
@@ -30,7 +30,7 @@ pub fn render_terminal(
     ]);
     let block = Block::default()
         .borders(Borders::TOP)
-        .title(Title::from(title_line))
+        .title(title_line)
         .border_style(if focused {
             Style::default().fg(palette.border_focus)
         } else {

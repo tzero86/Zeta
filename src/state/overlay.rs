@@ -13,6 +13,15 @@ use crate::state::settings::SettingsState;
 use crate::state::ssh::SshConnectionState;
 use crate::state::types::MenuItem;
 
+/// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
+fn flyout_trigger(item: &MenuItem) -> Option<MenuId> {
+    if let Action::OpenMenu(id) = item.action {
+        Some(id)
+    } else {
+        None
+    }
+}
+
 /// All modal UI states, mutually exclusive by construction.
 /// Only one variant can be active at a time — the type system enforces this.
 #[derive(Clone, Debug)]
@@ -20,6 +29,9 @@ pub enum ModalState {
     Menu {
         id: MenuId,
         selection: usize,
+        /// Active flyout submenu: (submenu_id, submenu_selection).
+        /// When Some, keyboard navigation targets the flyout.
+        flyout: Option<(MenuId, usize)>,
     },
     Prompt(PromptState),
     Dialog(DialogState),
@@ -91,6 +103,36 @@ impl OverlayState {
         match &self.modal {
             Some(ModalState::Menu { id, .. }) => menu_items_for(*id, self.menu_context),
             _ => vec![],
+        }
+    }
+
+    /// Returns the active flyout state as `(submenu_id, submenu_selection)` if open.
+    pub fn menu_flyout(&self) -> Option<(MenuId, usize)> {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => *flyout,
+            _ => None,
+        }
+    }
+
+    /// Returns the flyout submenu items if a flyout is open.
+    pub fn menu_flyout_items(&self) -> Vec<MenuItem> {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => {
+                if let Some((flyout_id, _)) = flyout {
+                    menu_items_for(*flyout_id, self.menu_context)
+                } else {
+                    vec![]
+                }
+            }
+            _ => vec![],
+        }
+    }
+
+    /// Returns the flyout submenu selection index if a flyout is open.
+    pub fn menu_flyout_selection(&self) -> usize {
+        match &self.modal {
+            Some(ModalState::Menu { flyout, .. }) => flyout.map(|(_, sel)| sel).unwrap_or(0),
+            _ => 0,
         }
     }
 
@@ -393,15 +435,116 @@ impl OverlayState {
                 self.modal = Some(ModalState::Menu {
                     id: *menu_id,
                     selection: 0,
+                    flyout: None,
                 });
             }
             Action::MenuActivate => {
-                if let Some(ModalState::Menu { id, selection }) = &self.modal {
-                    let id = *id;
-                    let sel = *selection;
-                    if let Some(item) = menu_items_for(id, self.menu_context).get(sel).cloned() {
-                        self.close_all();
-                        commands.push(Command::DispatchAction(item.action.clone()));
+                let snapshot = if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = &self.modal
+                {
+                    Some((*id, *selection, *flyout))
+                } else {
+                    None
+                };
+                if let Some((id, sel, flyout_opt)) = snapshot {
+                    if let Some((flyout_id, flyout_sel)) = flyout_opt {
+                        if let Some(item) = menu_items_for(flyout_id, self.menu_context)
+                            .get(flyout_sel)
+                            .cloned()
+                        {
+                            self.close_all();
+                            commands.push(Command::DispatchAction(item.action.clone()));
+                        }
+                    } else {
+                        let items = menu_items_for(id, self.menu_context);
+                        if let Some(item) = items.get(sel).cloned() {
+                            if let Some(sub_id) = flyout_trigger(&item) {
+                                if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                                    *flyout = Some((sub_id, 0));
+                                }
+                            } else {
+                                self.close_all();
+                                commands.push(Command::DispatchAction(item.action.clone()));
+                            }
+                        }
+                    }
+                }
+            }
+            Action::MenuEnterFlyout => {
+                let snapshot = if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = &self.modal
+                {
+                    Some((*id, *selection, *flyout))
+                } else {
+                    None
+                };
+                if let Some((id, sel, flyout_opt)) = snapshot {
+                    if let Some((flyout_id, flyout_sel)) = flyout_opt {
+                        // Flyout is open — activate the flyout item directly
+                        if let Some(item) = menu_items_for(flyout_id, self.menu_context)
+                            .get(flyout_sel)
+                            .cloned()
+                        {
+                            self.close_all();
+                            commands.push(Command::DispatchAction(item.action.clone()));
+                        }
+                    } else {
+                        let items = menu_items_for(id, self.menu_context);
+                        if let Some(sub_id) = items.get(sel).and_then(flyout_trigger) {
+                            if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                                *flyout = Some((sub_id, 0));
+                            }
+                        } else {
+                            // Not a trigger — inline MenuNext logic (tab switch forward)
+                            if let Some(ModalState::Menu {
+                                id,
+                                selection,
+                                flyout,
+                            }) = self.modal.as_mut()
+                            {
+                                *flyout = None;
+                                let tabs = crate::state::menu::menu_tabs(self.menu_context);
+                                if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
+                                    *id = tabs[(pos + 1) % tabs.len()].id;
+                                }
+                                *selection = 0;
+                            }
+                        }
+                    }
+                }
+            }
+            Action::MenuExitFlyout => {
+                let snapshot = if let Some(ModalState::Menu { flyout, .. }) = &self.modal {
+                    Some(flyout.is_some())
+                } else {
+                    None
+                };
+                if let Some(flyout_is_open) = snapshot {
+                    if flyout_is_open {
+                        if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                            *flyout = None;
+                        }
+                    } else {
+                        // No flyout — switch to previous tab (inline MenuPrevious logic)
+                        if let Some(ModalState::Menu {
+                            id,
+                            selection,
+                            flyout,
+                        }) = self.modal.as_mut()
+                        {
+                            *flyout = None;
+                            let tabs = crate::state::menu::menu_tabs(self.menu_context);
+                            if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
+                                *id = tabs[(pos + tabs.len() - 1) % tabs.len()].id;
+                            }
+                            *selection = 0;
+                        }
                     }
                 }
             }
@@ -422,9 +565,13 @@ impl OverlayState {
                 }
             }
             Action::MenuMnemonic(ch) => {
-                if let Some(ModalState::Menu { id, .. }) = &self.modal {
-                    let id = *id;
-                    if let Some(item) = menu_items_for(id, self.menu_context)
+                let search_id = if let Some(ModalState::Menu { id, flyout, .. }) = &self.modal {
+                    Some(flyout.map(|(fid, _)| fid).unwrap_or(*id))
+                } else {
+                    None
+                };
+                if let Some(search_id) = search_id {
+                    if let Some(item) = menu_items_for(search_id, self.menu_context)
                         .into_iter()
                         .find(|item| item.mnemonic.eq_ignore_ascii_case(ch))
                     {
@@ -434,20 +581,90 @@ impl OverlayState {
                 }
             }
             Action::MenuMoveDown => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
-                    let len = menu_items_for(*id, self.menu_context).len();
-                    if len > 0 {
-                        *selection = (*selection + 1).min(len.saturating_sub(1));
+                let snapshot = if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = &self.modal
+                {
+                    Some((*id, *selection, *flyout))
+                } else {
+                    None
+                };
+                if let Some((id, selection, flyout_opt)) = snapshot {
+                    if let Some((flyout_id, flyout_sel)) = flyout_opt {
+                        let flyout_len = menu_items_for(flyout_id, self.menu_context).len();
+                        if flyout_len > 0 {
+                            let new_sel = (flyout_sel + 1).min(flyout_len.saturating_sub(1));
+                            if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                                if let Some((_, s)) = flyout.as_mut() {
+                                    *s = new_sel;
+                                }
+                            }
+                        }
+                    } else {
+                        let items = menu_items_for(id, self.menu_context);
+                        let len = items.len();
+                        if len > 0 {
+                            let new_sel = (selection + 1).min(len.saturating_sub(1));
+                            let trigger = items.get(new_sel).and_then(flyout_trigger);
+                            if let Some(ModalState::Menu {
+                                selection, flyout, ..
+                            }) = self.modal.as_mut()
+                            {
+                                *selection = new_sel;
+                                *flyout = trigger.map(|sub_id| (sub_id, 0));
+                            }
+                        }
                     }
                 }
             }
             Action::MenuMoveUp => {
-                if let Some(ModalState::Menu { selection, .. }) = self.modal.as_mut() {
-                    *selection = selection.saturating_sub(1);
+                let snapshot = if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = &self.modal
+                {
+                    Some((*id, *selection, *flyout))
+                } else {
+                    None
+                };
+                if let Some((id, selection, flyout_opt)) = snapshot {
+                    if let Some((_, flyout_sel)) = flyout_opt {
+                        if flyout_sel > 0 {
+                            if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                                if let Some((_, s)) = flyout.as_mut() {
+                                    *s -= 1;
+                                }
+                            }
+                        } else {
+                            if let Some(ModalState::Menu { flyout, .. }) = self.modal.as_mut() {
+                                *flyout = None;
+                            }
+                        }
+                    } else {
+                        let new_sel = selection.saturating_sub(1);
+                        let items = menu_items_for(id, self.menu_context);
+                        let trigger = items.get(new_sel).and_then(flyout_trigger);
+                        if let Some(ModalState::Menu {
+                            selection, flyout, ..
+                        }) = self.modal.as_mut()
+                        {
+                            *selection = new_sel;
+                            *flyout = trigger.map(|sub_id| (sub_id, 0));
+                        }
+                    }
                 }
             }
             Action::MenuNext => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
+                if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = self.modal.as_mut()
+                {
+                    *flyout = None;
                     let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + 1) % tabs.len()].id;
@@ -456,7 +673,13 @@ impl OverlayState {
                 }
             }
             Action::MenuPrevious => {
-                if let Some(ModalState::Menu { id, selection }) = self.modal.as_mut() {
+                if let Some(ModalState::Menu {
+                    id,
+                    selection,
+                    flyout,
+                }) = self.modal.as_mut()
+                {
+                    *flyout = None;
                     let tabs = crate::state::menu::menu_tabs(self.menu_context);
                     if let Some(pos) = tabs.iter().position(|tab| tab.id == *id) {
                         *id = tabs[(pos + tabs.len() - 1) % tabs.len()].id;
@@ -602,7 +825,8 @@ mod tests {
             s.modal,
             Some(ModalState::Menu {
                 id: MenuId::File,
-                selection: 0
+                selection: 0,
+                flyout: None,
             })
         ));
     }
@@ -613,6 +837,7 @@ mod tests {
         s.modal = Some(ModalState::Menu {
             id: MenuId::File,
             selection: 0,
+            flyout: None,
         });
         s.apply(&Action::OpenSettingsPanel).unwrap();
         assert!(matches!(s.modal, Some(ModalState::Settings(_))));
@@ -627,11 +852,22 @@ mod tests {
     }
 
     #[test]
+    fn open_menu_has_no_flyout() {
+        let mut s = OverlayState::default();
+        s.apply(&Action::OpenMenu(MenuId::View)).unwrap();
+        assert!(
+            s.menu_flyout().is_none(),
+            "newly opened menu must have no flyout"
+        );
+    }
+
+    #[test]
     fn menu_activate_emits_dispatch_action() {
         let mut s = OverlayState::default();
         s.modal = Some(ModalState::Menu {
             id: MenuId::File,
             selection: 0,
+            flyout: None,
         });
         let cmds = s.apply(&Action::MenuActivate).unwrap();
         assert!(s.modal.is_none(), "menu should close after activation");
@@ -646,5 +882,176 @@ mod tests {
         // Empty query with selection 0 — may or may not match, but modal should close
         s.apply(&Action::PaletteConfirm).unwrap();
         assert!(s.modal.is_none());
+    }
+
+    fn open_view_menu() -> OverlayState {
+        let mut s = OverlayState::default();
+        s.apply(&Action::OpenMenu(MenuId::View)).unwrap();
+        s
+    }
+
+    #[test]
+    fn move_down_to_themes_trigger_opens_flyout() {
+        let mut s = open_view_menu();
+        // View menu pane items: 0=Toggle Hidden, 1=Settings, 2=Layout:Side, 3=Layout:Stacked, 4=Themes..., 5=Toggle Details
+        s.apply(&Action::MenuMoveDown).unwrap(); // sel=1
+        s.apply(&Action::MenuMoveDown).unwrap(); // sel=2
+        s.apply(&Action::MenuMoveDown).unwrap(); // sel=3
+        s.apply(&Action::MenuMoveDown).unwrap(); // sel=4 (Themes...)
+        let flyout = s.menu_flyout();
+        assert!(
+            flyout.is_some(),
+            "flyout must open when landing on Themes trigger"
+        );
+        assert_eq!(flyout.unwrap().0, MenuId::Themes);
+        assert_eq!(flyout.unwrap().1, 0, "flyout selection starts at 0");
+    }
+
+    #[test]
+    fn move_up_away_from_trigger_closes_flyout() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        s.apply(&Action::MenuMoveUp).unwrap();
+        assert!(
+            s.menu_flyout().is_none(),
+            "flyout must close when leaving trigger item"
+        );
+    }
+
+    #[test]
+    fn move_down_while_flyout_open_moves_flyout_selection() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert_eq!(s.menu_flyout().unwrap().1, 0);
+        s.apply(&Action::MenuMoveDown).unwrap();
+        assert_eq!(
+            s.menu_flyout().unwrap().1,
+            1,
+            "down key should advance flyout selection"
+        );
+    }
+
+    #[test]
+    fn enter_flyout_on_trigger_activates_flyout_item() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some(), "flyout must be open on trigger");
+        // MenuEnterFlyout when flyout is already open activates the selected item
+        let cmds = s.apply(&Action::MenuEnterFlyout).unwrap();
+        assert!(
+            !cmds.is_empty(),
+            "MenuEnterFlyout on open flyout must dispatch action"
+        );
+        assert!(
+            s.modal.is_none(),
+            "menu closes after activating flyout item via MenuEnterFlyout"
+        );
+    }
+
+    #[test]
+    fn enter_flyout_not_on_trigger_switches_tab() {
+        let mut s = open_view_menu();
+        // selection=0, not a trigger item
+        let initial_menu = s.active_menu();
+        s.apply(&Action::MenuEnterFlyout).unwrap();
+        assert_ne!(
+            s.active_menu(),
+            initial_menu,
+            "MenuEnterFlyout on non-trigger must switch tab"
+        );
+        assert!(s.menu_flyout().is_none());
+    }
+
+    #[test]
+    fn exit_flyout_when_open_collapses_flyout() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        s.apply(&Action::MenuExitFlyout).unwrap();
+        assert!(
+            s.menu_flyout().is_none(),
+            "MenuExitFlyout must close flyout"
+        );
+        assert!(s.is_menu_open(), "parent menu must remain open");
+    }
+
+    #[test]
+    fn exit_flyout_when_closed_switches_prev_tab() {
+        let mut s = open_view_menu();
+        let initial_menu = s.active_menu();
+        s.apply(&Action::MenuExitFlyout).unwrap();
+        assert_ne!(
+            s.active_menu(),
+            initial_menu,
+            "MenuExitFlyout with no flyout switches to prev tab"
+        );
+    }
+
+    #[test]
+    fn menu_activate_on_flyout_item_dispatches_action() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        let cmds = s.apply(&Action::MenuActivate).unwrap();
+        assert!(
+            !cmds.is_empty(),
+            "MenuActivate on flyout item must dispatch action"
+        );
+        assert!(
+            s.modal.is_none(),
+            "menu must close after activating flyout item"
+        );
+    }
+
+    #[test]
+    fn menu_next_clears_flyout() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        s.apply(&Action::MenuNext).unwrap();
+        assert!(s.menu_flyout().is_none(), "MenuNext must clear flyout");
+    }
+
+    #[test]
+    fn mnemonic_in_flyout_activates_flyout_item() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        // Find the first mnemonic character in the Themes submenu and use it
+        let flyout_items = s.menu_flyout_items();
+        assert!(!flyout_items.is_empty(), "Themes submenu must have items");
+        let first_mnemonic = flyout_items[0].mnemonic;
+        let cmds = s.apply(&Action::MenuMnemonic(first_mnemonic)).unwrap();
+        assert!(
+            !cmds.is_empty(),
+            "mnemonic in flyout must dispatch theme action"
+        );
+        assert!(s.modal.is_none(), "menu closes after mnemonic in flyout");
+    }
+
+    #[test]
+    fn menu_previous_clears_flyout() {
+        let mut s = open_view_menu();
+        for _ in 0..4 {
+            s.apply(&Action::MenuMoveDown).unwrap();
+        }
+        assert!(s.menu_flyout().is_some());
+        s.apply(&Action::MenuPrevious).unwrap();
+        assert!(s.menu_flyout().is_none(), "MenuPrevious must clear flyout");
     }
 }

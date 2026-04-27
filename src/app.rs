@@ -12,6 +12,7 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::{Frame, Terminal};
+use ratatui_image::picker::Picker;
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
@@ -76,6 +77,11 @@ impl App {
 
     pub fn run(&mut self) -> Result<()> {
         let mut terminal = TerminalSession::enter()?;
+
+        // Query terminal for graphics capabilities now that we are in alternate screen.
+        // Falls back to halfblocks if the query fails or times out.
+        self.state
+            .set_image_picker(Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks()));
 
         while !self.state.should_quit() {
             // Process events first; draw only when state actually changed.
@@ -513,6 +519,7 @@ impl App {
                         syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
                         archive,
                         inner_path: inner,
+                        picker: self.state.image_picker().clone(),
                     })
                     .context("failed to queue background preview job")?;
             }
@@ -802,6 +809,10 @@ fn route_key_event(
             Action::from_editor_key_event(key_event, keymap)
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
+        FocusLayer::GitDiffFileList => Action::from_git_diff_file_list_key_event(&key_event)
+            .or_else(|| Action::from_pane_key_event(key_event, keymap)),
+        FocusLayer::GitDiffContent => Action::from_git_diff_content_key_event(&key_event)
+            .or_else(|| Action::from_pane_key_event(key_event, keymap)),
         FocusLayer::Pane => {
             if is_preview_open && alt_f3 {
                 return Some(Action::FocusPreviewPanel);
@@ -864,6 +875,12 @@ fn route_mouse_event(
             {
                 return Some(Action::EditorMoveUp);
             }
+            if matches!(focus, FocusLayer::GitDiffContent) {
+                return Some(Action::GitDiffScrollUp);
+            }
+            if matches!(focus, FocusLayer::GitDiffFileList) {
+                return Some(Action::GitDiffSelectPrev);
+            }
             if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {
                 return Some(Action::MoveSelectionUp);
@@ -899,6 +916,12 @@ fn route_mouse_event(
                     .is_some_and(|r| rect_contains(r, col, row))
             {
                 return Some(Action::EditorMoveDown);
+            }
+            if matches!(focus, FocusLayer::GitDiffContent) {
+                return Some(Action::GitDiffScrollDown);
+            }
+            if matches!(focus, FocusLayer::GitDiffFileList) {
+                return Some(Action::GitDiffSelectNext);
             }
             if rect_contains(cache.left_pane, col, row) || rect_contains(cache.right_pane, col, row)
             {

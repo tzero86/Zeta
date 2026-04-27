@@ -258,14 +258,11 @@ fn tab_is_relevant(tab_id: MenuId, ctx: MenuContext) -> bool {
     match ctx {
         MenuContext::Pane => matches!(
             tab_id,
-            MenuId::File | MenuId::Navigate | MenuId::View | MenuId::Themes | MenuId::Help
+            MenuId::File | MenuId::Navigate | MenuId::View | MenuId::Help
         ),
         MenuContext::Editor | MenuContext::EditorFullscreen => true,
         MenuContext::Terminal | MenuContext::TerminalFullscreen => {
-            matches!(
-                tab_id,
-                MenuId::Navigate | MenuId::View | MenuId::Themes | MenuId::Help
-            )
+            matches!(tab_id, MenuId::Navigate | MenuId::View | MenuId::Help)
         }
     }
 }

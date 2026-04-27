@@ -88,6 +88,8 @@ pub enum Action {
     MenuSetSelection(usize),
     MenuMnemonic(char),
     MenuMoveDown,
+    MenuEnterFlyout,
+    MenuExitFlyout,
     MenuMoveUp,
     MenuNext,
     MenuPrevious,
@@ -254,6 +256,28 @@ pub enum Action {
     CloseOpenWithMenu,
     /// Toggle the floating debug panel (F12).
     ToggleDebugPanel,
+    /// Activate / deactivate git diff viewer mode.
+    ToggleGitDiff,
+    /// Set git diff viewport height for scroll calculations (called by renderer)
+    GitDiffSetViewport(usize),
+    /// Move file-list selection up by 1.
+    GitDiffSelectPrev,
+    /// Move file-list selection down by 1.
+    GitDiffSelectNext,
+    /// Page up in file list (or diff content).
+    GitDiffPageUp,
+    /// Page down in file list (or diff content).
+    GitDiffPageDown,
+    /// Scroll diff content up by 1 line.
+    GitDiffScrollUp,
+    /// Scroll diff content down by 1 line.
+    GitDiffScrollDown,
+    /// Transfer focus between file-list pane and diff-content pane.
+    GitDiffToggleFocus,
+    /// Scroll diff content up by one page.
+    GitDiffContentPageUp,
+    /// Scroll diff content down by one page.
+    GitDiffContentPageDown,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -421,7 +445,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
@@ -473,6 +496,7 @@ impl Action {
             KeyCode::F(7) => Some(Self::OpenNewDirectoryPrompt),
             KeyCode::F(9) => Some(Self::ToggleDiffMode),
             KeyCode::F(10) => Some(Self::Quit),
+            KeyCode::F(11) => Some(Self::ToggleEditorFullscreen),
             KeyCode::F(12) => Some(Self::ToggleDebugPanel),
             KeyCode::Char('d') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::DiffSyncToOther)
@@ -692,7 +716,7 @@ impl Action {
             return Some(Self::ToggleTerminal);
         }
 
-        // F11 toggles between terminal as a normal pane and fullscreen mode.
+        // F11 and Shift+F11 toggle between terminal as a normal pane and fullscreen mode.
         // This is an app-level feature and must not reach the shell.
         if key_event.code == KeyCode::F(11) {
             return Some(Self::ToggleTerminalFullscreen);
@@ -840,7 +864,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 KeyCode::Left => Some(Self::NavigateBack),
                 KeyCode::Right => Some(Self::NavigateForward),
@@ -877,6 +900,9 @@ impl Action {
         if key_event.code == KeyCode::Char('b') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::AddBookmark);
         }
+        if key_event.code == KeyCode::Char('d') && key_event.modifiers == KeyModifiers::CONTROL {
+            return Some(Self::ToggleGitDiff);
+        }
         // Delegate remaining keys to the comprehensive fallback handler.
         Self::from_key_event_with_settings(key_event, keymap)
     }
@@ -893,7 +919,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
@@ -1004,7 +1029,6 @@ impl Action {
                 KeyCode::Char('e') | KeyCode::Char('E') => Some(Self::OpenMenu(MenuId::Edit)),
                 KeyCode::Char('s') | KeyCode::Char('S') => Some(Self::OpenMenu(MenuId::Search)),
                 KeyCode::Char('v') | KeyCode::Char('V') => Some(Self::OpenMenu(MenuId::View)),
-                KeyCode::Char('t') | KeyCode::Char('T') => Some(Self::OpenMenu(MenuId::Themes)),
                 KeyCode::Char('h') | KeyCode::Char('H') => Some(Self::OpenMenu(MenuId::Help)),
                 _ => None,
             };
@@ -1013,8 +1037,9 @@ impl Action {
         match key_event.code {
             KeyCode::Esc => Some(Self::CloseMenu),
             KeyCode::Enter => Some(Self::MenuActivate),
-            KeyCode::Left => Some(Self::MenuPrevious),
-            KeyCode::Right | KeyCode::Tab => Some(Self::MenuNext),
+            KeyCode::Left => Some(Self::MenuExitFlyout),
+            KeyCode::Right => Some(Self::MenuEnterFlyout),
+            KeyCode::Tab => Some(Self::MenuNext),
             KeyCode::Up => Some(Self::MenuMoveUp),
             KeyCode::Down => Some(Self::MenuMoveDown),
             KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => Some(Self::Quit),
@@ -1086,6 +1111,81 @@ impl Action {
             (KeyCode::Char('n') | KeyCode::Char('N'), _) | (KeyCode::Esc, _) => {
                 Some(Action::DestructiveConfirmNo)
             }
+            _ => None,
+        }
+    }
+
+    /// Map a key event when the git diff file list has focus.
+    pub fn from_git_diff_file_list_key_event(key: &KeyEvent) -> Option<Action> {
+        match key {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffSelectPrev),
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffSelectNext),
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => Some(Action::GitDiffPageUp),
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            } => Some(Action::GitDiffPageDown),
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => Some(Action::GitDiffToggleFocus),
+            _ => None,
+        }
+    }
+
+    /// Map a key event when the git diff content pane has focus.
+    pub fn from_git_diff_content_key_event(key: &KeyEvent) -> Option<Action> {
+        match key {
+            KeyEvent {
+                code: KeyCode::Up, ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffScrollUp),
+            KeyEvent {
+                code: KeyCode::Down,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('j'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffScrollDown),
+            KeyEvent {
+                code: KeyCode::PageUp,
+                ..
+            } => Some(Action::GitDiffContentPageUp),
+            KeyEvent {
+                code: KeyCode::PageDown,
+                ..
+            }
+            | KeyEvent {
+                code: KeyCode::Char('d'),
+                modifiers: KeyModifiers::NONE,
+                ..
+            } => Some(Action::GitDiffContentPageDown),
+            KeyEvent {
+                code: KeyCode::Tab, ..
+            } => Some(Action::GitDiffToggleFocus),
             _ => None,
         }
     }
@@ -1477,6 +1577,14 @@ mod tests {
         );
         assert_eq!(
             Action::from_menu_key_event(KeyEvent::new(KeyCode::Right, KeyModifiers::NONE), &keymap),
+            Some(Action::MenuEnterFlyout)
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE), &keymap),
+            Some(Action::MenuExitFlyout)
+        );
+        assert_eq!(
+            Action::from_menu_key_event(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE), &keymap),
             Some(Action::MenuNext)
         );
     }
@@ -1529,5 +1637,72 @@ mod tests {
             Action::from_collision_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)),
             Some(Action::CollisionSkip)
         );
+    }
+
+    #[test]
+    fn git_diff_file_list_up_returns_select_prev() {
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&key),
+            Some(Action::GitDiffSelectPrev)
+        );
+    }
+
+    #[test]
+    fn git_diff_content_down_returns_scroll_down() {
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffScrollDown)
+        );
+    }
+
+    #[test]
+    fn git_diff_tab_returns_toggle_focus() {
+        let key = KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&key),
+            Some(Action::GitDiffToggleFocus)
+        );
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffToggleFocus)
+        );
+    }
+
+    #[test]
+    fn git_diff_content_plain_d_returns_page_down() {
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_content_key_event(&key),
+            Some(Action::GitDiffContentPageDown)
+        );
+    }
+
+    #[test]
+    fn git_diff_content_ctrl_d_returns_none() {
+        let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+        assert_eq!(Action::from_git_diff_content_key_event(&key), None);
+    }
+
+    #[test]
+    fn git_diff_file_list_vim_keys() {
+        let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&k),
+            Some(Action::GitDiffSelectPrev)
+        );
+        assert_eq!(
+            Action::from_git_diff_file_list_key_event(&j),
+            Some(Action::GitDiffSelectNext)
+        );
+    }
+
+    #[test]
+    fn git_diff_unknown_key_returns_none() {
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert_eq!(Action::from_git_diff_file_list_key_event(&key), None);
+        assert_eq!(Action::from_git_diff_content_key_event(&key), None);
     }
 }
