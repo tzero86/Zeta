@@ -618,34 +618,43 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         }
                                     }
                                 } else {
-                                    // Try tar variants with decompression based on extension
-                                    let archive_reader = match open_tar_reader(f, &name) {
-                                        Ok(r) => r,
-                                        Err(_) => continue,
-                                    };
-                                    let mut ar = tar::Archive::new(archive_reader);
-                                    let mut found = None;
-                                    if let Ok(entries) = ar.entries() {
-                                        for mut e in entries.flatten() {
-                                            if let Ok(path) = e.path() {
-                                                if path == inner_path {
-                                                    let mut buf = Vec::new();
-                                                    let _ = e.read_to_end(&mut buf);
-                                                    found = Some(buf);
-                                                    break;
+                                    // Try tar variants with decompression based on extension.
+                                    // Unsupported codecs (e.g. .tar.bz2/.tar.xz without the
+                                    // `archives-extra` feature) surface as a plain-text
+                                    // preview so the user gets actionable feedback instead
+                                    // of stale content.
+                                    match open_tar_reader(f, &name) {
+                                        Err(err) => crate::preview::ViewBuffer::from_plain(
+                                            &format!("[cannot preview archive member: {err}]"),
+                                        ),
+                                        Ok(archive_reader) => {
+                                            let mut ar = tar::Archive::new(archive_reader);
+                                            let mut found = None;
+                                            if let Ok(entries) = ar.entries() {
+                                                for mut e in entries.flatten() {
+                                                    if let Ok(path) = e.path() {
+                                                        if path == inner_path {
+                                                            let mut buf = Vec::new();
+                                                            let _ = e.read_to_end(&mut buf);
+                                                            found = Some(buf);
+                                                            break;
+                                                        }
+                                                    }
                                                 }
                                             }
+                                            if let Some(buf) = found {
+                                                load_preview_from_bytes(
+                                                    &buf,
+                                                    &inner_path,
+                                                    &req.syntect_theme,
+                                                    &req.picker,
+                                                )
+                                            } else {
+                                                crate::preview::ViewBuffer::from_plain(
+                                                    "[empty file]",
+                                                )
+                                            }
                                         }
-                                    }
-                                    if let Some(buf) = found {
-                                        load_preview_from_bytes(
-                                            &buf,
-                                            &inner_path,
-                                            &req.syntect_theme,
-                                            &req.picker,
-                                        )
-                                    } else {
-                                        crate::preview::ViewBuffer::from_plain("[empty file]")
                                     }
                                 }
                             }
@@ -863,7 +872,17 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
 
                     let reader = match open_tar_reader(tar_file, &ext_name) {
                         Ok(r) => r,
-                        Err(_) => continue,
+                        Err(err) => {
+                            let _ = result_tx.send(JobResult::JobFailed {
+                                workspace_id: req.workspace_id,
+                                pane: req.pane,
+                                path: archive_path,
+                                file_op: None,
+                                message: format!("failed to open archive: {err}"),
+                                elapsed_ms: started_at.elapsed().as_millis(),
+                            });
+                            continue;
+                        }
                     };
 
                     let mut ar = tar::Archive::new(reader);
