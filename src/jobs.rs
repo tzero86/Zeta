@@ -16,6 +16,87 @@ use crate::fs::{
 use crate::pane::PaneId;
 
 // ---------------------------------------------------------------------------
+// Archive decompression helpers
+// ---------------------------------------------------------------------------
+
+/// Wrap a reader with a tar-compatible decompressor based on the archive name.
+///
+/// `.tar.gz` / `.tgz` are always supported (gzip is part of the default build).
+/// `.tar.bz2` / `.tbz2` and `.tar.xz` / `.txz` require the `archives-extra`
+/// cargo feature (off by default) because `bzip2-sys` / `lzma-sys` are C
+/// builds that meaningfully slow `cargo install zeta`.
+fn open_tar_reader<'a, R: Read + 'a>(reader: R, name: &str) -> std::io::Result<Box<dyn Read + 'a>> {
+    if name.ends_with(".tar.gz") || name.ends_with(".tgz") {
+        Ok(Box::new(flate2::read::GzDecoder::new(reader)))
+    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2") {
+        #[cfg(feature = "archives-extra")]
+        {
+            Ok(Box::new(bzip2::read::BzDecoder::new(reader)))
+        }
+        #[cfg(not(feature = "archives-extra"))]
+        {
+            let _ = reader;
+            Err(std::io::Error::other(
+                "bzip2 archives are not supported in this build (rebuild with `--features archives-extra`)",
+            ))
+        }
+    } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
+        #[cfg(feature = "archives-extra")]
+        {
+            Ok(Box::new(xz2::read::XzDecoder::new(reader)))
+        }
+        #[cfg(not(feature = "archives-extra"))]
+        {
+            let _ = reader;
+            Err(std::io::Error::other(
+                "xz archives are not supported in this build (rebuild with `--features archives-extra`)",
+            ))
+        }
+    } else {
+        Ok(Box::new(reader))
+    }
+}
+
+/// Variant of [`open_tar_reader`] that selects by [`crate::preview::ArchiveFormat`]
+/// instead of filename extension.
+fn open_tar_reader_for_format<'a, R: Read + 'a>(
+    reader: R,
+    format: &crate::preview::ArchiveFormat,
+) -> std::io::Result<Box<dyn Read + 'a>> {
+    use crate::preview::ArchiveFormat;
+    match format {
+        ArchiveFormat::TarGz => Ok(Box::new(flate2::read::GzDecoder::new(reader))),
+        ArchiveFormat::TarBz2 => {
+            #[cfg(feature = "archives-extra")]
+            {
+                Ok(Box::new(bzip2::read::BzDecoder::new(reader)))
+            }
+            #[cfg(not(feature = "archives-extra"))]
+            {
+                let _ = reader;
+                Err(std::io::Error::other(
+                    "bzip2 archives are not supported in this build (rebuild with `--features archives-extra`)",
+                ))
+            }
+        }
+        ArchiveFormat::TarXz => {
+            #[cfg(feature = "archives-extra")]
+            {
+                Ok(Box::new(xz2::read::XzDecoder::new(reader)))
+            }
+            #[cfg(not(feature = "archives-extra"))]
+            {
+                let _ = reader;
+                Err(std::io::Error::other(
+                    "xz archives are not supported in this build (rebuild with `--features archives-extra`)",
+                ))
+            }
+        }
+        _ => Ok(Box::new(reader)),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public request types — one per worker
 // ---------------------------------------------------------------------------
 
@@ -538,18 +619,9 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                     }
                                 } else {
                                     // Try tar variants with decompression based on extension
-                                    let archive_reader: Box<dyn std::io::Read> = if name
-                                        .ends_with(".tar.gz")
-                                        || name.ends_with(".tgz")
-                                    {
-                                        Box::new(flate2::read::GzDecoder::new(f))
-                                    } else if name.ends_with(".tar.bz2") || name.ends_with(".tbz2")
-                                    {
-                                        Box::new(bzip2::read::BzDecoder::new(f))
-                                    } else if name.ends_with(".tar.xz") || name.ends_with(".txz") {
-                                        Box::new(xz2::read::XzDecoder::new(f))
-                                    } else {
-                                        Box::new(f)
+                                    let archive_reader = match open_tar_reader(f, &name) {
+                                        Ok(r) => r,
+                                        Err(_) => continue,
                                     };
                                     let mut ar = tar::Archive::new(archive_reader);
                                     let mut found = None;
@@ -789,16 +861,10 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                         }
                     };
 
-                    let reader: Box<dyn std::io::Read> =
-                        if ext_name.ends_with(".tar.gz") || ext_name.ends_with(".tgz") {
-                            Box::new(flate2::read::GzDecoder::new(tar_file))
-                        } else if ext_name.ends_with(".tar.bz2") || ext_name.ends_with(".tbz2") {
-                            Box::new(bzip2::read::BzDecoder::new(tar_file))
-                        } else if ext_name.ends_with(".tar.xz") || ext_name.ends_with(".txz") {
-                            Box::new(xz2::read::XzDecoder::new(tar_file))
-                        } else {
-                            Box::new(tar_file)
-                        };
+                    let reader = match open_tar_reader(tar_file, &ext_name) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
 
                     let mut ar = tar::Archive::new(reader);
                     let mut seen = std::collections::BTreeSet::new();
@@ -1253,15 +1319,12 @@ fn load_archive_preview(bytes: &[u8], path: &Path) -> crate::preview::ViewBuffer
         | crate::preview::ArchiveFormat::TarBz2
         | crate::preview::ArchiveFormat::TarXz => {
             let cursor = Cursor::new(bytes);
-            let reader: Box<dyn std::io::Read> = match format {
-                crate::preview::ArchiveFormat::TarGz => {
-                    Box::new(flate2::read::GzDecoder::new(cursor))
+            let reader = match open_tar_reader_for_format(cursor, &format) {
+                Ok(r) => r,
+                Err(_) => {
+                    had_error = true;
+                    Box::new(std::io::empty()) as Box<dyn std::io::Read>
                 }
-                crate::preview::ArchiveFormat::TarBz2 => {
-                    Box::new(bzip2::read::BzDecoder::new(cursor))
-                }
-                crate::preview::ArchiveFormat::TarXz => Box::new(xz2::read::XzDecoder::new(cursor)),
-                _ => Box::new(cursor),
             };
             let mut archive = tar::Archive::new(reader);
             match archive.entries() {
@@ -2170,8 +2233,6 @@ fn run_extract_archive(
     destination: &Path,
     result_tx: &Sender<JobResult>,
 ) -> Result<(), FileSystemError> {
-    use std::io::Read;
-
     // Open archive file
     let file = std::fs::File::open(archive).map_err(|source| FileSystemError::CopyPath {
         from: archive.display().to_string(),
@@ -2266,18 +2327,21 @@ fn run_extract_archive(
         }
 
         Ok(())
-    } else if lower.ends_with(".tar") || lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
-        // support gzipped tars
-        let archive_reader: Box<dyn Read> = if lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
-        {
-            Box::new(flate2::read::GzDecoder::new(file))
-        } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
-            Box::new(bzip2::read::BzDecoder::new(file))
-        } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
-            Box::new(xz2::read::XzDecoder::new(file))
-        } else {
-            Box::new(file)
-        };
+    } else if lower.ends_with(".tar")
+        || lower.ends_with(".tar.gz")
+        || lower.ends_with(".tgz")
+        || lower.ends_with(".tar.bz2")
+        || lower.ends_with(".tbz2")
+        || lower.ends_with(".tar.xz")
+        || lower.ends_with(".txz")
+    {
+        // support gzipped tars (and bz2/xz when `archives-extra` is enabled)
+        let archive_reader =
+            open_tar_reader(file, &lower).map_err(|e| FileSystemError::CopyPath {
+                from: archive.display().to_string(),
+                to: destination.display().to_string(),
+                source: e,
+            })?;
         let mut ar = tar::Archive::new(archive_reader);
         for entry in ar.entries().map_err(|e| FileSystemError::CopyPath {
             from: archive.display().to_string(),
