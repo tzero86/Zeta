@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-04-28
+
 ### Changed
 - **Faster `cargo install zeta`**: trimmed the dependency tree from 387 to 297 transitive crates by disabling default features that re-enabled heavy codecs and toolchains (`image-defaults`, `chafa-dyn`, `zip` defaults, `arboard` `image-data`, `chrono` defaults). On Windows, `portable-pty` (and its Unix-only chain `nix`/`serial2`/`filedescriptor`) is no longer compiled — `conpty` is used instead. Removed transitive crates include `exr`, `ravif`, `rav1e`, `tiff`, `zstd-sys`, `aes`, `hmac`, `pbkdf2`, `sha1`, plus their proc-macro chains. No user-visible behavior change.
 - **TOML parser swap**: replaced `toml = "0.8"` with the lighter `basic-toml`. This removes `toml_edit` and `winnow` from the dependency graph (saves a noticeable amount of compile time). Note: `AppConfig` field order was changed (scalar fields first, nested tables last) to satisfy TOML grammar in the slim serializer; on-disk file compatibility is preserved (TOML keys are name-based).
