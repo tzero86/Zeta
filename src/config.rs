@@ -43,8 +43,9 @@ impl ThemePreset {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AppConfig {
-    pub theme: ThemeConfig,
-    pub keymap: KeymapConfig,
+    // NOTE: scalar / leaf fields must come BEFORE nested table fields
+    // (`theme`, `keymap`, `editor`) for `basic_toml::to_string` to round-trip.
+    // TOML grammar disallows scalar keys after a `[table]` section.
     #[serde(default)]
     pub icon_mode: IconMode,
     #[serde(default)]
@@ -56,26 +57,28 @@ pub struct AppConfig {
     #[serde(default)]
     pub bookmarks: Vec<PathBuf>,
     #[serde(default)]
-    pub editor: EditorConfig,
-    #[serde(default)]
     pub terminal_open_by_default: bool,
     #[serde(default)]
     pub openers: Vec<OpenerConfig>,
+    pub theme: ThemeConfig,
+    pub keymap: KeymapConfig,
+    #[serde(default)]
+    pub editor: EditorConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: ThemeConfig::default(),
-            keymap: KeymapConfig::default(),
             icon_mode: detect_icon_mode(),
             pane_layout: PaneLayout::default(),
             preview_panel_open: false,
             preview_on_selection: true,
             bookmarks: Vec::new(),
-            editor: EditorConfig::default(),
             terminal_open_by_default: false,
             openers: Vec::new(),
+            theme: ThemeConfig::default(),
+            keymap: KeymapConfig::default(),
+            editor: EditorConfig::default(),
         }
     }
 }
@@ -200,7 +203,7 @@ impl AppConfig {
             source,
         })?;
 
-        toml::from_str(&raw).map_err(ConfigError::Parse)
+        basic_toml::from_str(&raw).map_err(ConfigError::Parse)
     }
 
     pub fn compile_keymap(&self) -> Result<RuntimeKeymap, ConfigError> {
@@ -212,7 +215,7 @@ impl AppConfig {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), ConfigError> {
-        let raw = toml::to_string_pretty(self)?;
+        let raw = basic_toml::to_string(self).map_err(ConfigError::Serialize)?;
 
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -1081,9 +1084,9 @@ pub enum ConfigError {
         source: std::io::Error,
     },
     #[error("failed to parse config file: {0}")]
-    Parse(#[from] toml::de::Error),
+    Parse(#[from] basic_toml::Error),
     #[error("failed to serialize config file: {0}")]
-    Serialize(#[from] toml::ser::Error),
+    Serialize(basic_toml::Error),
 }
 
 #[cfg(test)]
@@ -1111,7 +1114,7 @@ mod tests {
             refresh = "r"
         "#;
 
-        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+        let config: AppConfig = basic_toml::from_str(raw).expect("config should parse");
         assert_eq!(config.theme.preset, "sandbar");
         assert_eq!(config.keymap.quit, "x");
         assert_eq!(config.icon_mode, IconMode::Unicode);
@@ -1136,7 +1139,7 @@ mod tests {
             refresh = "r"
         "#;
 
-        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+        let config: AppConfig = basic_toml::from_str(raw).expect("config should parse");
 
         assert_eq!(
             config.bookmarks,
@@ -1162,7 +1165,7 @@ mod tests {
             refresh = "r"
         "#;
 
-        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+        let config: AppConfig = basic_toml::from_str(raw).expect("config should parse");
 
         assert_eq!(config.icon_mode, IconMode::Ascii);
     }
@@ -1182,7 +1185,7 @@ mod tests {
             refresh = "r"
         "#;
 
-        let config: AppConfig = toml::from_str(raw).expect("config should parse");
+        let config: AppConfig = basic_toml::from_str(raw).expect("config should parse");
 
         assert_eq!(config.icon_mode, IconMode::NerdFont);
     }

@@ -60,7 +60,7 @@ impl SessionState {
     pub fn load(path: &Path) -> Self {
         std::fs::read_to_string(path)
             .ok()
-            .and_then(|s| toml::from_str(&s).ok())
+            .and_then(|s| basic_toml::from_str(&s).ok())
             .unwrap_or_default()
     }
 
@@ -97,7 +97,7 @@ impl SessionState {
     /// Persist to disk. Non-fatal — caller should log or ignore errors.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let content =
-            toml::to_string_pretty(self).map_err(|e| std::io::Error::other(e.to_string()))?;
+            basic_toml::to_string(self).map_err(|e| std::io::Error::other(e.to_string()))?;
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 std::fs::create_dir_all(parent)?;
@@ -135,8 +135,9 @@ mod tests {
             ..Default::default()
         };
 
-        let text = toml::to_string(&session).expect("session should serialize");
-        let round_trip: SessionState = toml::from_str(&text).expect("session should deserialize");
+        let text = basic_toml::to_string(&session).expect("session should serialize");
+        let round_trip: SessionState =
+            basic_toml::from_str(&text).expect("session should deserialize");
 
         assert_eq!(round_trip.active_workspace, Some(2));
         assert_eq!(
@@ -164,7 +165,7 @@ layout = "SideBySide"
 "#;
 
         let session: SessionState =
-            toml::from_str(legacy).expect("legacy session should deserialize");
+            basic_toml::from_str(legacy).expect("legacy session should deserialize");
         let workspace = session
             .workspace(0)
             .expect("legacy workspace should map to index 0");
@@ -200,8 +201,8 @@ layout = "SideBySide"
             ..Default::default()
         };
 
-        let text = toml::to_string(&session).expect("should serialize");
-        let rt: SessionState = toml::from_str(&text).expect("should deserialize");
+        let text = basic_toml::to_string(&session).expect("should serialize");
+        let rt: SessionState = basic_toml::from_str(&text).expect("should deserialize");
         assert_eq!(rt.workspaces[0].left_history, history);
         assert_eq!(
             rt.workspaces[0].right_history,
@@ -215,7 +216,7 @@ layout = "SideBySide"
             workspaces: vec![WorkspaceSessionState::default()],
             ..Default::default()
         };
-        let text = toml::to_string(&session).expect("should serialize");
+        let text = basic_toml::to_string(&session).expect("should serialize");
         assert!(
             !text.contains("left_history"),
             "empty history should be omitted"

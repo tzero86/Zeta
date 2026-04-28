@@ -3,10 +3,20 @@ name = "zeta"
 version = "0.4.4"
 edition = "2021"
 
+[features]
+default = []
+# Enables extraction/preview of `.tar.bz2` and `.tar.xz` archives.
+# Off by default because bzip2-sys and lzma-sys are C builds that noticeably
+# slow `cargo install zeta`. Without this feature those formats produce a
+# clear runtime error; `.zip`, `.tar`, `.tar.gz` continue to work.
+archives-extra = ["dep:bzip2", "dep:xz2"]
+
 [dependencies]
 anyhow = "1.0"
-arboard = "3"
-chrono = "0.4"
+# Clipboard: only text APIs are used (see src/state/editor_state.rs, src/state/mod.rs).
+# Disabling default features drops the `image-data` feature, which would otherwise
+# pull a full `image` build (exr/ravif/tiff/...) just for clipboard image transfer.
+arboard = { version = "3", default-features = false }
 crossbeam-channel = "0.5"
 crossterm = "0.28"
 dirs = "5"
@@ -18,24 +28,41 @@ serde = { version = "1.0", features = ["derive"] }
 trash = { version = "3", default-features = false, features = ["coinit_apartmentthreaded"] }
 syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes"] }
 thiserror = "2.0"
-toml = "0.8"
 ssh2 = "0.9"
 two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
 tui-input = "0.14"
 unicode-width = "0.2"
-zip = "0.6"
+# basic-toml is a slim TOML parser/serializer (no `toml_edit`/`winnow`).
+# We don't need format-preserving edits — just (de)serialize via serde.
+basic-toml = "0.1"
+# zip browsing/extraction only needs the deflate codec for typical archives.
+# Default features add zstd (heavy C build), aes, bzip2, time — none of which we use.
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1.0"
-bzip2 = "0.4"
-xz2 = "0.1"
+# bzip2 + xz2 pull C builds (bzip2-sys, lzma-sys). Gate behind `archives-extra`
+# (off by default) so the common `cargo install zeta` path stays lean.
+bzip2 = { version = "0.4", optional = true }
+xz2 = { version = "0.1", optional = true }
+# Trim chrono: drop default `oldtime`, `wasmbind`, etc. We only need clock + std for
+# formatting/now(); this also avoids pulling iana-time-zone where unnecessary.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
 tempfile = "3"
-portable-pty = "0.9"
 vt100 = "0.15"
-ratatui-image = { version = "10", default-features = false, features = ["crossterm", "image-defaults"] }
+# Disable `image-defaults` (re-enables every image codec) and `chafa-dyn`
+# (runs pkg-config at build looking for libchafa). We provide our own
+# image features above; halfblocks/sixel/kitty work without them.
+ratatui-image = { version = "10", default-features = false, features = ["crossterm"] }
 
 [target.'cfg(windows)'.dependencies]
 conpty = "0.7"
+
+# portable-pty is only used by the Unix branch of src/pty.rs; on Windows we use
+# conpty directly. Scoping it to cfg(unix) avoids compiling portable-pty + nix +
+# serial2 + filedescriptor on Windows builds.
+[target.'cfg(unix)'.dependencies]
+portable-pty = "0.9"
 
 [profile.release]
 opt-level = "z"     # optimise for binary size

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Faster `cargo install zeta`**: trimmed the dependency tree from 387 to 297 transitive crates by disabling default features that re-enabled heavy codecs and toolchains (`image-defaults`, `chafa-dyn`, `zip` defaults, `arboard` `image-data`, `chrono` defaults). On Windows, `portable-pty` (and its Unix-only chain `nix`/`serial2`/`filedescriptor`) is no longer compiled — `conpty` is used instead. Removed transitive crates include `exr`, `ravif`, `rav1e`, `tiff`, `zstd-sys`, `aes`, `hmac`, `pbkdf2`, `sha1`, plus their proc-macro chains. No user-visible behavior change.
+- **TOML parser swap**: replaced `toml = "0.8"` with the lighter `basic-toml`. This removes `toml_edit` and `winnow` from the dependency graph (saves a noticeable amount of compile time). Note: `AppConfig` field order was changed (scalar fields first, nested tables last) to satisfy TOML grammar in the slim serializer; on-disk file compatibility is preserved (TOML keys are name-based).
+
+### Added
+- **`archives-extra` cargo feature** (off by default): enables `.tar.bz2` and `.tar.xz` extraction/preview. These pull `bzip2-sys` / `lzma-sys` (C builds) so they are now opt-in. Without the feature, encountering one of these archives produces a clear runtime message; `.zip`, `.tar`, and `.tar.gz` continue to work in the default build. Build with `cargo install zeta --features archives-extra` if you need them.
+
 ### Added
 - **Git Diff Viewer** (`Ctrl+D`): Toggle a full-screen git diff view showing changed files (left, 38% width) and unified diff content (right, 62% width). Navigate with arrow keys or vi-keys (`j`/`k`), page through diff with `Page Up`/`Page Down` or `d` (page down). Use `Tab` to switch focus between the file list and diff panes. Press `Ctrl+D` again to return to normal dual-pane view.
 
