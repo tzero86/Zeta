@@ -10,11 +10,13 @@ mod settings;
 pub mod ssh;
 pub mod terminal;
 mod types;
+pub mod update_state;
 
 pub use editor_state::EditorState;
 pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
+pub use update_state::UpdateState;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};

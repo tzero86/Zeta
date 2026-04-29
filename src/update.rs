@@ -11,7 +11,7 @@ pub struct Release {
     pub published_at: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum UpdateStatus {
     Checking,
     Available(Release),
