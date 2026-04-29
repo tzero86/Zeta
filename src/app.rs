@@ -75,9 +75,10 @@ impl App {
         // Spawn background update check on startup
         let current_version = env!("CARGO_PKG_VERSION").to_string();
         if app.state.config().check_updates_on_startup {
-            let _ = app.workers.update_check_tx.send(UpdateCheckRequest::CheckLatestRelease {
-                current_version,
-            });
+            let _ = app
+                .workers
+                .update_check_tx
+                .send(UpdateCheckRequest::CheckLatestRelease { current_version });
         }
 
         Ok(app)
@@ -394,16 +395,14 @@ impl App {
     }
 
     fn dispatch(&mut self, action: Action) -> Result<()> {
-        match action {
-            Action::CheckForUpdates => {
-                let current_version = env!("CARGO_PKG_VERSION").to_string();
-                self.state.update_state.set_checking();
-                let _ = self.workers.update_check_tx.send(UpdateCheckRequest::CheckLatestRelease {
-                    current_version,
-                });
-                return Ok(());
-            }
-            _ => {}
+        if action == Action::CheckForUpdates {
+            let current_version = env!("CARGO_PKG_VERSION").to_string();
+            self.state.update_state.set_checking();
+            let _ = self
+                .workers
+                .update_check_tx
+                .send(UpdateCheckRequest::CheckLatestRelease { current_version });
+            return Ok(());
         }
 
         let action_name = format!("{:?}", action);

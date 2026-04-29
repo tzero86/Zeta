@@ -511,7 +511,7 @@ fn render_status_bar(
 
         // Add update indicator if available
         if state.update_state.is_update_available() {
-            let is_visible = (state.update_pulse_frame / 32) % 2 == 0;
+            let is_visible = (state.update_pulse_frame / 32).is_multiple_of(2);
             let indicator_color = if is_visible {
                 palette.accent_red
             } else {

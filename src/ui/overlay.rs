@@ -3,8 +3,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Widget, Wrap,
+    Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
@@ -16,6 +16,7 @@ use crate::ui::styles::{
     overlay_key_hint_style, overlay_title_style, section_divider_style,
 };
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct UpdateDialog {
     pub current_version: String,
@@ -25,6 +26,7 @@ pub struct UpdateDialog {
     pub download_progress: f32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateDialogStatus {
     Checking,
@@ -773,11 +775,8 @@ pub fn render_open_with_popup(
     frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
 }
 
-pub fn render_update_dialog(
-    f: &mut Frame,
-    dialog: &UpdateDialog,
-    area: Rect,
-) {
+#[allow(dead_code)]
+pub fn render_update_dialog(f: &mut Frame, dialog: &UpdateDialog, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .title("Update Available")
@@ -789,10 +788,7 @@ pub fn render_update_dialog(
     // Split inner area: top for content, bottom for buttons
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(8),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(8), Constraint::Length(3)])
         .split(inner);
 
     let content_area = chunks[0];
@@ -812,24 +808,19 @@ pub fn render_update_dialog(
             vec![Line::from("Checking for updates...")]
         }
         UpdateDialogStatus::Ready => {
-            vec![
-                Line::from("[Enter] Download & Install   [Esc] Later"),
-            ]
+            vec![Line::from("[Enter] Download & Install   [Esc] Later")]
         }
         UpdateDialogStatus::Downloading => {
-            vec![
-                Line::from(format!("Downloading... {:.0}%", dialog.download_progress * 100.0)),
-            ]
+            vec![Line::from(format!(
+                "Downloading... {:.0}%",
+                dialog.download_progress * 100.0
+            ))]
         }
         UpdateDialogStatus::RestartPending => {
-            vec![
-                Line::from("[Enter] Restart Now   [Esc] Later"),
-            ]
+            vec![Line::from("[Enter] Restart Now   [Esc] Later")]
         }
         UpdateDialogStatus::Error => {
-            vec![
-                Line::from("Error checking for updates. [Esc] Close"),
-            ]
+            vec![Line::from("Error checking for updates. [Esc] Close")]
         }
     };
     f.render_widget(Paragraph::new(button_text), button_area);

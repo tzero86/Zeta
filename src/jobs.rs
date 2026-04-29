@@ -1148,7 +1148,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                 while let Ok(UpdateCheckRequest::CheckLatestRelease { current_version }) =
                     update_check_rx_worker.recv()
                 {
-                    let release = crate::update::UpdateChecker::check_latest_release(&current_version);
+                    let release =
+                        crate::update::UpdateChecker::check_latest_release(&current_version);
                     let _ = update_check_tx_result.send(UpdateCheckResult { release });
                 }
             })

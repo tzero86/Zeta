@@ -3990,6 +3990,7 @@ dependencies = [
  "ratatui-image",
  "ropey",
  "serde",
+ "serde_json",
  "ssh2",
  "syntect",
  "tar",

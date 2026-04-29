@@ -3516,7 +3516,7 @@ mod tests {
     use super::{
         resolve_prompt_target, AppState, CollisionState, FocusLayer, ModalKind, ModalState,
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
-        WorkspaceState,
+        UpdateState, WorkspaceState,
     };
     use ratatui_image::picker::Picker;
     fn pane_with_file(path: &str) -> PaneState {
