@@ -35,7 +35,6 @@ use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
     render_flyout_popup, render_menu_popup, render_open_with_popup, render_prompt,
-    render_update_check_notification,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -383,9 +382,6 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         render_open_with_popup(frame, areas[1], items, selection, palette);
     }
 
-    // Render update check notification
-    render_update_check_notification(frame, areas[1], state, &palette);
-
     render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);
 
@@ -513,8 +509,33 @@ fn render_status_bar(
                 .bg(palette.status_bg),
         )];
 
-        // Add update indicator if available
-        if state.update_state.is_update_available() {
+        // Show update notification message in status bar if one is active (expires after ~3 seconds)
+        if state.update_state.should_show_notification() {
+            use crate::update::UpdateStatus;
+
+            let notification_msg = match &state.update_state.status {
+                UpdateStatus::Checking => "⋯ Checking for updates...".to_string(),
+                UpdateStatus::Current => "✓ You are on the latest version".to_string(),
+                UpdateStatus::Available(release) => {
+                    format!("◆ Update available: v{}", release.tag_name)
+                }
+                UpdateStatus::Error(err) => format!("✗ Update check failed: {}", err),
+            };
+
+            right_spans.push(Span::styled(
+                format!(" {} ", notification_msg),
+                Style::default()
+                    .fg(if matches!(state.update_state.status, UpdateStatus::Error(_)) {
+                        palette.accent_red
+                    } else if matches!(state.update_state.status, UpdateStatus::Available(_)) {
+                        palette.accent_peach
+                    } else {
+                        palette.accent_teal
+                    })
+                    .bg(palette.status_bg),
+            ));
+        } else if state.update_state.is_update_available() {
+            // Add pulsing update indicator if available and notification not showing
             let is_visible = (state.update_pulse_frame / 32).is_multiple_of(2);
             let indicator_color = if is_visible {
                 palette.accent_red
