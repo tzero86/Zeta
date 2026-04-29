@@ -257,6 +257,14 @@ pub enum TerminalRequest {
     },
 }
 
+pub enum UpdateCheckRequest {
+    CheckLatestRelease { current_version: String },
+}
+
+pub struct UpdateCheckResult {
+    pub release: Result<Option<crate::update::Release>, crate::update::UpdateError>,
+}
+
 // ---------------------------------------------------------------------------
 // Result types (unchanged public surface)
 // ---------------------------------------------------------------------------
