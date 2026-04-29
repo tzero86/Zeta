@@ -78,6 +78,7 @@ impl UpdateChecker {
 
         let resp = ureq::get(url)
             .set("User-Agent", &format!("Zeta/{}", current_version))
+            .timeout(std::time::Duration::from_secs(5))
             .call()
             .map_err(|e| UpdateError::NetworkError(e.to_string()))?;
 
