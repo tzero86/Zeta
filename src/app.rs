@@ -19,7 +19,7 @@ use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
 use crate::jobs::{
     self, DirSizeRequest, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest,
-    JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
+    JobResult, PreviewRequest, ScanRequest, UpdateCheckRequest, WatchRequest, WorkerChannels,
 };
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
@@ -70,6 +70,14 @@ impl App {
 
         for command in app.state.initial_commands() {
             app.execute_command(command)?;
+        }
+
+        // Spawn background update check on startup
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        if app.state.config().check_updates_on_startup {
+            let _ = app.workers.update_check_tx.send(UpdateCheckRequest::CheckLatestRelease {
+                current_version,
+            });
         }
 
         Ok(app)
@@ -179,6 +187,22 @@ impl App {
             }
         }
         if had_terminal {
+            self.state.set_needs_redraw();
+        }
+
+        // Handle update check results
+        if let Ok(result) = self.workers.update_check_rx.try_recv() {
+            match result.release {
+                Ok(Some(release)) => {
+                    self.state.update_state.set_available(release);
+                }
+                Ok(None) => {
+                    self.state.update_state.set_current();
+                }
+                Err(e) => {
+                    self.state.update_state.set_error(e.to_string());
+                }
+            }
             self.state.set_needs_redraw();
         }
 
