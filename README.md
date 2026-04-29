@@ -63,6 +63,15 @@ Some crates link against system libraries. Install these before running `cargo i
 - Hidden file toggle, sort by name / size / extension / modified date
 - Navigate history (Alt+Left / Alt+Right)
 
+### Update Checks
+- Automatic update checks on startup (configurable, enabled by default)
+- Manual check via Help menu → "Check for Updates"
+- Queries GitHub releases for latest version
+- Semantic version comparison (e.g., v0.4.5 vs v0.5.0)
+- Non-blocking background worker — never freezes the UI
+- Status bar notifications with color-coded symbols (✓ current, ◆ available, ✗ error)
+- Auto-expiring notifications (3 seconds) + pulsing indicator when update is available
+
 ### Integrated Terminal
 - Run shell commands directly in Zeta without switching windows
 - Press `F2` to toggle the integrated terminal panel in the current workspace (or `Ctrl+\` as alternate binding)

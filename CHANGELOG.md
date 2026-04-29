@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-04-29
+
+### Added
+- **Update Checks**: Automatic update checks on startup (configurable via `check_updates_on_startup` in config, enabled by default)
+- **Manual Update Check**: Press `?` → Help → "Check for Updates" to manually check for a new version
+- **Status Bar Notifications**: Update check results display as inline notifications in the status bar with color-coded symbols
+  - ✓ "You are on the latest version" (teal, successful check with no update)
+  - ◆ "Update available: vX.X.X" (orange, new version available)
+  - ⋯ "Checking for updates..." (teal, check in progress)
+  - ✗ "Update check failed: [error]" (red, network or API error)
+- **Pulsing Update Indicator**: When an update is available, a pulsing "● Update" indicator appears in the status bar (after notification expires)
+- **Semantic Version Comparison**: Detects new versions by comparing `MAJOR.MINOR.PATCH` version numbers
+- **Non-Blocking Background Check**: Update checks run in a separate worker thread with 5-second timeout to prevent UI hangs
+- **GitHub API Integration**: Queries GitHub releases for latest version (unauthenticated, 60 req/hr limit sufficient for startup checks)
+
+### Fixed
+- **Startup Freeze**: Removed blocking `Picker::from_query_stdio()` call that would hang indefinitely in some terminal environments (especially WSL). Now uses `Picker::halfblocks()` as default with no capability query.
+- **Network Timeout**: Added 5-second timeout to GitHub API HTTP call to prevent indefinite hangs on slow or unavailable networks
+- **Menu Layout**: Removed duplicate "Themes" top-level menu tab — Themes now only accessible via View > Themes (hover submenu)
+
 ## [0.4.5] - 2026-04-28
 
 ### Changed
