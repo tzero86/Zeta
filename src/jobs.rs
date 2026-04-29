@@ -505,6 +505,8 @@ pub struct WorkerChannels {
     pub sftp_tx: Sender<SftpRequest>,
     pub terminal_tx: Sender<TerminalRequest>,
     pub dir_size_tx: Sender<DirSizeRequest>,
+    pub update_check_tx: Sender<UpdateCheckRequest>,
+    pub update_check_rx: Receiver<UpdateCheckResult>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -1135,6 +1137,24 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             })
             .expect("failed to spawn dir-size worker");
     }
+
+    // --- Update check worker ---
+    let (update_check_tx_main, update_check_rx_worker) = bounded::<UpdateCheckRequest>(1);
+    let (update_check_tx_result, update_check_rx_main) = bounded::<UpdateCheckResult>(1);
+    {
+        thread::Builder::new()
+            .name("zeta-update".into())
+            .spawn(move || {
+                while let Ok(UpdateCheckRequest::CheckLatestRelease { current_version }) =
+                    update_check_rx_worker.recv()
+                {
+                    let release = crate::update::UpdateChecker::check_latest_release(&current_version);
+                    let _ = update_check_tx_result.send(UpdateCheckResult { release });
+                }
+            })
+            .expect("failed to spawn update check worker");
+    }
+
     (
         WorkerChannels {
             scan_tx,
@@ -1148,6 +1168,8 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             sftp_tx,
             terminal_tx,
             dir_size_tx,
+            update_check_tx: update_check_tx_main,
+            update_check_rx: update_check_rx_main,
         },
         result_rx,
         term_out_rx,
