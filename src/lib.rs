@@ -18,6 +18,7 @@ pub mod session;
 pub mod state;
 pub mod testing;
 pub mod ui;
+pub mod update;
 pub mod utils;
 
 pub use app::App;
