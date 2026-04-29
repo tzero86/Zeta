@@ -278,6 +278,8 @@ pub enum Action {
     GitDiffContentPageUp,
     /// Scroll diff content down by one page.
     GitDiffContentPageDown,
+    /// Check for available updates to the application.
+    CheckForUpdates,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
