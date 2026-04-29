@@ -501,29 +501,59 @@ fn render_status_bar(
     if zones.progress.is_some() {
         frame.render_widget(Paragraph::new(Line::from(spans)), area);
     } else {
+        // Build right-side content with optional update indicator
+        let mut right_spans = vec![Span::styled(
+            "│",
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.status_bg),
+        )];
+
+        // Add update indicator if available
+        if state.update_state.is_update_available() {
+            let is_visible = (state.update_pulse_frame / 32) % 2 == 0;
+            let indicator_color = if is_visible {
+                palette.accent_red
+            } else {
+                palette.text_muted
+            };
+
+            right_spans.push(Span::styled(
+                " ● Update ",
+                Style::default()
+                    .fg(indicator_color)
+                    .bg(palette.status_bg)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        right_spans.push(Span::styled(
+            "│",
+            Style::default()
+                .fg(palette.text_muted)
+                .bg(palette.status_bg),
+        ));
+
         let clock_text = format!(" {} ", zones.clock);
-        let right_width = (clock_text.chars().count() + 1) as u16; // +1 for │ divider
+        right_spans.push(Span::styled(
+            clock_text.clone(),
+            Style::default()
+                .fg(palette.accent_mauve)
+                .bg(palette.status_bg)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+        // Calculate width for right-side area based on actual content
+        let right_text_width = right_spans
+            .iter()
+            .map(|s| s.content.chars().count())
+            .sum::<usize>();
+        let right_width = (right_text_width + 1) as u16;
+
         let [body_area, clock_area] =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(area);
         frame.render_widget(Paragraph::new(Line::from(spans)), body_area);
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled(
-                    "│",
-                    Style::default()
-                        .fg(palette.text_muted)
-                        .bg(palette.status_bg),
-                ),
-                Span::styled(
-                    clock_text,
-                    Style::default()
-                        .fg(palette.accent_mauve)
-                        .bg(palette.status_bg)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ])),
-            clock_area,
-        );
+        frame.render_widget(Paragraph::new(Line::from(right_spans)), clock_area);
     }
 }
 

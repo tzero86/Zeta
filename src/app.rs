@@ -92,6 +92,9 @@ impl App {
             .set_image_picker(Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks()));
 
         while !self.state.should_quit() {
+            // Increment pulse counter for update indicator animation (wraps 0-255).
+            self.state.update_pulse_frame = self.state.update_pulse_frame.wrapping_add(1);
+
             // Process events first; draw only when state actually changed.
             self.process_next_event()?;
 

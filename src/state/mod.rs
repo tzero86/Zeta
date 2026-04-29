@@ -266,6 +266,8 @@ pub struct AppState {
     pub debug: DebugState,
     /// Update checking and self-update state.
     pub update_state: UpdateState,
+    /// Frame counter for pulsing update indicator animation (0-255, wraps around).
+    pub update_pulse_frame: u8,
 }
 
 impl AppState {
@@ -423,6 +425,7 @@ impl AppState {
             debug_visible: false,
             debug: DebugState::default(),
             update_state: UpdateState::default(),
+            update_pulse_frame: 0,
         })
     }
 
@@ -3936,6 +3939,7 @@ mod tests {
             debug_visible: false,
             debug: DebugState::default(),
             update_state: UpdateState::default(),
+            update_pulse_frame: 0,
         }
     }
 
