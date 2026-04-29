@@ -264,6 +264,8 @@ pub struct AppState {
     pub debug_visible: bool,
     /// Live debug state: last key, last action, action log.
     pub debug: DebugState,
+    /// Update checking and self-update state.
+    pub update_state: UpdateState,
 }
 
 impl AppState {
@@ -420,6 +422,7 @@ impl AppState {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            update_state: UpdateState::default(),
         })
     }
 
@@ -3932,6 +3935,7 @@ mod tests {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            update_state: UpdateState::default(),
         }
     }
 
