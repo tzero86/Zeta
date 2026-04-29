@@ -87,10 +87,9 @@ impl App {
     pub fn run(&mut self) -> Result<()> {
         let mut terminal = TerminalSession::enter()?;
 
-        // Query terminal for graphics capabilities now that we are in alternate screen.
-        // Falls back to halfblocks if the query fails or times out.
-        self.state
-            .set_image_picker(Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks()));
+        // Use halfblocks by default to avoid potential hangs with from_query_stdio().
+        // The query can block indefinitely in some terminal environments (e.g., WSL).
+        self.state.set_image_picker(Picker::halfblocks());
 
         while !self.state.should_quit() {
             // Increment pulse counter for update indicator animation (wraps 0-255).
