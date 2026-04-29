@@ -825,3 +825,73 @@ pub fn render_update_dialog(f: &mut Frame, dialog: &UpdateDialog, area: Rect) {
     };
     f.render_widget(Paragraph::new(button_text), button_area);
 }
+
+/// Render a simple update check notification that shows status messages.
+/// Only renders if there's current activity or a recent result.
+pub fn render_update_check_notification(
+    f: &mut Frame,
+    area: Rect,
+    state: &crate::state::AppState,
+    palette: &ThemePalette,
+) {
+    use crate::update::UpdateStatus;
+    
+    let (should_show, message, is_error) = match &state.update_state.status {
+        UpdateStatus::Checking => (true, "Checking for updates...".to_string(), false),
+        UpdateStatus::Current => (true, "You are on the latest version.".to_string(), false),
+        UpdateStatus::Available(release) => {
+            (true, format!("Update available: v{}", release.tag_name), false)
+        }
+        UpdateStatus::Error(err) => (true, format!("Update check failed: {}", err), true),
+    };
+
+    if !should_show {
+        return;
+    }
+
+    // Create a centered notification box
+    let notification_width = (message.len() as u16 + 4).min(area.width.saturating_sub(4));
+    let notification_height = 5;
+    
+    let notification_x = (area.width.saturating_sub(notification_width)) / 2;
+    let notification_y = (area.height.saturating_sub(notification_height)) / 2;
+    
+    let notification_area = Rect {
+        x: area.x + notification_x,
+        y: area.y + notification_y,
+        width: notification_width,
+        height: notification_height,
+    };
+
+    // Clear background
+    f.render_widget(Clear, notification_area);
+
+    // Render border and background
+    let border_color = if is_error { palette.accent_red } else { palette.accent_teal };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(palette.menu_bg));
+    
+    f.render_widget(block, notification_area);
+
+    // Render message
+    let inner = Rect {
+        x: notification_area.x + 1,
+        y: notification_area.y + 1,
+        width: notification_area.width.saturating_sub(2),
+        height: notification_area.height.saturating_sub(2),
+    };
+    
+    let text_color = if is_error { palette.accent_red } else { palette.accent_teal };
+    let message_paragraph = Paragraph::new(Line::from(Span::styled(
+        message,
+        Style::default()
+            .fg(text_color)
+            .bg(palette.menu_bg),
+    )))
+    .alignment(Alignment::Center);
+    
+    f.render_widget(message_paragraph, inner);
+}

@@ -35,6 +35,7 @@ use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
     render_flyout_popup, render_menu_popup, render_open_with_popup, render_prompt,
+    render_update_check_notification,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -381,6 +382,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     if let Some((items, selection, _target)) = state.overlay.open_with() {
         render_open_with_popup(frame, areas[1], items, selection, palette);
     }
+
+    // Render update check notification
+    render_update_check_notification(frame, areas[1], state, &palette);
 
     render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);

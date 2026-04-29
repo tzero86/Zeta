@@ -57,11 +57,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 mnemonic: 'v',
             },
             MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
-            },
-            MenuTab {
                 id: MenuId::Help,
                 label: " Help ",
                 mnemonic: 'h',
@@ -83,11 +78,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 id: MenuId::View,
                 label: " View ",
                 mnemonic: 'v',
-            },
-            MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
             },
             MenuTab {
                 id: MenuId::Help,
