@@ -397,10 +397,12 @@ impl App {
         if action == Action::CheckForUpdates {
             let current_version = env!("CARGO_PKG_VERSION").to_string();
             self.state.update_state.set_checking();
+            // Use try_send to avoid blocking the UI thread if a check is already in progress.
+            // If the bounded queue is full, silently ignore the request; the user can retry.
             let _ = self
                 .workers
                 .update_check_tx
-                .send(UpdateCheckRequest::CheckLatestRelease { current_version });
+                .try_send(UpdateCheckRequest::CheckLatestRelease { current_version });
             return Ok(());
         }
 

@@ -59,9 +59,12 @@ fn is_newer_version(current: &str, available: &str) -> bool {
 }
 
 /// Parse version from GitHub tag (e.g., "v0.5.0" -> "0.5.0", "0.5.0" -> "0.5.0").
+/// Rejects malformed tags that don't match semantic version pattern (digits and dots only).
 fn parse_version_tag(tag: &str) -> Option<String> {
     let v = tag.trim_start_matches('v');
-    if v.contains(|c: char| c.is_numeric() || c == '.') {
+    // Validate that the tag contains only digits and dots (semantic version pattern)
+    // Reject malformed tags like "release-2026.04" or "foo1"
+    if !v.is_empty() && v.chars().all(|c| c.is_numeric() || c == '.') {
         Some(v.to_string())
     } else {
         None
@@ -131,10 +134,11 @@ mod tests {
     fn test_parse_version_tag() {
         assert_eq!(parse_version_tag("v0.5.0"), Some("0.5.0".to_string()));
         assert_eq!(parse_version_tag("0.5.0"), Some("0.5.0".to_string()));
-        assert_eq!(
-            parse_version_tag("v0.5.0-rc1"),
-            Some("0.5.0-rc1".to_string())
-        );
-        assert_eq!(parse_version_tag("invalid"), None);
+        // Reject malformed tags that don't match semantic version pattern
+        assert_eq!(parse_version_tag("v0.5.0-rc1"), None); // pre-release with dash
+        assert_eq!(parse_version_tag("release-2026.04"), None); // mixed alphanumeric
+        assert_eq!(parse_version_tag("foo1"), None); // alphanumeric without dot
+        assert_eq!(parse_version_tag("invalid"), None); // pure text
+        assert_eq!(parse_version_tag("v"), None); // empty after stripping 'v'
     }
 }
