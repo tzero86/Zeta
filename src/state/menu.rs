@@ -251,6 +251,12 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     action: Action::OpenHelpDialog,
                 },
                 MenuItem {
+                    label: "Check for Updates",
+                    shortcut: "",
+                    mnemonic: 'c',
+                    action: Action::CheckForUpdates,
+                },
+                MenuItem {
                     label: "About Zeta",
                     shortcut: "Enter",
                     mnemonic: 'a',
@@ -503,6 +509,12 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     shortcut: "F1",
                     mnemonic: 'h',
                     action: Action::OpenHelpDialog,
+                },
+                MenuItem {
+                    label: "Check for Updates",
+                    shortcut: "",
+                    mnemonic: 'c',
+                    action: Action::CheckForUpdates,
                 },
                 MenuItem {
                     label: "About Zeta",

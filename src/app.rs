@@ -391,6 +391,18 @@ impl App {
     }
 
     fn dispatch(&mut self, action: Action) -> Result<()> {
+        match action {
+            Action::CheckForUpdates => {
+                let current_version = env!("CARGO_PKG_VERSION").to_string();
+                self.state.update_state.set_checking();
+                let _ = self.workers.update_check_tx.send(UpdateCheckRequest::CheckLatestRelease {
+                    current_version,
+                });
+                return Ok(());
+            }
+            _ => {}
+        }
+
         let action_name = format!("{:?}", action);
         for command in self.state.apply(action)? {
             self.execute_command(command)?;
