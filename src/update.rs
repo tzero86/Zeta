@@ -59,16 +59,22 @@ fn is_newer_version(current: &str, available: &str) -> bool {
 }
 
 /// Parse version from GitHub tag (e.g., "v0.5.0" -> "0.5.0", "0.5.0" -> "0.5.0").
-/// Rejects malformed tags that don't match semantic version pattern (digits and dots only).
+/// Enforces strict semantic version shape: MAJOR.MINOR[.PATCH[...]]
+/// Rejects malformed tags like "v1..0", "v.", "release-2026.04", or "foo1".
 fn parse_version_tag(tag: &str) -> Option<String> {
     let v = tag.trim_start_matches('v');
-    // Validate that the tag contains only digits and dots (semantic version pattern)
-    // Reject malformed tags like "release-2026.04" or "foo1"
-    if !v.is_empty() && v.chars().all(|c| c.is_numeric() || c == '.') {
-        Some(v.to_string())
-    } else {
-        None
+    
+    // Must match pattern: digits, optionally followed by (dot + digits) repeated
+    // Valid: "0.5.0", "1", "1.0", "1.0.0.1"
+    // Invalid: "1..0", ".", ".1", "1.", "foo1", "1a.0"
+    if v.is_empty() {
+        return None;
     }
+    
+    // Split by dots and validate each segment is non-empty and all digits
+    v.split('.')
+        .all(|segment| !segment.is_empty() && segment.chars().all(|c| c.is_numeric()))
+        .then(|| v.to_string())
 }
 
 pub struct UpdateChecker;
@@ -132,13 +138,22 @@ mod tests {
 
     #[test]
     fn test_parse_version_tag() {
+        // Valid semantic version tags
         assert_eq!(parse_version_tag("v0.5.0"), Some("0.5.0".to_string()));
         assert_eq!(parse_version_tag("0.5.0"), Some("0.5.0".to_string()));
-        // Reject malformed tags that don't match semantic version pattern
+        assert_eq!(parse_version_tag("1"), Some("1".to_string())); // single segment
+        assert_eq!(parse_version_tag("v1.0"), Some("1.0".to_string())); // two segments
+        assert_eq!(parse_version_tag("1.2.3.4"), Some("1.2.3.4".to_string())); // four segments
+        
+        // Reject malformed tags with empty segments or invalid characters
+        assert_eq!(parse_version_tag("v1..0"), None); // double dots (empty segment)
+        assert_eq!(parse_version_tag("v.1.0"), None); // starts with dot
+        assert_eq!(parse_version_tag("v1.0."), None); // ends with dot
         assert_eq!(parse_version_tag("v0.5.0-rc1"), None); // pre-release with dash
         assert_eq!(parse_version_tag("release-2026.04"), None); // mixed alphanumeric
         assert_eq!(parse_version_tag("foo1"), None); // alphanumeric without dot
         assert_eq!(parse_version_tag("invalid"), None); // pure text
         assert_eq!(parse_version_tag("v"), None); // empty after stripping 'v'
+        assert_eq!(parse_version_tag("v."), None); // just a dot
     }
 }
