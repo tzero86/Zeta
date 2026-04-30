@@ -60,6 +60,10 @@ pub struct AppConfig {
     pub terminal_open_by_default: bool,
     #[serde(default)]
     pub openers: Vec<OpenerConfig>,
+    #[serde(default = "default_check_updates_on_startup")]
+    pub check_updates_on_startup: bool,
+    #[serde(default)]
+    pub last_check_timestamp: Option<String>,
     pub theme: ThemeConfig,
     pub keymap: KeymapConfig,
     #[serde(default)]
@@ -76,6 +80,8 @@ impl Default for AppConfig {
             bookmarks: Vec::new(),
             terminal_open_by_default: false,
             openers: Vec::new(),
+            check_updates_on_startup: true,
+            last_check_timestamp: None,
             theme: ThemeConfig::default(),
             keymap: KeymapConfig::default(),
             editor: EditorConfig::default(),
@@ -234,6 +240,10 @@ impl AppConfig {
 }
 
 fn default_preview_on_selection() -> bool {
+    true
+}
+
+fn default_check_updates_on_startup() -> bool {
     true
 }
 

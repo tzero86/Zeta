@@ -10,11 +10,13 @@ mod settings;
 pub mod ssh;
 pub mod terminal;
 mod types;
+pub mod update_state;
 
 pub use editor_state::EditorState;
 pub use overlay::{ModalState, OverlayState};
 pub use pane_set::PaneSetState;
 pub use preview_state::PreviewState;
+pub use update_state::UpdateState;
 
 use std::collections::{BTreeSet, VecDeque};
 use std::ops::{Deref, DerefMut};
@@ -262,6 +264,10 @@ pub struct AppState {
     pub debug_visible: bool,
     /// Live debug state: last key, last action, action log.
     pub debug: DebugState,
+    /// Update checking and self-update state.
+    pub update_state: UpdateState,
+    /// Frame counter for pulsing update indicator animation (0-255, wraps around).
+    pub update_pulse_frame: u8,
 }
 
 impl AppState {
@@ -418,6 +424,8 @@ impl AppState {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            update_state: UpdateState::default(),
+            update_pulse_frame: 0,
         })
     }
 
@@ -3508,7 +3516,7 @@ mod tests {
     use super::{
         resolve_prompt_target, AppState, CollisionState, FocusLayer, ModalKind, ModalState,
         OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
-        WorkspaceState,
+        UpdateState, WorkspaceState,
     };
     use ratatui_image::picker::Picker;
     fn pane_with_file(path: &str) -> PaneState {
@@ -3930,6 +3938,8 @@ mod tests {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            update_state: UpdateState::default(),
+            update_pulse_frame: 0,
         }
     }
 

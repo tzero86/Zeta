@@ -57,11 +57,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 mnemonic: 'v',
             },
             MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
-            },
-            MenuTab {
                 id: MenuId::Help,
                 label: " Help ",
                 mnemonic: 'h',
@@ -83,11 +78,6 @@ pub fn menu_tabs(ctx: MenuContext) -> Vec<MenuTab> {
                 id: MenuId::View,
                 label: " View ",
                 mnemonic: 'v',
-            },
-            MenuTab {
-                id: MenuId::Themes,
-                label: " Themes ",
-                mnemonic: 't',
             },
             MenuTab {
                 id: MenuId::Help,
@@ -249,6 +239,12 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     shortcut: "F1",
                     mnemonic: 'h',
                     action: Action::OpenHelpDialog,
+                },
+                MenuItem {
+                    label: "Check for Updates",
+                    shortcut: "",
+                    mnemonic: 'c',
+                    action: Action::CheckForUpdates,
                 },
                 MenuItem {
                     label: "About Zeta",
@@ -503,6 +499,12 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     shortcut: "F1",
                     mnemonic: 'h',
                     action: Action::OpenHelpDialog,
+                },
+                MenuItem {
+                    label: "Check for Updates",
+                    shortcut: "",
+                    mnemonic: 'c',
+                    action: Action::CheckForUpdates,
                 },
                 MenuItem {
                     label: "About Zeta",

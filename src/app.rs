@@ -19,7 +19,7 @@ use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
 use crate::jobs::{
     self, DirSizeRequest, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest,
-    JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
+    JobResult, PreviewRequest, ScanRequest, UpdateCheckRequest, WatchRequest, WorkerChannels,
 };
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
@@ -72,18 +72,29 @@ impl App {
             app.execute_command(command)?;
         }
 
+        // Spawn background update check on startup
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        if app.state.config().check_updates_on_startup {
+            let _ = app
+                .workers
+                .update_check_tx
+                .send(UpdateCheckRequest::CheckLatestRelease { current_version });
+        }
+
         Ok(app)
     }
 
     pub fn run(&mut self) -> Result<()> {
         let mut terminal = TerminalSession::enter()?;
 
-        // Query terminal for graphics capabilities now that we are in alternate screen.
-        // Falls back to halfblocks if the query fails or times out.
-        self.state
-            .set_image_picker(Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks()));
+        // Use halfblocks by default to avoid potential hangs with from_query_stdio().
+        // The query can block indefinitely in some terminal environments (e.g., WSL).
+        self.state.set_image_picker(Picker::halfblocks());
 
         while !self.state.should_quit() {
+            // Increment pulse counter for update indicator animation (wraps 0-255).
+            self.state.update_pulse_frame = self.state.update_pulse_frame.wrapping_add(1);
+
             // Process events first; draw only when state actually changed.
             self.process_next_event()?;
 
@@ -179,6 +190,22 @@ impl App {
             }
         }
         if had_terminal {
+            self.state.set_needs_redraw();
+        }
+
+        // Handle update check results
+        if let Ok(result) = self.workers.update_check_rx.try_recv() {
+            match result.release {
+                Ok(Some(release)) => {
+                    self.state.update_state.set_available(release);
+                }
+                Ok(None) => {
+                    self.state.update_state.set_current();
+                }
+                Err(e) => {
+                    self.state.update_state.set_error(e.to_string());
+                }
+            }
             self.state.set_needs_redraw();
         }
 
@@ -367,6 +394,18 @@ impl App {
     }
 
     fn dispatch(&mut self, action: Action) -> Result<()> {
+        if action == Action::CheckForUpdates {
+            let current_version = env!("CARGO_PKG_VERSION").to_string();
+            self.state.update_state.set_checking();
+            // Use try_send to avoid blocking the UI thread if a check is already in progress.
+            // If the bounded queue is full, silently ignore the request; the user can retry.
+            let _ = self
+                .workers
+                .update_check_tx
+                .try_send(UpdateCheckRequest::CheckLatestRelease { current_version });
+            return Ok(());
+        }
+
         let action_name = format!("{:?}", action);
         for command in self.state.apply(action)? {
             self.execute_command(command)?;

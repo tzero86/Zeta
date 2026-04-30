@@ -3,8 +3,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
-    ScrollbarState, Widget, Wrap,
+    Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 
@@ -15,6 +15,26 @@ use crate::ui::styles::{
     elevated_surface_style, key_pill_style, modal_halo_style, overlay_footer_style,
     overlay_key_hint_style, overlay_title_style, section_divider_style,
 };
+
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct UpdateDialog {
+    pub current_version: String,
+    pub available_version: String,
+    pub release_notes: String,
+    pub status: UpdateDialogStatus,
+    pub download_progress: f32,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateDialogStatus {
+    Checking,
+    Ready,
+    Downloading,
+    RestartPending,
+    Error,
+}
 
 struct DimOverlay;
 
@@ -753,4 +773,55 @@ pub fn render_open_with_popup(
     let mut list_state = ListState::default();
     list_state.select(Some(selection));
     frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
+}
+
+#[allow(dead_code)]
+pub fn render_update_dialog(f: &mut Frame, dialog: &UpdateDialog, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title("Update Available")
+        .border_type(BorderType::Rounded);
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // Split inner area: top for content, bottom for buttons
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(3)])
+        .split(inner);
+
+    let content_area = chunks[0];
+    let button_area = chunks[1];
+
+    // Render version info
+    let version_text = vec![
+        Line::from(format!("Current: {}", dialog.current_version)),
+        Line::from(format!("Available: {}", dialog.available_version)),
+        Line::from(""),
+    ];
+    f.render_widget(Paragraph::new(version_text), content_area);
+
+    // Render buttons based on status
+    let button_text = match dialog.status {
+        UpdateDialogStatus::Checking => {
+            vec![Line::from("Checking for updates...")]
+        }
+        UpdateDialogStatus::Ready => {
+            vec![Line::from("[Enter] Download & Install   [Esc] Later")]
+        }
+        UpdateDialogStatus::Downloading => {
+            vec![Line::from(format!(
+                "Downloading... {:.0}%",
+                dialog.download_progress * 100.0
+            ))]
+        }
+        UpdateDialogStatus::RestartPending => {
+            vec![Line::from("[Enter] Restart Now   [Esc] Later")]
+        }
+        UpdateDialogStatus::Error => {
+            vec![Line::from("Error checking for updates. [Esc] Close")]
+        }
+    };
+    f.render_widget(Paragraph::new(button_text), button_area);
 }
