@@ -16,7 +16,7 @@ pub struct UpdateState {
     /// Whether to run `cargo install` on app exit.
     pub install_on_exit: bool,
     /// Whether the on-exit update confirmation prompt is currently open.
-    pub prompt_open: bool,
+    prompt_open: bool,
 }
 
 impl Default for UpdateState {
@@ -95,13 +95,61 @@ impl UpdateState {
         self.prompt_open = false;
     }
 
+    /// Returns true if the update confirmation prompt is currently open.
+    pub fn is_prompt_open(&self) -> bool {
+        self.prompt_open
+    }
+
     /// Open the update prompt (called when user triggers ApplyUpdate or on Quit with update pending).
-    pub fn open_prompt(&mut self) {
+    pub fn show_update_prompt(&mut self) {
         self.prompt_open = true;
     }
 
     /// Close the prompt without scheduling.
-    pub fn dismiss_prompt(&mut self) {
+    pub fn hide_update_prompt(&mut self) {
         self.prompt_open = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_available() -> UpdateState {
+        let mut s = UpdateState::default();
+        let release = Release {
+            version: "0.2.0".to_string(),
+            tag_name: "v0.2.0".to_string(),
+            body: "Release notes".to_string(),
+            prerelease: false,
+            published_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+        s.set_available(release);
+        s
+    }
+
+    #[test]
+    fn can_schedule_install_false_when_no_update() {
+        let s = UpdateState::default();
+        assert!(!s.can_schedule_install());
+    }
+
+    #[test]
+    fn schedule_install_prevents_double_scheduling() {
+        let mut s = make_available();
+        s.schedule_install();
+        assert!(s.install_on_exit);
+        assert!(!s.is_prompt_open());
+        assert!(!s.can_schedule_install());
+    }
+
+    #[test]
+    fn show_hide_prompt() {
+        let mut s = UpdateState::default();
+        assert!(!s.is_prompt_open());
+        s.show_update_prompt();
+        assert!(s.is_prompt_open());
+        s.hide_update_prompt();
+        assert!(!s.is_prompt_open());
     }
 }
