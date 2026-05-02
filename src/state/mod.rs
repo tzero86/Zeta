@@ -2769,8 +2769,8 @@ impl AppState {
             let is_refresh =
                 self.panes.pane(pane).cwd == *path && !self.panes.pane(pane).entries.is_empty();
             if !is_refresh {
-                let pane_label = match self.panes.focus {
-                    PaneFocus::Right => String::from("right"),
+                let pane_label = match pane {
+                    crate::pane::PaneId::Right => String::from("right"),
                     _ => String::from("left"),
                 };
                 let old_path = self.panes.pane(pane).cwd.display().to_string();
