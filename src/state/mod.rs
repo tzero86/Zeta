@@ -531,13 +531,16 @@ impl AppState {
     fn apply_view(&mut self, action: &Action) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
 
-        // Wizard actions: handle before the main match so they can return early.
+        // Wizard and update actions: handle before the main match so they can return early.
         if matches!(
             action,
             Action::WizardMoveDown
                 | Action::WizardMoveUp
                 | Action::WizardConfirm
                 | Action::WizardClose
+                | Action::ApplyUpdate
+                | Action::UpdatePromptYes
+                | Action::UpdatePromptNo
         ) {
             return self.apply_wizard(action);
         }
@@ -2324,6 +2327,9 @@ impl AppState {
             }
             Action::UpdatePromptYes => {
                 self.update_state.schedule_install();
+                // Confirm always quits: either the user was already quitting (Quit intercept)
+                // or they chose on-demand install (which also exits to run cargo install).
+                self.should_quit = true;
             }
             Action::UpdatePromptNo => {
                 self.update_state.hide_update_prompt();
@@ -2998,7 +3004,7 @@ impl AppState {
     }
 
     /// Derive the current input focus layer from state.
-    /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
+    /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > UpdatePrompt > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
@@ -6003,5 +6009,59 @@ mod tests {
         };
         let state = AppState::bootstrap(loaded, Instant::now()).unwrap();
         assert!(!state.show_wizard);
+    }
+
+    #[test]
+    fn quit_with_update_available_shows_prompt_and_does_not_quit() {
+        use crate::update::{Release, UpdateStatus};
+        let mut state = test_state();
+        // Simulate an available update
+        state.update_state.status = UpdateStatus::Available(Release {
+            version: String::from("0.2.0"),
+            tag_name: String::from("v0.2.0"),
+            body: String::from("Release notes"),
+            prerelease: false,
+            published_at: String::from("2025-01-01T00:00:00Z"),
+        });
+        state.apply(Action::Quit).expect("quit should succeed");
+        assert!(
+            state.update_state.is_prompt_open(),
+            "prompt should open on quit with update"
+        );
+        assert!(
+            !state.should_quit,
+            "should not quit yet when prompt is open"
+        );
+    }
+
+    #[test]
+    fn update_prompt_yes_schedules_install_and_quits() {
+        use crate::update::{Release, UpdateStatus};
+        let mut state = test_state();
+        state.update_state.status = UpdateStatus::Available(Release {
+            version: String::from("0.2.0"),
+            tag_name: String::from("v0.2.0"),
+            body: String::from("Release notes"),
+            prerelease: false,
+            published_at: String::from("2025-01-01T00:00:00Z"),
+        });
+        state.update_state.show_update_prompt();
+        state
+            .apply(Action::UpdatePromptYes)
+            .expect("yes should succeed");
+        assert!(state.update_state.install_on_exit);
+        assert!(!state.update_state.is_prompt_open());
+        assert!(state.should_quit);
+    }
+
+    #[test]
+    fn update_prompt_no_hides_prompt_without_quitting() {
+        let mut state = test_state();
+        state.update_state.show_update_prompt();
+        state
+            .apply(Action::UpdatePromptNo)
+            .expect("no should succeed");
+        assert!(!state.update_state.is_prompt_open());
+        assert!(!state.should_quit);
     }
 }
