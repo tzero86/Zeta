@@ -646,10 +646,9 @@ fn render_key_hints(
             ("S", "Skip"),
             ("Esc", "Cancel"),
         ],
-        crate::state::FocusLayer::Modal(ModalKind::UpdatePrompt) => vec![
-            ("Y", "Install on exit"),
-            ("N / Esc", "Skip"),
-        ],
+        crate::state::FocusLayer::Modal(ModalKind::UpdatePrompt) => {
+            vec![("Y", "Install on exit"), ("N / Esc", "Skip")]
+        }
         crate::state::FocusLayer::Modal(ModalKind::Prompt) => {
             vec![("Enter", "Confirm"), ("Esc", "Cancel")]
         }

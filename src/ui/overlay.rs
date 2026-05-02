@@ -3,8 +3,8 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-    ScrollbarOrientation, ScrollbarState, Widget, Wrap,
+    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation,
+    ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
 

@@ -1222,7 +1222,10 @@ fn run_update_and_restart() -> Result<()> {
         relaunch_self()?;
     } else {
         eprintln!();
-        eprintln!("❌ Update failed (cargo install exited with {:?})", status.code());
+        eprintln!(
+            "❌ Update failed (cargo install exited with {:?})",
+            status.code()
+        );
         eprintln!("   You can manually run: cargo install --git https://github.com/tzero86/Zeta");
         eprintln!();
         return Err(anyhow::anyhow!(
@@ -1243,7 +1246,7 @@ fn relaunch_self() -> Result<()> {
         let err = std::process::Command::new(&current_exe)
             .args(std::env::args().skip(1))
             .exec(); // replaces the process image in-place (no-return on success)
-        return Err(anyhow::anyhow!("exec failed: {}", err));
+        Err(anyhow::anyhow!("exec failed: {}", err))
     }
 
     #[cfg(not(unix))]
