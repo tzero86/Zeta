@@ -800,94 +800,22 @@ impl AppState {
                     }
                 }
             }
-            Action::ToggleGitDiff => {
-                if self.git_diff_active {
-                    // Deactivate: clear all diff state
-                    self.git_diff_active = false;
-                    self.git_diff_files.clear();
-                    self.git_diff_lines.clear();
-                    self.git_diff_selected = 0;
-                    self.git_diff_scroll = 0;
-                    self.git_diff_focus_content = false;
-                } else {
-                    // Activate: load files list
-                    let cwd = self.panes.active_pane().cwd.clone();
-                    if let Some(files) = crate::git::fetch_diff_files(&cwd) {
-                        if files.is_empty() {
-                            // Show a status message; do not open the viewer
-                            self.status_message =
-                                String::from("Git diff: no changes in working tree");
-                        } else {
-                            self.git_diff_active = true;
-                            self.git_diff_files = files;
-                            self.git_diff_selected = 0;
-                            self.git_diff_scroll = 0;
-                            self.git_diff_focus_content = false;
-                            // Load the first file's diff if any files exist
-                            if let Some(first_file) = self.git_diff_files.first() {
-                                let is_untracked =
-                                    first_file.status == crate::git::FileStatus::Untracked;
-                                let lines = crate::git::fetch_file_diff(
-                                    &cwd,
-                                    &first_file.path,
-                                    is_untracked,
-                                );
-                                self.git_diff_lines = lines;
-                            }
-                        }
-                    } else {
-                        self.status_message = String::from("Git diff: not a git repository");
-                    }
-                }
-            }
-            Action::GitDiffSelectPrev => {
-                if self.git_diff_selected > 0 {
-                    self.git_diff_selected -= 1;
-                    self.load_selected_diff();
-                }
-            }
-            Action::GitDiffSelectNext => {
-                if self.git_diff_selected + 1 < self.git_diff_files.len() {
-                    self.git_diff_selected += 1;
-                    self.load_selected_diff();
-                }
-            }
-            Action::GitDiffPageUp => {
-                self.git_diff_selected = self.git_diff_selected.saturating_sub(10);
-                self.load_selected_diff();
-            }
-            Action::GitDiffPageDown => {
-                let max = self.git_diff_files.len().saturating_sub(1);
-                self.git_diff_selected = (self.git_diff_selected + 10).min(max);
-                self.load_selected_diff();
-            }
-            Action::GitDiffScrollUp => {
-                self.git_diff_scroll = self.git_diff_scroll.saturating_sub(1);
-            }
-            Action::GitDiffScrollDown => {
-                let viewport = self.git_diff_viewport_height.max(1);
-                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
-                if self.git_diff_scroll < max_scroll {
-                    self.git_diff_scroll += 1;
-                }
-            }
-            Action::GitDiffToggleFocus => {
-                self.git_diff_focus_content = !self.git_diff_focus_content;
-                // Reset content scroll when switching to file list
-                if !self.git_diff_focus_content {
-                    self.git_diff_scroll = 0;
-                }
-            }
-            Action::GitDiffContentPageUp => {
-                self.git_diff_scroll = self.git_diff_scroll.saturating_sub(20);
-            }
-            Action::GitDiffContentPageDown => {
-                let viewport = self.git_diff_viewport_height.max(1);
-                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
-                self.git_diff_scroll = (self.git_diff_scroll + 20).min(max_scroll);
-            }
-            Action::GitDiffSetViewport(height) => {
-                self.git_diff_viewport_height = *height;
+            _ if matches!(
+                action,
+                Action::ToggleGitDiff
+                    | Action::GitDiffSelectPrev
+                    | Action::GitDiffSelectNext
+                    | Action::GitDiffPageUp
+                    | Action::GitDiffPageDown
+                    | Action::GitDiffScrollUp
+                    | Action::GitDiffScrollDown
+                    | Action::GitDiffToggleFocus
+                    | Action::GitDiffContentPageUp
+                    | Action::GitDiffContentPageDown
+                    | Action::GitDiffSetViewport(_)
+            ) =>
+            {
+                commands.extend(self.apply_git_diff(action)?);
             }
             Action::OpenOpenWithMenu => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
@@ -2066,6 +1994,104 @@ impl AppState {
                 } else {
                     String::from("rich columns: hidden (both panes)")
                 };
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles all git-diff viewer actions.
+    fn apply_git_diff(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let commands = Vec::new();
+        match action {
+            Action::ToggleGitDiff => {
+                if self.git_diff_active {
+                    // Deactivate: clear all diff state
+                    self.git_diff_active = false;
+                    self.git_diff_files.clear();
+                    self.git_diff_lines.clear();
+                    self.git_diff_selected = 0;
+                    self.git_diff_scroll = 0;
+                    self.git_diff_focus_content = false;
+                } else {
+                    // Activate: load files list
+                    let cwd = self.panes.active_pane().cwd.clone();
+                    if let Some(files) = crate::git::fetch_diff_files(&cwd) {
+                        if files.is_empty() {
+                            // Show a status message; do not open the viewer
+                            self.status_message =
+                                String::from("Git diff: no changes in working tree");
+                        } else {
+                            self.git_diff_active = true;
+                            self.git_diff_files = files;
+                            self.git_diff_selected = 0;
+                            self.git_diff_scroll = 0;
+                            self.git_diff_focus_content = false;
+                            // Load the first file's diff if any files exist
+                            if let Some(first_file) = self.git_diff_files.first() {
+                                let is_untracked =
+                                    first_file.status == crate::git::FileStatus::Untracked;
+                                let lines = crate::git::fetch_file_diff(
+                                    &cwd,
+                                    &first_file.path,
+                                    is_untracked,
+                                );
+                                self.git_diff_lines = lines;
+                            }
+                        }
+                    } else {
+                        self.status_message = String::from("Git diff: not a git repository");
+                    }
+                }
+            }
+            Action::GitDiffSelectPrev => {
+                if self.git_diff_selected > 0 {
+                    self.git_diff_selected -= 1;
+                    self.load_selected_diff();
+                }
+            }
+            Action::GitDiffSelectNext => {
+                if self.git_diff_selected + 1 < self.git_diff_files.len() {
+                    self.git_diff_selected += 1;
+                    self.load_selected_diff();
+                }
+            }
+            Action::GitDiffPageUp => {
+                self.git_diff_selected = self.git_diff_selected.saturating_sub(10);
+                self.load_selected_diff();
+            }
+            Action::GitDiffPageDown => {
+                let max = self.git_diff_files.len().saturating_sub(1);
+                self.git_diff_selected = (self.git_diff_selected + 10).min(max);
+                self.load_selected_diff();
+            }
+            Action::GitDiffScrollUp => {
+                self.git_diff_scroll = self.git_diff_scroll.saturating_sub(1);
+            }
+            Action::GitDiffScrollDown => {
+                let viewport = self.git_diff_viewport_height.max(1);
+                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
+                if self.git_diff_scroll < max_scroll {
+                    self.git_diff_scroll += 1;
+                }
+            }
+            Action::GitDiffToggleFocus => {
+                self.git_diff_focus_content = !self.git_diff_focus_content;
+                // Reset content scroll when switching to file list
+                if !self.git_diff_focus_content {
+                    self.git_diff_scroll = 0;
+                }
+            }
+            Action::GitDiffContentPageUp => {
+                self.git_diff_scroll = self.git_diff_scroll.saturating_sub(20);
+            }
+            Action::GitDiffContentPageDown => {
+                let viewport = self.git_diff_viewport_height.max(1);
+                let max_scroll = self.git_diff_lines.len().saturating_sub(viewport);
+                self.git_diff_scroll = (self.git_diff_scroll + 20).min(max_scroll);
+            }
+            Action::GitDiffSetViewport(height) => {
+                self.git_diff_viewport_height = *height;
             }
             _ => {}
         }
