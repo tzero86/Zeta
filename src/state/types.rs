@@ -67,6 +67,8 @@ pub enum ModalKind {
     OpenWith,
     DestructiveConfirm,
     FirstRunWizard,
+    /// On-exit / on-demand update install confirmation prompt.
+    UpdatePrompt,
 }
 
 /// Structured application-level error type.
