@@ -465,9 +465,7 @@ fn render_status_bar(
         };
         spans.push(Span::styled(
             zones.message.clone(),
-            Style::default()
-                .fg(message_fg)
-                .bg(palette.status_bg),
+            Style::default().fg(message_fg).bg(palette.status_bg),
         ));
         if let Some(ref marks) = zones.marks {
             let size_str = if marks.total_bytes > 0 {
@@ -608,8 +606,8 @@ fn render_key_hints(
     state: &AppState,
     palette: crate::config::ThemePalette,
 ) {
-    use crate::state::ModalKind;
     use crate::fs::EntryKind;
+    use crate::state::ModalKind;
 
     let hints: Vec<(&str, &str)> = match state.focus_layer() {
         crate::state::FocusLayer::Modal(ModalKind::Dialog) => vec![

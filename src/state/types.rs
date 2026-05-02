@@ -132,19 +132,31 @@ pub struct StatusMessage {
 
 impl StatusMessage {
     pub fn info(text: impl Into<String>) -> Self {
-        Self { text: text.into(), kind: MessageKind::Info }
+        Self {
+            text: text.into(),
+            kind: MessageKind::Info,
+        }
     }
 
     pub fn success(text: impl Into<String>) -> Self {
-        Self { text: text.into(), kind: MessageKind::Success }
+        Self {
+            text: text.into(),
+            kind: MessageKind::Success,
+        }
     }
 
     pub fn warning(text: impl Into<String>) -> Self {
-        Self { text: text.into(), kind: MessageKind::Warning }
+        Self {
+            text: text.into(),
+            kind: MessageKind::Warning,
+        }
     }
 
     pub fn error(text: impl Into<String>) -> Self {
-        Self { text: text.into(), kind: MessageKind::Error }
+        Self {
+            text: text.into(),
+            kind: MessageKind::Error,
+        }
     }
 }
 
