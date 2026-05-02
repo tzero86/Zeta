@@ -1,0 +1,574 @@
+{
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/fix_follow_symlink.py": {
+    "mtime": 1776809903.1756008,
+    "hash": "30a6b32fe17799dd83cedfdef41fb8b4"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/fix_glob_test.py": {
+    "mtime": 1776809903.181261,
+    "hash": "9c19b2cb7ac7bbc552c334b14538b532"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/fix_scan_cache_pane_literals.py": {
+    "mtime": 1776809903.18726,
+    "hash": "f826431cd49ce1c45ca957de3759ad13"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/fix_symlink_compile.py": {
+    "mtime": 1776809903.1922903,
+    "hash": "8c750674500ae18e6e5cc1c1a288a909"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_cache_populate.py": {
+    "mtime": 1776809903.1978006,
+    "hash": "b8961249a600b7c983eef68abce07e80"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_cache_refresh.py": {
+    "mtime": 1776809903.2028015,
+    "hash": "de4961a11c4986d98581002ba3dc880a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_cache_tests.py": {
+    "mtime": 1776809903.2088025,
+    "hash": "f100f62cbb2daaf0c4e8cd5ad664d94f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_lib_utils.py": {
+    "mtime": 1776809903.2148077,
+    "hash": "89848221f600a5614cef3abbe6262318"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_pane_filter.py": {
+    "mtime": 1776809903.2198074,
+    "hash": "8db290d58e87e633a0868f8aae985f20"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_scan_cache_pane.py": {
+    "mtime": 1776809903.2258162,
+    "hash": "c0f977b66c50419f6eeb7d0dac80e6da"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_symlink_actions.py": {
+    "mtime": 1776809903.2323601,
+    "hash": "db9a54e5a9dea63092f6610cd3567b4d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_symlink_keys.py": {
+    "mtime": 1776809903.237881,
+    "hash": "731ab2bcd8d60e8fedb6cb30d1035c71"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_symlink_state.py": {
+    "mtime": 1776809903.2429826,
+    "hash": "9002f049e1d9eab367a392ca14b04188"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/patch_symlink_ui.py": {
+    "mtime": 1776809903.2485735,
+    "hash": "41363cbeeb8c131feb1e3bb4c6f4e352"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/scripts/release.py": {
+    "mtime": 1776881732.086093,
+    "hash": "c4b2901b3b28fadd1355058a34f3477a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/action.rs": {
+    "mtime": 1777498663.0292215,
+    "hash": "2b54e32bff252508b83c34e7a10b9a1c"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/app.rs": {
+    "mtime": 1777508377.393932,
+    "hash": "e4931c0bf9bd2d59ea9f534e55245140"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/config.rs": {
+    "mtime": 1777498378.0398743,
+    "hash": "c4e82e04d76e2b14576911c080c3d23b"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/diff.rs": {
+    "mtime": 1776809903.2886777,
+    "hash": "aea89141ab7f0de91fbd92b47f51410d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/editor.rs": {
+    "mtime": 1776809902.5510476,
+    "hash": "c1ee695f5476cd46a5d910e1dbd879ba"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/event.rs": {
+    "mtime": 1776200250.5645182,
+    "hash": "0fb541cfecc726ee65b8aaa5091e0fed"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/finder.rs": {
+    "mtime": 1776799888.5923946,
+    "hash": "138857636ccf7501aaf9fbf09c83c58b"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/fs.rs": {
+    "mtime": 1776809903.2956767,
+    "hash": "bb99c26f99604ec6df177012ecc82a0c"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/git.rs": {
+    "mtime": 1777319155.6175342,
+    "hash": "96b801cc65860390f748b4e015f9e072"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/highlight.rs": {
+    "mtime": 1776200250.569029,
+    "hash": "061bf37d97977d41fbba62650f2eb66e"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/icon.rs": {
+    "mtime": 1777131474.8123343,
+    "hash": "51025141078d4348cca1d320c0cbb902"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/jobs.rs": {
+    "mtime": 1777499126.439464,
+    "hash": "1426848361e4747d477e6d1e7a14703b"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/lib.rs": {
+    "mtime": 1777498083.1382415,
+    "hash": "20596c4afc25482b5c33971aef84ea3d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/main.rs": {
+    "mtime": 1776200250.571543,
+    "hash": "c2dfe76a409c5e9dd05b2c83ae8c0240"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/palette.rs": {
+    "mtime": 1777131474.8305693,
+    "hash": "d256eba513e2fef9f3cefa7dce395280"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/pane.rs": {
+    "mtime": 1777131474.8390932,
+    "hash": "7767af290587527b853bb71e23805e5c"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/preview.rs": {
+    "mtime": 1777319155.6358151,
+    "hash": "295ec6d1d6405981c594cd6dc97260bf"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/pty.rs": {
+    "mtime": 1776799888.6822493,
+    "hash": "222784e92f30c55d03d187df7d5ba3cf"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/session.rs": {
+    "mtime": 1777381749.8778412,
+    "hash": "47c74869fd3f5c897309b03eaf4a5187"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/update.rs": {
+    "mtime": 1777508377.449289,
+    "hash": "fc387af59aa4b7913c79c1bfa3c23893"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/bin/keytest.rs": {
+    "mtime": 1776809903.2746766,
+    "hash": "4a39867c770a0dc96e3058fdd65ed8a1"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/bin/zeta-font-test.rs": {
+    "mtime": 1777131474.795263,
+    "hash": "3ccfaee7684ecaa0b2d66eefd14a4ea0"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/fs/backend.rs": {
+    "mtime": 1776799888.6087456,
+    "hash": "efd9ac9030c60b644d7eca0d44f09b56"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/fs/local.rs": {
+    "mtime": 1776809903.3067386,
+    "hash": "56a45b7da0b66bb01735c47447d69774"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/fs/scan_diff.rs": {
+    "mtime": 1776809903.3127408,
+    "hash": "61654e2559582363b68238350ee007e2"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/fs/sftp.rs": {
+    "mtime": 1776809903.3217385,
+    "hash": "f4e24ca6d54f945bb704424dda171205"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/bookmarks.rs": {
+    "mtime": 1776799888.6912677,
+    "hash": "bef460c1d1ef2d6f2fd5d51cec6d686e"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/dialog.rs": {
+    "mtime": 1777131474.8581164,
+    "hash": "2a066a3540e33ad1ad1c7442d09bcbdb"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/editor_state.rs": {
+    "mtime": 1776799888.703413,
+    "hash": "1a09bbd8c6fec2e330b19fe44ba8e38c"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/menu.rs": {
+    "mtime": 1777508377.4085045,
+    "hash": "5caca1cff2c65cd641f702aa87e506d4"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/mod.rs": {
+    "mtime": 1777499154.7882187,
+    "hash": "a12c9d1c839e4da202a137affd84dfe6"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/overlay.rs": {
+    "mtime": 1777319155.659513,
+    "hash": "79b0575a255cfe435da5fbe3758dd8f1"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/pane_set.rs": {
+    "mtime": 1776809903.398423,
+    "hash": "576c7a9bbd9fd48d2b6266d65f43f5a8"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/preview_state.rs": {
+    "mtime": 1777131474.880176,
+    "hash": "a5c1c78ebc3b2166059497dea338937e"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/prompt.rs": {
+    "mtime": 1776809903.4064233,
+    "hash": "9bd9b657b38064e318cc426bee90ca0b"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/settings.rs": {
+    "mtime": 1777131474.888688,
+    "hash": "457a5f90fc652b6caf6ed60c56e5c3a3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/ssh.rs": {
+    "mtime": 1776809903.415426,
+    "hash": "c40b54d6dd1800b61aa55cc711c5b7b4"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/terminal.rs": {
+    "mtime": 1776799888.7649894,
+    "hash": "540f734d06e224386fa89125d4361187"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/types.rs": {
+    "mtime": 1777319155.6690226,
+    "hash": "0d61739bac03a17d1c462d69e9b50bec"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/update_state.rs": {
+    "mtime": 1777508377.4201152,
+    "hash": "b10360d3f272440f2ba001d4699bbc39"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/testing/e2e.rs": {
+    "mtime": 1777072395.7890968,
+    "hash": "2fb3c064b16a5af978c2bbbdc8d85df8"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/testing/mod.rs": {
+    "mtime": 1777072395.7976139,
+    "hash": "609a432a07e23d5e4dce9675c0d7a8c5"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/bookmarks.rs": {
+    "mtime": 1776799888.781586,
+    "hash": "9f81af440c2acca8013cec7507780a70"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/code_view.rs": {
+    "mtime": 1776809902.604561,
+    "hash": "25a58facded79b881919408d2cb38063"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/debug.rs": {
+    "mtime": 1776809903.433117,
+    "hash": "91e13f95e94800245c1b847b165fa595"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/editor.rs": {
+    "mtime": 1777319155.6801903,
+    "hash": "94a06e1b1fdb2b8b94d26f699dc579c8"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/finder.rs": {
+    "mtime": 1777131474.9114268,
+    "hash": "a90401193b817be720a228657f726be7"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/git_diff.rs": {
+    "mtime": 1777319155.6876996,
+    "hash": "df02587f3ca342f69b2c66f4f303cdbe"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/highlight.rs": {
+    "mtime": 1777131474.9187095,
+    "hash": "f10bba239c5699be3f4ef90ed2b6b130"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/layout_cache.rs": {
+    "mtime": 1776799888.8074446,
+    "hash": "69ebde9a29c107a5883928726afb47c9"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/markdown.rs": {
+    "mtime": 1776799888.8182073,
+    "hash": "94408221ef93831fbb9ddebfb79afd43"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/menu_bar.rs": {
+    "mtime": 1777319155.6967554,
+    "hash": "d92b116343cac216d5eaa67cb35bd8a6"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/mod.rs": {
+    "mtime": 1777508377.438589,
+    "hash": "d616f0db9811108d988fc0fd47a765b1"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/overlay.rs": {
+    "mtime": 1777502094.9095297,
+    "hash": "ab6c92a7d72ba43b6a135c6334aa754e"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/palette.rs": {
+    "mtime": 1777131474.9564075,
+    "hash": "ed4dd055ffc517c0d16cef068944178d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/pane.rs": {
+    "mtime": 1777131474.966936,
+    "hash": "5114254dc1fa09b732987771485f5e31"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/preview.rs": {
+    "mtime": 1777319155.725268,
+    "hash": "051939a5a2cbf003a74bd5d4e8713323"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/settings.rs": {
+    "mtime": 1777131474.987527,
+    "hash": "e6af594bbbb7403c4f8eea7ef0114fb2"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/ssh.rs": {
+    "mtime": 1776809903.4758062,
+    "hash": "f5819b71a2708f0d434615a961deffc3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/styles.rs": {
+    "mtime": 1777131474.9971216,
+    "hash": "85dc74242c19d00429cabf230d5a5155"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/terminal.rs": {
+    "mtime": 1777319155.734785,
+    "hash": "08f7789521ec2701757ceb0bcbd8976e"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/utils/glob_match.rs": {
+    "mtime": 1776809903.4843104,
+    "hash": "6eaa28b66166b310abe1e82027b7e92a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/utils/mod.rs": {
+    "mtime": 1776809903.4923177,
+    "hash": "451be04551ff4ef425c0d731bac9565f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/e2e_integration.rs": {
+    "mtime": 1777072395.8051186,
+    "hash": "2629964f1ff8e9351fd41ecc2570db72"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/font_asset.rs": {
+    "mtime": 1776200250.592581,
+    "hash": "decafca0f989e916d294ce5e76336ee9"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/fs_integration.rs": {
+    "mtime": 1776200250.592581,
+    "hash": "04a6e421044aec82d26930e0b59e2c25"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/preview_enhancements.rs": {
+    "mtime": 1777319155.7417843,
+    "hash": "09094704428c5f18fecb51399d881e17"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/smoke.rs": {
+    "mtime": 1776200250.592581,
+    "hash": "3acddfdfa4e3a2e13301bee13fc98ab1"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/ssh_verification.rs": {
+    "mtime": 1776809903.4993377,
+    "hash": "886eca0d31edd7746d9219aab2966e28"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/terminal_integration.rs": {
+    "mtime": 1776881732.1026018,
+    "hash": "bd83a65dd5468c26c0c5c475daaab01a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/AGENTS.md": {
+    "mtime": 1776200250.5331912,
+    "hash": "1f43940e1be52aee399b0efd09b054d3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/CHANGELOG.md": {
+    "mtime": 1777508377.372363,
+    "hash": "ef41ec134cbb19077dd9f2eb997ec3a6"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/enhancements.md": {
+    "mtime": 1776809903.1490872,
+    "hash": "1c820e13a0496fa77a57b74e6ac1aef0"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/enhancements_technical.md": {
+    "mtime": 1776809903.1536,
+    "hash": "e0aefa2b182e824aad357ded1af3f99a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/IMPLEMENTATION_SUMMARY.md": {
+    "mtime": 1776809903.1330607,
+    "hash": "cc0584a5b9ced9ed43645d72cc52eaa3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/index.html": {
+    "mtime": 1777319155.5589013,
+    "hash": "bf79dede56c723e99ffa8ae502d75ad2"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/README.md": {
+    "mtime": 1777508377.3819067,
+    "hash": "3c7a85b3d3bb3c4bef2ca4519ba59bc0"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/WAVE_7B_PHASE3_IMPLEMENTATION.md": {
+    "mtime": 1776809903.1435745,
+    "hash": "f342b4b31f66a9777947dcd8a0e7c041"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/adr-0001-architecture.md": {
+    "mtime": 1776200250.536716,
+    "hash": "977558db3045540e776cdcb217b76dae"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/improvements-roadmap.md": {
+    "mtime": 1776799888.2663162,
+    "hash": "84916a421e1624d9d51d2338c68bcd25"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/performance-baseline.md": {
+    "mtime": 1776200250.5387144,
+    "hash": "7aabedae1c383b4303048263ded85b07"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/RELEASING.md": {
+    "mtime": 1776799888.257189,
+    "hash": "0e14dbc9dce55311fe3e94ac2152242d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/ssh_sftp_usage.md": {
+    "mtime": 1776799888.2713354,
+    "hash": "984462e1f3096caefd501c25778d9888"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/TERMINAL_BEHAVIOR.md": {
+    "mtime": 1776881732.0770938,
+    "hash": "b22cf52b833459c39d475b269b92f304"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/TESTING.md": {
+    "mtime": 1777072395.7555368,
+    "hash": "1953d5b01208b705f539c9eac6f1d093"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-03-24-custom-icon-font.md": {
+    "mtime": 1776200250.5397143,
+    "hash": "9915eb6bae4e9ab3ae6361badcf413e8"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-03-24-preview-panel-redesign.md": {
+    "mtime": 1776200250.5407143,
+    "hash": "da18862254296494a88820d8ad6d4c79"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-07-wave1a-appstate-decomposition.md": {
+    "mtime": 1776799888.2891119,
+    "hash": "bd7eed3065f66900bcb0059d57895c7a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-07-wave1b-ui-module-split.md": {
+    "mtime": 1776799888.2981324,
+    "hash": "d3028aa1868c9b61441f823aa8c2e02f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-07-wave1c-multiworker-editor-markdown.md": {
+    "mtime": 1776799888.30765,
+    "hash": "9d22fc99350ccc6e3133503a9b2a19e8"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-07-wave2a-input-routing.md": {
+    "mtime": 1776799888.3152406,
+    "hash": "a678b1de2bec7006a882a64f3bb7a601"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-07-wave2b-mouse-support.md": {
+    "mtime": 1776799888.3232813,
+    "hash": "df440209c0b9a2fa3137158366c04d63"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave3a-editor-rope-backend.md": {
+    "mtime": 1776799888.3313086,
+    "hash": "4e3cf98e471e2e6717e4989b4b063b26"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave4a-git-integration.md": {
+    "mtime": 1776799888.340365,
+    "hash": "c8872d943976591b148ee509192aeb01"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave4c-editor-fullscreen-sync.md": {
+    "mtime": 1776799888.3487332,
+    "hash": "8e86d6b32644b439406f609c62c3cdaf"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave4d-quickfilter-fuzzy-find.md": {
+    "mtime": 1776799888.3572452,
+    "hash": "cade7b7c968c3bb02a6907f381bd0e9d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave5a-find-replace-watcher.md": {
+    "mtime": 1776799888.3653612,
+    "hash": "682ffc00c34a655570c8926691c08a9f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave5b-bookmarks-trash.md": {
+    "mtime": 1776799888.3734186,
+    "hash": "e2062f07caad62c704f06e7cf645bc31"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave5c-shell-integration.md": {
+    "mtime": 1776799888.3804202,
+    "hash": "a62629d533d5d9740c50de84078b14a3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave6a-archive-browsing.md": {
+    "mtime": 1776799888.388464,
+    "hash": "5f92eb1b304860e753444d9d698e11d2"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave6b-directory-diff.md": {
+    "mtime": 1776799888.3959913,
+    "hash": "2e9a825b59a8f4e118cd0538b1b0f0dc"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-08-wave7a-ssh-sftp.md": {
+    "mtime": 1776799888.4034991,
+    "hash": "9649a3df8a900484e6c789cd17c13d28"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-12-wave8a-embedded-terminal.md": {
+    "mtime": 1776799888.412011,
+    "hash": "c39e6350d10b7a1f436f3b5bb89f6459"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-13-file-operation-identity-hardening.md": {
+    "mtime": 1776799888.4205136,
+    "hash": "07d47d52dfa3e5025880ea00e0b5f36d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-13-operation-safety-hardening.md": {
+    "mtime": 1776799888.427518,
+    "hash": "c42d1f960936585151af8566151ba45d"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-13-workspaces.md": {
+    "mtime": 1776799888.436073,
+    "hash": "aff1bfb8ff6b8bcddc3a01b5626c723f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-25-flyout-submenu.md": {
+    "mtime": 1777319155.5066144,
+    "hash": "63cc269141b512d181d171053ab9e510"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-25-git-diff-viewer.md": {
+    "mtime": 1777319155.5136168,
+    "hash": "e333b40bc6d1c9f69c42d284e77bbd45"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-25-ui-ux-revamp.md": {
+    "mtime": 1777095200.0499597,
+    "hash": "712f99a5a43e34f2c591164c31f5ab09"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-26-preview-enhancements.md": {
+    "mtime": 1777319155.5226214,
+    "hash": "e823974642d7e86264d724ff0d0a5146"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-04-29-update-checks-self-update.md": {
+    "mtime": 1777497848.8279324,
+    "hash": "2d8af8738046efa519bda5b14c76c9b1"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/ROADMAP.md": {
+    "mtime": 1776799888.4436128,
+    "hash": "6cdac65ace9fb5cef235f81b43b5857f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/wave7b-enhancements.md": {
+    "mtime": 1776799888.4511294,
+    "hash": "69cc6ef3070ccb9bb1eda051de2d420a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-03-24-custom-icon-font-design.md": {
+    "mtime": 1776200250.5534258,
+    "hash": "39d07b387228122e44316b16acd4dd73"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-03-24-neo-commander-design.md": {
+    "mtime": 1776200250.5544262,
+    "hash": "0ce62d8078d1da2491b2af8e7e98a484"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-07-architecture-remediation-design.md": {
+    "mtime": 1776799888.465735,
+    "hash": "8c116ae835f0db2513632fe6f7c2ef6f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-13-file-operation-identity-hardening-design.md": {
+    "mtime": 1776799888.4732563,
+    "hash": "ca9512f842198f9b2ae3f5d96cdcc097"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-13-operation-safety-hardening-design.md": {
+    "mtime": 1776799888.4813895,
+    "hash": "b2f795007dfc17c9445301f1daef9592"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-13-workspaces-design.md": {
+    "mtime": 1776799888.4888985,
+    "hash": "e1773b550b6efc159113fb385c9f9eac"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-25-flyout-submenu-design.md": {
+    "mtime": 1777319155.5326185,
+    "hash": "1b5bdc4eea8137d6802ea0276974b94b"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-25-git-diff-viewer-design.md": {
+    "mtime": 1777319155.5398202,
+    "hash": "2e6f46524f457efa6e1afc11a9b99fa3"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-25-ui-ux-revamp-design.md": {
+    "mtime": 1777094569.985732,
+    "hash": "bdb81ac734ca47f35e27ce3daee4001f"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-26-preview-enhancements-design.md": {
+    "mtime": 1777319155.5468323,
+    "hash": "1faaefe0f2467613d24afac24060fc97"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-26-site-redesign-design.md": {
+    "mtime": 1777319155.5548978,
+    "hash": "db0a510aef62a1509797adf6512a384a"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-04-29-update-checks-self-update-design.md": {
+    "mtime": 1777497655.6064212,
+    "hash": "7163f6ffa54eb33db4c77c96202ee7ea"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/site/index.html": {
+    "mtime": 1777319155.5831208,
+    "hash": "af078d0f4c0e1b9848610981c0136f34"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/screenshot.png": {
+    "mtime": 1777319155.5741167,
+    "hash": "22c7b9fe37a0a0e4296301b2bc024c1c"
+  },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/site/app.png": {
+    "mtime": 1776201040.7277155,
+    "hash": "24e263f28ca8a7f6ce3af97def5b2299"
+  }
+}

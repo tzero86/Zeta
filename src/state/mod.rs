@@ -817,97 +817,15 @@ impl AppState {
             {
                 commands.extend(self.apply_git_diff(action)?);
             }
-            Action::OpenOpenWithMenu => {
-                if let Some(path) = self.panes.active_pane().selected_path() {
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("")
-                        .to_lowercase();
-                    let mut items: Vec<(String, String)> =
-                        vec![(String::from("Default App"), String::new())];
-                    for opener in &self.config.openers {
-                        if opener.matches_extension(&ext) {
-                            items.push((opener.name.clone(), opener.command.clone()));
-                        }
-                    }
-                    self.overlay.modal = Some(crate::state::overlay::ModalState::OpenWith {
-                        items,
-                        selection: 0,
-                        target: path,
-                    });
-                } else {
-                    self.status_message = String::from("no file selected");
-                }
-            }
-            Action::OpenWithMoveUp => {
-                if let Some(crate::state::overlay::ModalState::OpenWith {
-                    items, selection, ..
-                }) = &mut self.overlay.modal
-                {
-                    let len = items.len();
-                    if *selection == 0 {
-                        *selection = len.saturating_sub(1);
-                    } else {
-                        *selection -= 1;
-                    }
-                }
-            }
-            Action::OpenWithMoveDown => {
-                if let Some(crate::state::overlay::ModalState::OpenWith {
-                    items, selection, ..
-                }) = &mut self.overlay.modal
-                {
-                    let len = items.len();
-                    *selection = (*selection + 1) % len.max(1);
-                }
-            }
-            Action::OpenWithConfirm => {
-                if let Some(crate::state::overlay::ModalState::OpenWith {
-                    items,
-                    selection,
-                    target,
-                }) = self.overlay.modal.take()
-                {
-                    let idx = selection.min(items.len().saturating_sub(1));
-                    if let Some((name, command)) = items.into_iter().nth(idx) {
-                        let target_str = target.display().to_string();
-                        if command.is_empty() {
-                            match open::that(&target) {
-                                Ok(()) => {
-                                    self.status_message =
-                                        format!("opened {} with default app", target.display());
-                                }
-                                Err(e) => {
-                                    self.status_message = format!("could not open file: {e}");
-                                }
-                            }
-                        } else {
-                            let expanded = if command.contains("{}") {
-                                command.replace("{}", &target_str)
-                            } else {
-                                format!("{command} {target_str}")
-                            };
-                            // Use shell to properly parse arguments (preserves spaces in paths)
-                            match std::process::Command::new("sh")
-                                .arg("-c")
-                                .arg(&expanded)
-                                .spawn()
-                            {
-                                Ok(_) => {
-                                    self.status_message =
-                                        format!("opened {} with {name}", target.display());
-                                }
-                                Err(e) => {
-                                    self.status_message = format!("could not open file: {e}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            Action::CloseOpenWithMenu => {
-                self.overlay.close_all();
+            _ if matches!(
+                action,
+                Action::OpenOpenWithMenu
+                    | Action::OpenWithMoveUp
+                    | Action::OpenWithMoveDown
+                    | Action::OpenWithConfirm
+                    | Action::CloseOpenWithMenu
+            ) => {
+                commands.extend(self.apply_open_with(action)?);
             }
             Action::ToggleDiffMode => {
                 self.diff_mode = !self.diff_mode;
@@ -2092,6 +2010,107 @@ impl AppState {
             }
             Action::GitDiffSetViewport(height) => {
                 self.git_diff_viewport_height = *height;
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles the "open with" application menu.
+    fn apply_open_with(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let commands = Vec::new();
+        match action {
+            Action::OpenOpenWithMenu => {
+                if let Some(path) = self.panes.active_pane().selected_path() {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+                    let mut items: Vec<(String, String)> =
+                        vec![(String::from("Default App"), String::new())];
+                    for opener in &self.config.openers {
+                        if opener.matches_extension(&ext) {
+                            items.push((opener.name.clone(), opener.command.clone()));
+                        }
+                    }
+                    self.overlay.modal = Some(crate::state::overlay::ModalState::OpenWith {
+                        items,
+                        selection: 0,
+                        target: path,
+                    });
+                } else {
+                    self.status_message = String::from("no file selected");
+                }
+            }
+            Action::OpenWithMoveUp => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items, selection, ..
+                }) = &mut self.overlay.modal
+                {
+                    let len = items.len();
+                    if *selection == 0 {
+                        *selection = len.saturating_sub(1);
+                    } else {
+                        *selection -= 1;
+                    }
+                }
+            }
+            Action::OpenWithMoveDown => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items, selection, ..
+                }) = &mut self.overlay.modal
+                {
+                    let len = items.len();
+                    *selection = (*selection + 1) % len.max(1);
+                }
+            }
+            Action::OpenWithConfirm => {
+                if let Some(crate::state::overlay::ModalState::OpenWith {
+                    items,
+                    selection,
+                    target,
+                }) = self.overlay.modal.take()
+                {
+                    let idx = selection.min(items.len().saturating_sub(1));
+                    if let Some((name, command)) = items.into_iter().nth(idx) {
+                        let target_str = target.display().to_string();
+                        if command.is_empty() {
+                            match open::that(&target) {
+                                Ok(()) => {
+                                    self.status_message =
+                                        format!("opened {} with default app", target.display());
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("could not open file: {e}");
+                                }
+                            }
+                        } else {
+                            let expanded = if command.contains("{}") {
+                                command.replace("{}", &target_str)
+                            } else {
+                                format!("{command} {target_str}")
+                            };
+                            // Use shell to properly parse arguments (preserves spaces in paths)
+                            match std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(&expanded)
+                                .spawn()
+                            {
+                                Ok(_) => {
+                                    self.status_message =
+                                        format!("opened {} with {name}", target.display());
+                                }
+                                Err(e) => {
+                                    self.status_message = format!("could not open file: {e}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Action::CloseOpenWithMenu => {
+                self.overlay.close_all();
             }
             _ => {}
         }
