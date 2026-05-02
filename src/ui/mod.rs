@@ -26,7 +26,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::pane::PaneId;
-use crate::state::{AppState, PaneLayout};
+use crate::state::{AppState, MessageKind, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
@@ -457,10 +457,16 @@ fn render_status_bar(
                     .bg(palette.status_bg),
             ));
         }
+        let message_fg = match zones.message_kind {
+            MessageKind::Error => palette.accent_red,
+            MessageKind::Warning => palette.accent_yellow,
+            MessageKind::Success => palette.accent_green,
+            MessageKind::Info => palette.text_subtext,
+        };
         spans.push(Span::styled(
             zones.message.clone(),
             Style::default()
-                .fg(palette.text_subtext)
+                .fg(message_fg)
                 .bg(palette.status_bg),
         ));
         if let Some(ref marks) = zones.marks {
