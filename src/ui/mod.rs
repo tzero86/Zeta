@@ -26,7 +26,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::pane::PaneId;
-use crate::state::{AppState, PaneLayout};
+use crate::state::{AppState, MessageKind, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
 use crate::ui::finder::render_file_finder;
@@ -457,11 +457,15 @@ fn render_status_bar(
                     .bg(palette.status_bg),
             ));
         }
+        let message_fg = match zones.message_kind {
+            MessageKind::Error => palette.accent_red,
+            MessageKind::Warning => palette.accent_yellow,
+            MessageKind::Success => palette.accent_green,
+            MessageKind::Info => palette.text_subtext,
+        };
         spans.push(Span::styled(
             zones.message.clone(),
-            Style::default()
-                .fg(palette.text_subtext)
-                .bg(palette.status_bg),
+            Style::default().fg(message_fg).bg(palette.status_bg),
         ));
         if let Some(ref marks) = zones.marks {
             let size_str = if marks.total_bytes > 0 {
@@ -602,60 +606,95 @@ fn render_key_hints(
     state: &AppState,
     palette: crate::config::ThemePalette,
 ) {
+    use crate::fs::EntryKind;
     use crate::state::ModalKind;
 
-    let hints: &[(&str, &str)] = match state.focus_layer() {
-        crate::state::FocusLayer::Modal(ModalKind::Dialog) => &[
+    let hints: Vec<(&str, &str)> = match state.focus_layer() {
+        crate::state::FocusLayer::Modal(ModalKind::Dialog) => vec![
             ("\u{2191}\u{2193}", "Scroll"),
             ("PgUp/Dn", "Page"),
             ("Esc", "Close"),
         ],
-        crate::state::FocusLayer::Modal(ModalKind::Collision) => &[
+        crate::state::FocusLayer::Modal(ModalKind::Collision) => vec![
             ("O", "Overwrite"),
             ("R", "Rename"),
             ("S", "Skip"),
             ("Esc", "Cancel"),
         ],
         crate::state::FocusLayer::Modal(ModalKind::Prompt) => {
-            &[("Enter", "Confirm"), ("Esc", "Cancel")]
+            vec![("Enter", "Confirm"), ("Esc", "Cancel")]
         }
-        crate::state::FocusLayer::Modal(ModalKind::Settings) => &[
+        crate::state::FocusLayer::Modal(ModalKind::Settings) => vec![
             ("\u{2191}\u{2193}", "Navigate"),
             ("Space", "Toggle"),
             ("Esc", "Close"),
         ],
         crate::state::FocusLayer::Modal(ModalKind::Bookmarks) => {
-            &[("Enter", "Go"), ("Del", "Remove"), ("Esc", "Close")]
+            vec![("Enter", "Go"), ("Del", "Remove"), ("Esc", "Close")]
         }
         crate::state::FocusLayer::Modal(ModalKind::Palette)
-        | crate::state::FocusLayer::Modal(ModalKind::FileFinder) => &[
+        | crate::state::FocusLayer::Modal(ModalKind::FileFinder) => vec![
             ("\u{2191}\u{2193}", "Navigate"),
             ("Enter", "Open"),
             ("Esc", "Cancel"),
         ],
-        crate::state::FocusLayer::GitDiffFileList => &[
+        crate::state::FocusLayer::GitDiffFileList => vec![
             ("\u{2191}\u{2193}/j/k", "Navigate"),
             ("PgUp/PgDn", "Page"),
             ("Tab", "Switch Pane"),
             ("Ctrl+D", "Close Diff"),
         ],
-        crate::state::FocusLayer::GitDiffContent => &[
+        crate::state::FocusLayer::GitDiffContent => vec![
             ("\u{2191}\u{2193}/j/k", "Scroll"),
             ("PgUp/PgDn", "Page"),
             ("d", "Page Down"),
             ("Tab", "Switch Pane"),
             ("Ctrl+D", "Close Diff"),
         ],
-        crate::state::FocusLayer::Editor => &[
+        crate::state::FocusLayer::Editor => vec![
             ("Ctrl+S", "Save"),
             ("Ctrl+F", "Find"),
             ("F3", "Next"),
             ("Esc", "Close"),
         ],
         crate::state::FocusLayer::Preview | crate::state::FocusLayer::MarkdownPreview => {
-            &[("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
+            vec![("Ctrl+W", "Cycle"), ("PgUp/Dn", "Scroll"), ("Esc", "Close")]
         }
-        _ => &[
+        crate::state::FocusLayer::Pane => {
+            let pane = state.panes.active_pane();
+            if pane.marked_count() > 0 {
+                vec![
+                    ("F5", "Copy marked"),
+                    ("Shift+F6", "Move marked"),
+                    ("F8", "Delete marked"),
+                    ("Shift+M", "Clear marks"),
+                ]
+            } else {
+                let is_dir = pane
+                    .selected_entry()
+                    .map(|e| matches!(e.kind, EntryKind::Directory))
+                    .unwrap_or(false);
+                if is_dir {
+                    vec![
+                        ("Enter", "Open"),
+                        ("F5", "Copy"),
+                        ("F7", "Mkdir"),
+                        ("F8", "Delete"),
+                        ("F10", "Quit"),
+                    ]
+                } else {
+                    vec![
+                        ("F3", "View"),
+                        ("F4", "Edit"),
+                        ("F5", "Copy"),
+                        ("F6", "Rename"),
+                        ("F8", "Delete"),
+                        ("F10", "Quit"),
+                    ]
+                }
+            }
+        }
+        _ => vec![
             ("Alt+1..4", "Workspace"),
             ("F1", "Help"),
             ("F3", "View"),

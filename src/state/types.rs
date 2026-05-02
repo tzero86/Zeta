@@ -113,6 +113,53 @@ impl ZetaError {
     }
 }
 
+/// Severity of a status bar message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MessageKind {
+    #[default]
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+/// A status bar message with optional severity for colored display.
+#[derive(Debug, Clone, Default)]
+pub struct StatusMessage {
+    pub text: String,
+    pub kind: MessageKind,
+}
+
+impl StatusMessage {
+    pub fn info(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: MessageKind::Info,
+        }
+    }
+
+    pub fn success(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: MessageKind::Success,
+        }
+    }
+
+    pub fn warning(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: MessageKind::Warning,
+        }
+    }
+
+    pub fn error(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            kind: MessageKind::Error,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,5 +189,25 @@ mod tests {
     fn zeta_error_other_displays_message() {
         let err = ZetaError::other("something went wrong");
         assert_eq!(err.to_string(), "something went wrong");
+    }
+
+    #[test]
+    fn status_message_default_is_empty_info() {
+        let m = StatusMessage::default();
+        assert_eq!(m.text, "");
+        assert!(matches!(m.kind, MessageKind::Info));
+    }
+
+    #[test]
+    fn status_message_error_constructor() {
+        let m = StatusMessage::error("disk full");
+        assert_eq!(m.text, "disk full");
+        assert!(matches!(m.kind, MessageKind::Error));
+    }
+
+    #[test]
+    fn status_message_warning_constructor() {
+        let m = StatusMessage::warning("read-only");
+        assert!(matches!(m.kind, MessageKind::Warning));
     }
 }

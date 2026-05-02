@@ -46,7 +46,9 @@ pub use dialog::{CollisionState, DialogState};
 pub use menu::{menu_tabs, MenuContext, MenuTab};
 pub use prompt::{resolve_prompt_target, PromptKind, PromptState};
 pub use settings::{KeymapField, SettingsEntry, SettingsField, SettingsState, SettingsTab};
-pub use types::{FocusLayer, MenuItem, ModalKind, PaneFocus, PaneLayout, ZetaError};
+pub use types::{
+    FocusLayer, MenuItem, MessageKind, ModalKind, PaneFocus, PaneLayout, StatusMessage, ZetaError,
+};
 
 // ---------------------------------------------------------------------------
 // Local clock helpers
@@ -111,6 +113,7 @@ pub struct StatusZones {
     pub git_branch: Option<String>,
     pub entry_detail: Option<String>,
     pub message: String,
+    pub message_kind: MessageKind,
     pub marks: Option<MarksInfo>,
     pub progress: Option<FileOpProgress>,
     pub workspace: String,
@@ -146,7 +149,7 @@ pub struct WorkspaceState {
     pub preview: PreviewState,
     pub editor: EditorState,
     pub terminal: crate::state::terminal::TerminalState,
-    status_message: String,
+    status_message: StatusMessage,
     last_scan_time_ms: Option<u128>,
     file_operation_status: Option<FileOperationStatus>,
     /// Full-window editor mode hides the pane browser and lets the editor own
@@ -180,7 +183,7 @@ impl WorkspaceState {
             preview,
             editor: EditorState::default(),
             terminal: crate::state::terminal::TerminalState::default(),
-            status_message,
+            status_message: StatusMessage::info(status_message),
             last_scan_time_ms: None,
             file_operation_status: None,
             editor_fullscreen: false,
@@ -476,20 +479,20 @@ impl AppState {
                 let cwd = self.panes.active_pane().cwd.clone();
                 commands.extend(self.terminal.apply(&action, cwd)?);
                 if !was_open && self.terminal.is_open() {
-                    self.status_message = String::from("terminal opened");
+                    self.set_status(String::from("terminal opened"));
                 } else if was_open && !self.terminal.is_open() {
                     self.terminal_fullscreen = false;
-                    self.status_message = String::from("terminal closed");
+                    self.set_status(String::from("terminal closed"));
                 }
             }
             Action::ToggleTerminalFullscreen => {
                 if self.terminal.is_open() {
                     self.terminal_fullscreen = !self.terminal_fullscreen;
-                    self.status_message = if self.terminal_fullscreen {
+                    self.set_status(if self.terminal_fullscreen {
                         String::from("terminal fullscreen enabled")
                     } else {
                         String::from("terminal fullscreen disabled")
-                    };
+                    });
                 }
             }
             _ => {
@@ -541,7 +544,7 @@ impl AppState {
                             match self.config.compile_keymap() {
                                 Ok(new_keymap) => {
                                     let _ = self.config.save(Path::new(&self.config_path));
-                                    self.status_message = format!("bound to {raw}");
+                                    self.set_status(format!("bound to {raw}"));
                                     commands.push(Command::UpdateKeymap(new_keymap));
                                 }
                                 Err(_) => {
@@ -574,13 +577,15 @@ impl AppState {
                                             }
                                         }
                                     }
-                                    self.status_message =
-                                        format!("invalid key binding '{raw}', rebind cancelled");
+                                    self.status_message = StatusMessage::info(format!(
+                                        "invalid key binding '{raw}', rebind cancelled"
+                                    ));
                                 }
                             }
                         } else {
-                            self.status_message =
-                                String::from("unsupported key — rebind cancelled");
+                            self.status_message = StatusMessage::info(String::from(
+                                "unsupported key — rebind cancelled",
+                            ));
                         }
                     }
                     if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
@@ -616,7 +621,7 @@ impl AppState {
                 pane.filter_query.clear();
                 pane.selection = 0;
                 pane.scroll_offset = 0;
-                self.status_message = String::from("type to filter pane entries");
+                self.set_status(String::from("type to filter pane entries"));
             }
             Action::PaneFilterInput(ch) => {
                 let pane = self.panes.active_pane_mut();
@@ -634,7 +639,7 @@ impl AppState {
             }
             Action::ClosePaneFilter => {
                 self.panes.active_pane_mut().clear_filter();
-                self.status_message = String::from("pane filter closed");
+                self.set_status(String::from("pane filter closed"));
             }
             Action::OpenFileFinder => {
                 let pane = self.panes.focused_pane_id();
@@ -646,7 +651,7 @@ impl AppState {
                     root: root.clone(),
                     max_depth: 5,
                 });
-                self.status_message = format!("searching under {}", root.display());
+                self.set_status(format!("searching under {}", root.display()));
             }
             Action::FileFinderInput(ch) => {
                 if let Some(finder) = self.overlay.file_finder_mut() {
@@ -670,7 +675,7 @@ impl AppState {
             }
             Action::CloseFileFinder => {
                 self.overlay.close_all();
-                self.status_message = String::from("file finder closed");
+                self.set_status(String::from("file finder closed"));
             }
             Action::FileFinderConfirm => {
                 if let Some(finder) = self.overlay.file_finder() {
@@ -682,7 +687,7 @@ impl AppState {
                                 pane,
                                 path: parent.to_path_buf(),
                             });
-                            self.status_message = format!("jumping to {}", path.display());
+                            self.set_status(format!("jumping to {}", path.display()));
                         }
                     }
                 }
@@ -697,22 +702,23 @@ impl AppState {
                 if terminal_open && self.terminal.focused {
                     self.terminal.focused = false;
                     self.panes.focus = PaneFocus::Left;
-                    self.status_message = String::from("focus returned to left pane");
+                    self.set_status(String::from("focus returned to left pane"));
                 } else if terminal_open
                     && !self.terminal.focused
                     && self.panes.focus == PaneFocus::Right
                 {
                     // If we're on Right pane and terminal is open, focus terminal next
                     self.terminal.focused = true;
-                    self.status_message =
-                        String::from("terminal focused (Ctrl+W to cycle, Esc to return)");
+                    self.status_message = StatusMessage::info(String::from(
+                        "terminal focused (Ctrl+W to cycle, Esc to return)",
+                    ));
                 } else {
                     self.panes.focus = match self.panes.focus {
                         PaneFocus::Left => {
                             if preview_available {
-                                self.status_message = String::from(
+                                self.set_status(String::from(
                                     "preview panel focused (Ctrl+W to cycle, Esc to return)",
-                                );
+                                ));
                                 PaneFocus::Preview
                             } else {
                                 PaneFocus::Right
@@ -720,7 +726,7 @@ impl AppState {
                         }
                         PaneFocus::Right => PaneFocus::Left,
                         PaneFocus::Preview => {
-                            self.status_message = String::from("focus returned to left pane");
+                            self.set_status(String::from("focus returned to left pane"));
                             PaneFocus::Left
                         }
                     };
@@ -733,28 +739,29 @@ impl AppState {
                 if self.can_focus_preview_panel() {
                     self.editor.markdown_preview_focused = false;
                     self.panes.focus = if self.panes.focus == PaneFocus::Preview {
-                        self.status_message = String::from("preview focus returned to file pane");
+                        self.set_status(String::from("preview focus returned to file pane"));
                         PaneFocus::Left
                     } else {
-                        self.status_message = String::from("preview panel focused");
+                        self.set_status(String::from("preview panel focused"));
                         PaneFocus::Preview
                     };
                 } else if self.preview.panel_open {
                     if self.panes.focus == PaneFocus::Preview {
                         self.panes.focus = PaneFocus::Left;
                     }
-                    self.status_message = String::from("preview panel has no content to focus");
+                    self.set_status(String::from("preview panel has no content to focus"));
                 }
             }
             Action::FocusMarkdownPreview => {
                 if self.editor.is_markdown_file() && self.editor.markdown_preview_visible {
                     if self.editor.markdown_preview_focused {
-                        self.status_message = String::from(
+                        self.set_status(String::from(
                             "markdown preview focused  (Tab/Esc to return, Ctrl+M to hide)",
-                        );
+                        ));
                     } else {
-                        self.status_message =
-                            String::from("editor focused  (Tab to focus markdown preview)");
+                        self.set_status(String::from(
+                            "editor focused  (Tab to focus markdown preview)",
+                        ));
                     }
                     if self.panes.focus == PaneFocus::Preview {
                         self.panes.focus = PaneFocus::Left;
@@ -763,8 +770,9 @@ impl AppState {
             }
             Action::Quit => {
                 if self.editor.is_dirty() {
-                    self.status_message =
-                        String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
+                    self.status_message = StatusMessage::info(String::from(
+                        "unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel",
+                    ));
                 } else {
                     self.should_quit = true;
                 }
@@ -775,29 +783,31 @@ impl AppState {
                         commands.push(Command::OpenEditor {
                             path: entry.path.clone(),
                         });
-                        self.status_message = format!("opening {}", entry.path.display());
+                        self.set_status(format!("opening {}", entry.path.display()));
                     } else if entry.kind == EntryKind::Archive {
                         commands.push(Command::OpenArchive {
                             path: entry.path.clone(),
                             inner: std::path::PathBuf::new(),
                         });
-                        self.status_message = format!("opening archive {}", entry.path.display());
+                        self.set_status(format!("opening archive {}", entry.path.display()));
                     } else {
-                        self.status_message = String::from("only files and archives can be opened");
+                        self.set_status(String::from("only files and archives can be opened"));
                     }
                 } else {
-                    self.status_message = String::from("no file selected for editor or archive");
+                    self.set_status(String::from("no file selected for editor or archive"));
                 }
             }
             Action::OpenInDefaultApp => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
                     match open::that(&path) {
                         Ok(()) => {
-                            self.status_message =
-                                format!("opened {} with system default", path.display());
+                            self.status_message = StatusMessage::info(format!(
+                                "opened {} with system default",
+                                path.display()
+                            ));
                         }
                         Err(e) => {
-                            self.status_message = format!("could not open file: {e}");
+                            self.set_status(format!("could not open file: {e}"));
                         }
                     }
                 }
@@ -836,7 +846,7 @@ impl AppState {
             Action::OpenShell => {
                 let path = self.panes.active_pane().cwd.clone();
                 commands.push(Command::OpenShell { path: path.clone() });
-                self.status_message = format!("opening shell in {}", path.display());
+                self.set_status(format!("opening shell in {}", path.display()));
             }
             _ if matches!(action, Action::OpenArchive { .. } | Action::ExitArchive) => {
                 commands.extend(self.apply_archive(action)?);
@@ -874,12 +884,13 @@ impl AppState {
                 let cwd = self.panes.active_pane().cwd.clone();
                 self.overlay
                     .open_prompt(PromptState::new(PromptKind::GoTo, "Go to Path", cwd));
-                self.status_message = String::from("type an absolute or relative path");
+                self.set_status(String::from("type an absolute or relative path"));
             }
             Action::CloseEditor => {
                 if self.editor.is_dirty() {
-                    self.status_message =
-                        String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
+                    self.status_message = StatusMessage::info(String::from(
+                        "unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel",
+                    ));
                 } else if !self.editor.is_open() {
                     self.editor_fullscreen = false;
                     self.sync_editor_menu_mode();
@@ -888,7 +899,7 @@ impl AppState {
             Action::DiscardEditorChanges => {
                 self.editor_fullscreen = false;
                 self.sync_editor_menu_mode();
-                self.status_message = String::from("discarded editor changes");
+                self.set_status(String::from("discarded editor changes"));
             }
             Action::SettingsToggleCurrent => {
                 let (selection, active_tab) =
@@ -904,7 +915,7 @@ impl AppState {
                         if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
                             s.rebind_mode = Some(selection);
                         }
-                        self.status_message = String::from("press new key combo (Esc to cancel)");
+                        self.set_status(String::from("press new key combo (Esc to cancel)"));
                     } else {
                         self.apply_settings_entry(entry);
                     }
@@ -946,14 +957,14 @@ impl AppState {
                     if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
                         s.rebind_mode = Some(selection);
                     }
-                    self.status_message = String::from("press new key combo (Esc to cancel)");
+                    self.set_status(String::from("press new key combo (Esc to cancel)"));
                 }
             }
             Action::SettingsCancelRebind => {
                 if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
                     s.rebind_mode = None;
                 }
-                self.status_message = String::from("rebind cancelled");
+                self.set_status(String::from("rebind cancelled"));
             }
             Action::SettingsNextTab => {
                 if let Some(s) = self.settings_mut() {
@@ -1019,10 +1030,10 @@ impl AppState {
                     let count = marked.len();
                     match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
                         Ok(()) => {
-                            self.status_message = format!("copied {count} paths to clipboard");
+                            self.set_status(format!("copied {count} paths to clipboard"));
                         }
                         Err(e) => {
-                            self.status_message = format!("clipboard error: {e}");
+                            self.set_status_error(format!("clipboard error: {e}"));
                         }
                     }
                 } else if let Some(path) = self.panes.active_pane().selected_path() {
@@ -1030,18 +1041,20 @@ impl AppState {
                         .and_then(|mut cb| cb.set_text(path.display().to_string()))
                     {
                         Ok(()) => {
-                            self.status_message =
-                                format!("copied to clipboard: {}", path.display());
+                            self.status_message = StatusMessage::info(format!(
+                                "copied to clipboard: {}",
+                                path.display()
+                            ));
                         }
                         Err(e) => {
-                            self.status_message = format!("clipboard error: {e}");
+                            self.set_status_error(format!("clipboard error: {e}"));
                         }
                     }
                 }
             }
             Action::OpenSshConnect => {
                 self.overlay.open_ssh_connect(Default::default());
-                self.status_message = String::from("enter SSH connection details");
+                self.set_status(String::from("enter SSH connection details"));
             }
             Action::SshConnectConfirm => {
                 if let Some(ModalState::SshConnect(state)) = &self.overlay.modal {
@@ -1057,7 +1070,7 @@ impl AppState {
                         trust_unknown_host: false,
                     });
                     self.overlay.close_all();
-                    self.status_message = format!("connecting to {}", address);
+                    self.set_status(format!("connecting to {}", address));
                 }
             }
             Action::SshDialogInput(ch) => {
@@ -1111,7 +1124,7 @@ impl AppState {
             }
             Action::CloseSshConnect => {
                 self.overlay.close_all();
-                self.status_message = String::from("SSH connection cancelled");
+                self.set_status(String::from("SSH connection cancelled"));
             }
             Action::SshTrustAccept => {
                 if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
@@ -1123,7 +1136,7 @@ impl AppState {
                 }) = self.overlay.modal.clone()
                 {
                     self.overlay.close_all();
-                    self.status_message = format!("connecting to {} (trusted)…", address);
+                    self.set_status(format!("connecting to {} (trusted)…", address));
                     commands.push(Command::ConnectSSH {
                         address,
                         auth_method,
@@ -1135,15 +1148,15 @@ impl AppState {
             }
             Action::SshTrustReject => {
                 self.overlay.close_all();
-                self.status_message = String::from("SSH connection cancelled");
+                self.set_status(String::from("SSH connection cancelled"));
             }
             Action::ShowSymlinkTarget => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::Symlink {
-                        self.status_message = match &entry.link_target {
+                        self.set_status(match &entry.link_target {
                             Some(t) => format!("symlink → {}", t.display()),
                             None => String::from("symlink target unavailable"),
-                        };
+                        });
                     }
                 }
             }
@@ -1161,8 +1174,10 @@ impl AppState {
                                     Action::OpenSelectedInEditor,
                                 )]);
                             } else {
-                                self.status_message =
-                                    format!("target does not exist: {}", target.display());
+                                self.status_message = StatusMessage::info(format!(
+                                    "target does not exist: {}",
+                                    target.display()
+                                ));
                             }
                         }
                     }
@@ -1206,21 +1221,21 @@ impl AppState {
                     self.theme.preset.clone(),
                     self.config_path.clone(),
                 ));
-                self.status_message = String::from("opened about");
+                self.set_status(String::from("opened about"));
             }
             Action::SetPaneLayout(layout) => {
                 self.panes.pane_layout = *layout;
                 self.config.pane_layout = *layout;
-                self.status_message = match layout {
+                self.set_status(match layout {
                     PaneLayout::SideBySide => String::from("layout set to side-by-side"),
                     PaneLayout::Stacked => String::from("layout set to stacked"),
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             Action::SetTheme(preset) => {
                 self.theme = ThemePalette::from_preset(*preset);
                 self.config.theme.preset = preset.as_str().to_string();
-                self.status_message = format!("theme set to {}", preset.as_str());
+                self.set_status(format!("theme set to {}", preset.as_str()));
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             Action::TogglePreviewPanel => {
@@ -1242,40 +1257,40 @@ impl AppState {
                 if self.editor.is_open() {
                     self.editor_fullscreen = !self.editor_fullscreen;
                     self.sync_editor_menu_mode();
-                    self.status_message = if self.editor_fullscreen {
+                    self.set_status(if self.editor_fullscreen {
                         String::from("editor fullscreen enabled")
                     } else {
                         String::from("editor fullscreen disabled")
-                    };
+                    });
                 }
             }
             Action::ToggleMarkdownPreview => {
                 if self.editor.is_markdown_file() {
-                    self.status_message = if self.editor.markdown_preview_visible {
+                    self.set_status(if self.editor.markdown_preview_visible {
                         String::from("markdown preview shown")
                     } else {
                         String::from("markdown preview hidden")
-                    };
+                    });
                 }
             }
             Action::ToggleHiddenFiles => {
-                self.status_message = if self.panes.active_pane().show_hidden {
+                self.set_status(if self.panes.active_pane().show_hidden {
                     String::from("showing hidden files")
                 } else {
                     String::from("hiding hidden files")
-                };
+                });
             }
             Action::Resize { width, height } => {
                 self.last_size = Some((*width, *height));
-                self.status_message = format!("resized to {width}x{height}");
+                self.set_status(format!("resized to {width}x{height}"));
             }
             Action::ShrinkLeftPane => {
                 self.pane_split_ratio = self.pane_split_ratio.saturating_sub(5).max(20);
-                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+                self.set_status(format!("pane split: {}%", self.pane_split_ratio));
             }
             Action::GrowLeftPane => {
                 self.pane_split_ratio = (self.pane_split_ratio + 5).min(80);
-                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+                self.set_status(format!("pane split: {}%", self.pane_split_ratio));
             }
             Action::ToggleDebugPanel => {
                 self.debug_visible = !self.debug_visible;
@@ -1284,11 +1299,11 @@ impl AppState {
                 let new_state = !self.panes.active_pane().details_view;
                 self.panes.left.details_view = new_state;
                 self.panes.right.details_view = new_state;
-                self.status_message = if new_state {
+                self.set_status(if new_state {
                     String::from("rich columns: enabled (both panes)")
                 } else {
                     String::from("rich columns: hidden (both panes)")
-                };
+                });
             }
             _ => {}
         }
@@ -1314,8 +1329,9 @@ impl AppState {
                     if let Some(files) = crate::git::fetch_diff_files(&cwd) {
                         if files.is_empty() {
                             // Show a status message; do not open the viewer
-                            self.status_message =
-                                String::from("Git diff: no changes in working tree");
+                            self.status_message = StatusMessage::info(String::from(
+                                "Git diff: no changes in working tree",
+                            ));
                         } else {
                             self.git_diff_active = true;
                             self.git_diff_files = files;
@@ -1335,7 +1351,7 @@ impl AppState {
                             }
                         }
                     } else {
-                        self.status_message = String::from("Git diff: not a git repository");
+                        self.set_status(String::from("Git diff: not a git repository"));
                     }
                 }
             }
@@ -1417,7 +1433,7 @@ impl AppState {
                         target: path,
                     });
                 } else {
-                    self.status_message = String::from("no file selected");
+                    self.set_status(String::from("no file selected"));
                 }
             }
             Action::OpenWithMoveUp => {
@@ -1455,11 +1471,13 @@ impl AppState {
                         if command.is_empty() {
                             match open::that(&target) {
                                 Ok(()) => {
-                                    self.status_message =
-                                        format!("opened {} with default app", target.display());
+                                    self.status_message = StatusMessage::info(format!(
+                                        "opened {} with default app",
+                                        target.display()
+                                    ));
                                 }
                                 Err(e) => {
-                                    self.status_message = format!("could not open file: {e}");
+                                    self.set_status(format!("could not open file: {e}"));
                                 }
                             }
                         } else {
@@ -1475,11 +1493,13 @@ impl AppState {
                                 .spawn()
                             {
                                 Ok(_) => {
-                                    self.status_message =
-                                        format!("opened {} with {name}", target.display());
+                                    self.status_message = StatusMessage::info(format!(
+                                        "opened {} with {name}",
+                                        target.display()
+                                    ));
                                 }
                                 Err(e) => {
-                                    self.status_message = format!("could not open file: {e}");
+                                    self.set_status(format!("could not open file: {e}"));
                                 }
                             }
                         }
@@ -1503,7 +1523,7 @@ impl AppState {
                     path: path.clone(),
                     inner: std::path::PathBuf::new(),
                 });
-                self.status_message = format!("opening archive {}", path.display());
+                self.set_status(format!("opening archive {}", path.display()));
             }
             Action::ExitArchive => {
                 self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
@@ -1511,7 +1531,7 @@ impl AppState {
                     pane: self.panes.focused_pane_id(),
                     path: self.panes.active_pane().cwd.clone(),
                 });
-                self.status_message = String::from("exited archive");
+                self.set_status(String::from("exited archive"));
             }
             _ => {}
         }
@@ -1525,21 +1545,21 @@ impl AppState {
             Action::AddBookmark => {
                 let cwd = self.panes.active_pane().cwd.clone();
                 if self.config.bookmarks.contains(&cwd) {
-                    self.status_message = String::from("bookmark already exists");
+                    self.set_status(String::from("bookmark already exists"));
                 } else {
                     self.config.bookmarks.push(cwd.clone());
                     let _ = self.config.save(Path::new(&self.config_path));
-                    self.status_message = format!("bookmark added: {}", cwd.display());
+                    self.set_status(format!("bookmark added: {}", cwd.display()));
                 }
             }
             Action::OpenBookmarks => {
                 self.overlay
                     .open_bookmarks(crate::state::BookmarksState::new());
-                self.status_message = if self.config.bookmarks.is_empty() {
+                self.set_status(if self.config.bookmarks.is_empty() {
                     String::from("no bookmarks saved yet")
                 } else {
                     String::from("bookmarks opened")
-                };
+                });
             }
             Action::BookmarkSelect(index) => {
                 if let Some(path) = self.config.bookmarks.get(*index).cloned() {
@@ -1549,7 +1569,7 @@ impl AppState {
                         pane,
                         path: path.clone(),
                     });
-                    self.status_message = format!("jumping to bookmark: {}", path.display());
+                    self.set_status(format!("jumping to bookmark: {}", path.display()));
                 }
             }
             Action::DeleteBookmark(index) => {
@@ -1561,7 +1581,7 @@ impl AppState {
                             .selection
                             .min(self.config.bookmarks.len().saturating_sub(1));
                     }
-                    self.status_message = format!("bookmark removed: {}", removed.display());
+                    self.set_status(format!("bookmark removed: {}", removed.display()));
                 }
             }
             _ => {}
@@ -1580,11 +1600,13 @@ impl AppState {
                         &self.panes.left.entries,
                         &self.panes.right.entries,
                     );
-                    self.status_message =
-                        format!("diff mode — {}", crate::diff::diff_summary(&self.diff_map));
+                    self.status_message = StatusMessage::info(format!(
+                        "diff mode — {}",
+                        crate::diff::diff_summary(&self.diff_map)
+                    ));
                 } else {
                     self.diff_map.clear();
-                    self.status_message = String::from("diff mode off");
+                    self.set_status(String::from("diff mode off"));
                 }
             }
             Action::DiffSyncToOther => {
@@ -1640,9 +1662,9 @@ impl AppState {
                             collision: CollisionPolicy::Fail,
                         });
                     }
-                    self.status_message = format!("queued {count} file(s) to sync");
+                    self.set_status(format!("queued {count} file(s) to sync"));
                 } else {
-                    self.status_message = String::from("enable diff mode (F10) first");
+                    self.set_status(String::from("enable diff mode (F10) first"));
                 }
             }
             _ => {}
@@ -1676,8 +1698,9 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("enter destination directory for marked items");
+                    self.status_message = StatusMessage::info(String::from(
+                        "enter destination directory for marked items",
+                    ));
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let suggested = target_dir.join(&entry.name);
                     self.overlay.open_prompt(PromptState::with_value(
@@ -1687,9 +1710,9 @@ impl AppState {
                         Some(entry.path.clone()),
                         suggested.display().to_string(),
                     ));
-                    self.status_message = String::from("enter copy destination");
+                    self.set_status(String::from("enter copy destination"));
                 } else {
-                    self.status_message = String::from("no item selected to copy");
+                    self.set_status(String::from("no item selected to copy"));
                 }
             }
             Action::OpenDeletePrompt => {
@@ -1717,7 +1740,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
+                    self.set_status(String::from("Press Enter to confirm, or Esc to cancel"));
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -1733,9 +1756,9 @@ impl AppState {
 
                     self.overlay.modal =
                         Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
-                    self.status_message = String::new();
+                    self.set_status(String::new());
                 } else {
-                    self.status_message = "No items selected to delete".to_string();
+                    self.set_status("No items selected to delete".to_string());
                 }
             }
             Action::OpenPermanentDeletePrompt => {
@@ -1763,7 +1786,7 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message = String::from("Press Enter to confirm, or Esc to cancel");
+                    self.set_status(String::from("Press Enter to confirm, or Esc to cancel"));
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     // Single item: use destructive confirm dialog
                     let refresh = vec![crate::action::RefreshTarget {
@@ -1779,9 +1802,9 @@ impl AppState {
 
                     self.overlay.modal =
                         Some(crate::state::overlay::ModalState::DestructiveConfirm(state));
-                    self.status_message = String::new();
+                    self.set_status(String::new());
                 } else {
-                    self.status_message = "No items selected to delete".to_string();
+                    self.set_status("No items selected to delete".to_string());
                 }
             }
             Action::OpenMovePrompt => {
@@ -1806,8 +1829,9 @@ impl AppState {
                     );
                     prompt.source_paths = marks;
                     self.overlay.open_prompt(prompt);
-                    self.status_message =
-                        String::from("enter destination directory for marked items");
+                    self.status_message = StatusMessage::info(String::from(
+                        "enter destination directory for marked items",
+                    ));
                 } else if let Some(entry) = self.panes.active_pane().selected_entry() {
                     let suggested = target_dir.join(&entry.name);
                     self.overlay.open_prompt(PromptState::with_value(
@@ -1817,9 +1841,9 @@ impl AppState {
                         Some(entry.path.clone()),
                         suggested.display().to_string(),
                     ));
-                    self.status_message = String::from("enter move destination");
+                    self.set_status(String::from("enter move destination"));
                 } else {
-                    self.status_message = String::from("no item selected to move");
+                    self.set_status(String::from("no item selected to move"));
                 }
             }
             Action::OpenNewDirectoryPrompt => {
@@ -1829,13 +1853,13 @@ impl AppState {
                     "New Directory",
                     cwd,
                 ));
-                self.status_message = String::from("enter directory name");
+                self.set_status(String::from("enter directory name"));
             }
             Action::OpenNewFilePrompt => {
                 let cwd = self.panes.active_pane().cwd.clone();
                 self.overlay
                     .open_prompt(PromptState::new(PromptKind::NewFile, "New File", cwd));
-                self.status_message = String::from("enter file name");
+                self.set_status(String::from("enter file name"));
             }
             Action::OpenRenamePrompt => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
@@ -1849,9 +1873,9 @@ impl AppState {
                         Some(path),
                         name,
                     ));
-                    self.status_message = String::from("edit the new name");
+                    self.set_status(String::from("edit the new name"));
                 } else {
-                    self.status_message = String::from("no item selected to rename");
+                    self.set_status(String::from("no item selected to rename"));
                 }
             }
             Action::OpenBulkRenamePrompt => {
@@ -1862,8 +1886,9 @@ impl AppState {
                     v
                 };
                 if marked.is_empty() {
-                    self.status_message =
-                        String::from("mark files first (Space), then Ctrl+R to bulk rename");
+                    self.status_message = StatusMessage::info(String::from(
+                        "mark files first (Space), then Ctrl+R to bulk rename",
+                    ));
                 } else {
                     let count = marked.len();
                     let cwd = self.panes.active_pane().cwd.clone();
@@ -1874,14 +1899,14 @@ impl AppState {
                     );
                     prompt.source_paths = marked;
                     self.overlay.open_prompt(prompt);
-                    self.status_message = format!("{count} files marked — enter rename pattern");
+                    self.set_status(format!("{count} files marked — enter rename pattern"));
                 }
             }
             Action::PromptSubmit => {
                 if let Some(ModalState::Prompt(prompt)) = &self.overlay.modal {
                     let prompt = prompt.clone();
                     if !prompt.kind.is_confirmation_only() && prompt.value().trim().is_empty() {
-                        self.status_message = String::from("name cannot be empty");
+                        self.set_status_error(String::from("name cannot be empty"));
                     } else {
                         // --- Batch mode: source_paths non-empty ---
                         if !prompt.source_paths.is_empty() {
@@ -1926,7 +1951,7 @@ impl AppState {
                                     total_count: count,
                                 });
                                 self.overlay.close_all();
-                                self.status_message = format!("renaming {count} items");
+                                self.set_status(format!("renaming {count} items"));
                             } else {
                                 let dest_dir = {
                                     let p = PathBuf::from(&value);
@@ -2007,7 +2032,7 @@ impl AppState {
                                     total_count: count,
                                 });
                                 self.overlay.close_all();
-                                self.status_message = match kind {
+                                self.set_status(match kind {
                                     PromptKind::Copy => format!("copying {count} items"),
                                     PromptKind::Move => format!("moving {count} items"),
                                     PromptKind::Trash => format!("trashing {count} items"),
@@ -2015,7 +2040,7 @@ impl AppState {
                                         format!("deleting {count} items permanently")
                                     }
                                     _ => String::from("processing items"),
-                                };
+                                });
                             } // end else (non-BulkRename batch)
                         } else {
                             let kind = prompt.kind;
@@ -2029,11 +2054,13 @@ impl AppState {
                                         pane,
                                         path: target.clone(),
                                     });
-                                    self.status_message =
-                                        format!("navigated to {}", target.display());
+                                    self.status_message = StatusMessage::info(format!(
+                                        "navigated to {}",
+                                        target.display()
+                                    ));
                                     self.overlay.close_all();
                                 } else {
-                                    self.status_message = format!("not a directory: {value}");
+                                    self.set_status(format!("not a directory: {value}"));
                                 }
                             } else {
                                 let target_path = resolve_prompt_target(&prompt, &value);
@@ -2069,12 +2096,13 @@ impl AppState {
                                         prompt.source_path.as_ref().and_then(|s| {
                                             match Self::validate_rename_target(s, &value) {
                                                 Err(msg) => {
-                                                    self.status_message = msg;
+                                                    self.set_status(msg);
                                                     None
                                                 }
                                                 Ok(None) => {
-                                                    self.status_message =
-                                                        String::from("rename unchanged");
+                                                    self.status_message = StatusMessage::info(
+                                                        String::from("rename unchanged"),
+                                                    );
                                                     None
                                                 }
                                                 Ok(Some(destination)) => {
@@ -2112,7 +2140,7 @@ impl AppState {
                                         refresh,
                                         collision: CollisionPolicy::Fail,
                                     });
-                                    self.status_message = match kind {
+                                    self.set_status(match kind {
                                         PromptKind::Copy => String::from("copying item"),
                                         PromptKind::Trash => String::from("moving item to trash"),
                                         PromptKind::Delete => {
@@ -2125,13 +2153,14 @@ impl AppState {
                                         PromptKind::NewFile => String::from("creating file"),
                                         PromptKind::Rename => String::from("renaming item"),
                                         PromptKind::GoTo | PromptKind::BulkRename => String::new(),
-                                    };
+                                    });
                                     true
                                 } else if !(matches!(kind, PromptKind::Rename)
                                     && prompt.source_path.is_some())
                                 {
-                                    self.status_message =
-                                        String::from("missing source for operation");
+                                    self.status_message = StatusMessage::info(String::from(
+                                        "missing source for operation",
+                                    ));
                                     true
                                 } else {
                                     false
@@ -2166,11 +2195,11 @@ impl AppState {
                 if let Some(state) = self.panes.active_pane().rename_state.clone() {
                     match Self::validate_rename_target(&state.original_path, &state.buffer) {
                         Err(msg) => {
-                            self.status_message = msg;
+                            self.set_status(msg);
                         }
                         Ok(None) => {
                             self.panes.active_pane_mut().rename_state = None;
-                            self.status_message = String::from("rename unchanged");
+                            self.set_status(String::from("rename unchanged"));
                         }
                         Ok(Some(destination)) => {
                             self.panes.active_pane_mut().rename_state = None;
@@ -2307,7 +2336,7 @@ impl AppState {
                         self.pending_reveal = None;
                     }
                 }
-                self.status_message = format!("refreshed {} in {elapsed_ms} ms", path.display());
+                self.set_status(format!("refreshed {} in {elapsed_ms} ms", path.display()));
                 self.last_scan_time_ms = Some(elapsed_ms);
                 if self.diff_mode {
                     self.diff_map = crate::diff::compute_diff(
@@ -2335,10 +2364,10 @@ impl AppState {
                 if self.pending_batch.is_some() {
                     self.note_batch_settled(&identity, false);
                     if self.pending_batch.is_some() {
-                        self.status_message = format!("{message} in {elapsed_ms} ms");
+                        self.set_status(format!("{message} in {elapsed_ms} ms"));
                     }
                 } else {
-                    self.status_message = format!("{message} in {elapsed_ms} ms");
+                    self.set_status(format!("{message} in {elapsed_ms} ms"));
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
@@ -2363,10 +2392,10 @@ impl AppState {
                     self.pending_collision = Some(collision);
                 }
                 if self.pending_batch.is_some() {
-                    self.status_message = format!(
+                    self.set_status(format!(
                         "destination exists after {elapsed_ms} ms: {}",
                         path.display()
-                    );
+                    ));
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
@@ -2393,13 +2422,13 @@ impl AppState {
                     if self.pending_batch.is_some() {
                         self.note_batch_settled(file_op, true);
                         if self.pending_batch.is_some() {
-                            self.status_message = failure_status;
+                            self.set_status_error(failure_status);
                         }
                     } else {
-                        self.status_message = failure_status;
+                        self.set_status_error(failure_status);
                     }
                 } else {
-                    self.status_message = failure_status;
+                    self.set_status_error(failure_status);
                 }
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
@@ -2460,19 +2489,26 @@ impl AppState {
                 root,
                 entries,
             } => {
-                if let Some(finder) = self.overlay.file_finder_mut() {
+                let loaded = if let Some(finder) = self.overlay.file_finder_mut() {
                     if finder.pane == pane && finder.root == root {
                         finder.set_results(entries);
-                        self.status_message = format!(
-                            "file finder loaded {} entries from {}",
-                            finder.all_entries.len(),
-                            root.display()
-                        );
+                        Some((finder.all_entries.len(), root.clone()))
+                    } else {
+                        None
                     }
+                } else {
+                    None
+                };
+                if let Some((count, root)) = loaded {
+                    self.set_status(format!(
+                        "file finder loaded {} entries from {}",
+                        count,
+                        root.display()
+                    ));
                 }
             }
             JobResult::DirectoryChanged { path } => {
-                self.status_message = format!("filesystem changed: {}", path.display());
+                self.set_status(format!("filesystem changed: {}", path.display()));
             }
             JobResult::TerminalOutput {
                 workspace_id: _,
@@ -2484,7 +2520,7 @@ impl AppState {
                 workspace_id: _,
                 message,
             } => {
-                self.status_message = format!("[Terminal] {}", message);
+                self.set_status(format!("[Terminal] {}", message));
             }
             JobResult::TerminalExited {
                 workspace_id: _,
@@ -2493,7 +2529,7 @@ impl AppState {
                 if spawn_id == self.terminal.spawn_id {
                     self.terminal.close();
                     self.terminal_fullscreen = false;
-                    self.status_message = String::from("terminal session ended");
+                    self.set_status(String::from("terminal session ended"));
                 }
             }
             JobResult::DirSizeCalculated {
@@ -2523,10 +2559,10 @@ impl AppState {
                 };
                 pane_mut.set_entries(entries);
                 pane_mut.refresh_filter();
-                self.status_message = format!(
+                self.set_status(format!(
                     "opened archive {} in {elapsed_ms} ms",
                     archive_path.display()
-                );
+                ));
                 self.last_scan_time_ms = Some(elapsed_ms);
             }
             JobResult::ConfigChanged => {}
@@ -2555,7 +2591,7 @@ impl AppState {
                     credential,
                     pane,
                 );
-                self.status_message = String::from("unknown SSH host — verify fingerprint");
+                self.set_status(String::from("unknown SSH host — verify fingerprint"));
             }
             JobResult::SshConnected {
                 workspace_id: _,
@@ -2571,7 +2607,7 @@ impl AppState {
                 };
                 self.panes.pane_mut(pane).cwd = home;
                 self.overlay.close_all();
-                self.status_message = format!("connected to {}", address);
+                self.set_status(format!("connected to {}", address));
             }
             JobResult::SshConnectionFailed {
                 workspace_id: _,
@@ -2580,8 +2616,11 @@ impl AppState {
                 error,
             } => {
                 // Error is displayed in the SSH dialog; show status message
-                self.status_message =
-                    format!("SSH connection failed: {} - {}", address, error.message());
+                self.status_message = StatusMessage::info(format!(
+                    "SSH connection failed: {} - {}",
+                    address,
+                    error.message()
+                ));
             }
         }
 
@@ -2608,7 +2647,7 @@ impl AppState {
                 };
                 self.theme = ThemePalette::from_preset(next);
                 self.config.theme.preset = next.as_str().to_string();
-                self.status_message = format!("theme set to {}", next.as_str());
+                self.set_status(format!("theme set to {}", next.as_str()));
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::IconMode(current) => {
@@ -2619,11 +2658,11 @@ impl AppState {
                 };
                 self.icon_mode = next;
                 self.config.icon_mode = next;
-                self.status_message = match next {
+                self.set_status(match next {
                     IconMode::Unicode => String::from("icons set to unicode"),
                     IconMode::Ascii => String::from("icons set to ASCII"),
                     IconMode::NerdFont => String::from("icons set to NerdFont"),
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::PaneLayout(current) => {
@@ -2633,39 +2672,39 @@ impl AppState {
                 };
                 self.panes.pane_layout = next;
                 self.config.pane_layout = next;
-                self.status_message = match next {
+                self.set_status(match next {
                     PaneLayout::SideBySide => String::from("layout set to side-by-side"),
                     PaneLayout::Stacked => String::from("layout set to stacked"),
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::PreviewPanel => {
                 self.preview.panel_open = !self.preview.panel_open;
                 self.config.preview_panel_open = self.preview.panel_open;
-                self.status_message = if self.preview.panel_open {
+                self.set_status(if self.preview.panel_open {
                     String::from("preview panel enabled")
                 } else {
                     String::from("preview panel disabled")
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::PreviewOnSelection => {
                 self.preview.preview_on_selection = !self.preview.preview_on_selection;
                 self.config.preview_on_selection = self.preview.preview_on_selection;
-                self.status_message = if self.preview.preview_on_selection {
+                self.set_status(if self.preview.preview_on_selection {
                     String::from("preview on selection enabled")
                 } else {
                     String::from("preview on selection disabled")
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::TerminalOpenByDefault => {
                 self.config.terminal_open_by_default = !self.config.terminal_open_by_default;
-                self.status_message = if self.config.terminal_open_by_default {
+                self.set_status(if self.config.terminal_open_by_default {
                     String::from("terminal will open on startup")
                 } else {
                     String::from("terminal will not open on startup")
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::EditorTabWidth(current) => {
@@ -2675,16 +2714,16 @@ impl AppState {
                     _ => 2,
                 };
                 self.config.editor.tab_width = next;
-                self.status_message = format!("editor tab width set to {next}");
+                self.set_status(format!("editor tab width set to {next}"));
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::EditorWordWrap => {
                 self.config.editor.word_wrap = !self.config.editor.word_wrap;
-                self.status_message = if self.config.editor.word_wrap {
+                self.set_status(if self.config.editor.word_wrap {
                     String::from("editor word wrap enabled")
                 } else {
                     String::from("editor word wrap disabled")
-                };
+                });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             // Keymap bindings are rebindable — handled by SettingsBeginRebind/SettingsRebindCapture.
@@ -2929,7 +2968,7 @@ impl AppState {
         let display = path.display().to_string();
         self.editor.open_placeholder(path);
         self.sync_editor_menu_mode();
-        self.status_message = format!("opening {display}...");
+        self.set_status(format!("opening {display}..."));
     }
 
     pub fn open_editor(&mut self, buffer: EditorBuffer) {
@@ -2945,7 +2984,7 @@ impl AppState {
         self.editor.open(buffer);
         self.sync_editor_menu_mode();
         self.editor.sync_markdown_preview_to_cursor(12);
-        self.status_message = format!("opened editor for {path}");
+        self.set_status(format!("opened editor for {path}"));
     }
 
     pub fn mark_editor_saved(&mut self) {
@@ -2956,14 +2995,14 @@ impl AppState {
             .and_then(|e| e.path.as_ref())
             .map(|p| format!("saved editor buffer {}", p.display()))
             .unwrap_or_else(|| String::from("saved editor buffer"));
-        self.status_message = message;
+        self.set_status(message);
         if let Some(e) = self.editor.buffer.as_mut() {
             e.is_dirty = false;
         }
     }
 
     pub fn set_error_status(&mut self, message: impl Into<String>) {
-        self.status_message = message.into();
+        self.set_status_error(message.into());
     }
 
     // Theme/config
@@ -3086,7 +3125,7 @@ impl AppState {
             "{} | {} | {}{} | {} | up:{}ms {}{}{}{} | d:{}",
             self.config.theme.status_bar_label,
             workspace,
-            self.status_message,
+            self.status_message.text,
             branch,
             self.theme.preset,
             self.startup_time_ms,
@@ -3096,6 +3135,26 @@ impl AppState {
             entry_detail,
             self.redraw_count
         )
+    }
+
+    /// Sets a plain informational status message.
+    pub fn set_status(&mut self, text: impl Into<String>) {
+        self.status_message = StatusMessage::info(text);
+    }
+
+    /// Sets a success status message (green).
+    pub fn set_status_success(&mut self, text: impl Into<String>) {
+        self.status_message = StatusMessage::success(text);
+    }
+
+    /// Sets a warning status message (yellow).
+    pub fn set_status_warning(&mut self, text: impl Into<String>) {
+        self.status_message = StatusMessage::warning(text);
+    }
+
+    /// Sets an error status message (red).
+    pub fn set_status_error(&mut self, text: impl Into<String>) {
+        self.status_message = StatusMessage::error(text);
     }
 
     pub fn status_zones(&self) -> StatusZones {
@@ -3177,7 +3236,8 @@ impl AppState {
         StatusZones {
             git_branch,
             entry_detail,
-            message: format!(" {} ", self.status_message),
+            message: format!(" {} ", self.status_message.text),
+            message_kind: self.status_message.kind,
             marks,
             progress,
             workspace,
@@ -3473,7 +3533,7 @@ impl AppState {
                     pane.marked.remove(&source);
                 }
             }
-            self.status_message = if failed_sources.is_empty() {
+            self.set_status(if failed_sources.is_empty() {
                 format!("completed {succeeded} items")
             } else if succeeded == 0 {
                 format!("failed {total_count} items")
@@ -3482,7 +3542,7 @@ impl AppState {
                     "partially completed: {succeeded} succeeded, {} failed",
                     failed_sources.len()
                 )
-            };
+            });
             self.pending_batch = None;
         }
     }
@@ -3658,11 +3718,29 @@ mod tests {
     use crate::state::DebugState;
 
     use super::{
-        resolve_prompt_target, AppState, CollisionState, FocusLayer, ModalKind, ModalState,
-        OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind, PromptState,
-        UpdateState, WorkspaceState,
+        resolve_prompt_target, AppState, CollisionState, FocusLayer, MessageKind, ModalKind,
+        ModalState, OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind,
+        PromptState, UpdateState, WorkspaceState,
     };
     use ratatui_image::picker::Picker;
+
+    // -------------------------------------------------------------------
+    // Tests for StatusMessage
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn status_zones_error_kind_propagates() {
+        let mut state = test_state();
+        state.set_status_error("operation failed");
+        let zones = state.status_zones();
+        assert_eq!(zones.message_kind, MessageKind::Error);
+        assert_eq!(zones.message, " operation failed ");
+    }
+
+    // -------------------------------------------------------------------
+    // Tests for pane selection
+    // -------------------------------------------------------------------
+
     fn pane_with_file(path: &str) -> PaneState {
         PaneState {
             title: String::from("left"),
@@ -4367,7 +4445,7 @@ mod tests {
 
         assert_eq!(state.panes.left.marked_count(), 0);
         assert!(state.pending_batch.is_none());
-        assert_eq!(state.status_message, "completed 1 items");
+        assert_eq!(state.status_message.text, "completed 1 items");
     }
 
     #[test]
@@ -4415,7 +4493,7 @@ mod tests {
 
         assert_eq!(state.panes.left.marked_count(), 0);
         assert!(state.pending_batch.is_none());
-        assert_eq!(state.status_message, "completed 1 items");
+        assert_eq!(state.status_message.text, "completed 1 items");
 
         fs::remove_dir_all(root).expect("temp dir should be removed");
     }
@@ -4457,7 +4535,7 @@ mod tests {
 
         assert_eq!(state.panes.left.marked_count(), 0);
         assert!(state.pending_batch.is_none());
-        assert_eq!(state.status_message, "completed 1 items");
+        assert_eq!(state.status_message.text, "completed 1 items");
     }
 
     #[test]
@@ -4532,7 +4610,7 @@ mod tests {
             .contains(&PathBuf::from("./two.txt")));
         assert!(state.pending_batch.is_none());
         assert_eq!(
-            state.status_message,
+            state.status_message.text,
             "partially completed: 1 succeeded, 1 failed"
         );
     }
@@ -4571,7 +4649,7 @@ mod tests {
             .contains(&PathBuf::from("./note.txt")));
         assert!(state.pending_batch.is_some());
         assert_eq!(
-            state.status_message,
+            state.status_message.text,
             "job failed for ./note.txt after 2 ms: unrelated scan failed"
         );
     }
@@ -4613,7 +4691,7 @@ mod tests {
             .marked
             .contains(&PathBuf::from("./note.txt")));
         assert!(state.pending_batch.is_none());
-        assert_eq!(state.status_message, "failed 1 items");
+        assert_eq!(state.status_message.text, "failed 1 items");
     }
 
     #[test]
@@ -5077,7 +5155,7 @@ mod tests {
 
         assert!(commands.is_empty());
         assert_eq!(
-            state.status_message,
+            state.status_message.text,
             "rename target must be a name, not a path"
         );
         assert!(state.overlay.prompt().is_some());
@@ -5099,7 +5177,7 @@ mod tests {
             .expect("submit should work");
 
         assert!(commands.is_empty());
-        assert_eq!(state.status_message, "rename unchanged");
+        assert_eq!(state.status_message.text, "rename unchanged");
         assert!(state.overlay.prompt().is_some());
     }
 
@@ -5116,7 +5194,7 @@ mod tests {
             .expect("inline rename should validate");
 
         assert!(commands.is_empty());
-        assert_eq!(state.status_message, "name cannot be empty");
+        assert_eq!(state.status_message.text, "name cannot be empty");
         assert!(state.panes.left.rename_state.is_some());
     }
 
@@ -5133,7 +5211,7 @@ mod tests {
             .expect("inline rename should validate");
 
         assert!(commands.is_empty());
-        assert_eq!(state.status_message, "rename unchanged");
+        assert_eq!(state.status_message.text, "rename unchanged");
         assert!(state.panes.left.rename_state.is_none());
     }
 
@@ -5209,7 +5287,7 @@ mod tests {
             }
             _ => panic!("Expected Prompt modal for batch delete"),
         }
-        assert!(!state.status_message.is_empty());
+        assert!(!state.status_message.text.is_empty());
     }
 
     #[test]
@@ -5231,7 +5309,7 @@ mod tests {
             }
             _ => panic!("Expected Prompt modal for batch permanent delete"),
         }
-        assert!(!state.status_message.is_empty());
+        assert!(!state.status_message.text.is_empty());
     }
 
     #[test]
@@ -5540,7 +5618,7 @@ mod tests {
         assert!(!state.panes.left.details_view, "now OFF");
         assert!(!state.panes.right.details_view, "right also OFF");
         assert!(
-            state.status_message.contains("hidden"),
+            state.status_message.text.contains("hidden"),
             "msg when turning off: {:?}",
             state.status_message
         );
@@ -5550,7 +5628,7 @@ mod tests {
         assert!(state.panes.left.details_view, "now ON");
         assert!(state.panes.right.details_view, "right also ON");
         assert!(
-            state.status_message.contains("enabled"),
+            state.status_message.text.contains("enabled"),
             "msg when turning on: {:?}",
             state.status_message
         );
