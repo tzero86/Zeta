@@ -13,6 +13,10 @@ pub struct UpdateState {
     pub restart_pending: bool,
     /// When a check completes, show a notification in the status bar for ~3 seconds
     pub notification_shown_at: Option<Instant>,
+    /// Whether to run `cargo install` on app exit.
+    pub install_on_exit: bool,
+    /// Whether the on-exit update confirmation prompt is currently open.
+    pub prompt_open: bool,
 }
 
 impl Default for UpdateState {
@@ -25,6 +29,8 @@ impl Default for UpdateState {
             downloaded_binary_path: None,
             restart_pending: false,
             notification_shown_at: None,
+            install_on_exit: false,
+            prompt_open: false,
         }
     }
 }
@@ -76,5 +82,26 @@ impl UpdateState {
         } else {
             false
         }
+    }
+
+    /// Returns true if an update is available and not yet scheduled.
+    pub fn can_schedule_install(&self) -> bool {
+        matches!(self.status, UpdateStatus::Available(_)) && !self.install_on_exit
+    }
+
+    /// Schedule install on exit and mark prompt closed.
+    pub fn schedule_install(&mut self) {
+        self.install_on_exit = true;
+        self.prompt_open = false;
+    }
+
+    /// Open the update prompt (called when user triggers ApplyUpdate or on Quit with update pending).
+    pub fn open_prompt(&mut self) {
+        self.prompt_open = true;
+    }
+
+    /// Close the prompt without scheduling.
+    pub fn dismiss_prompt(&mut self) {
+        self.prompt_open = false;
     }
 }
