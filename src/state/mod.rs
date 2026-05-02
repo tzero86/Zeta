@@ -274,6 +274,8 @@ pub struct AppState {
     pub update_state: UpdateState,
     /// Frame counter for pulsing update indicator animation (0-255, wraps around).
     pub update_pulse_frame: u8,
+    /// Whether the context-aware quick-reference cheatsheet overlay is visible.
+    pub show_cheatsheet: bool,
 }
 
 impl AppState {
@@ -433,6 +435,7 @@ impl AppState {
             show_wizard: loaded_config.source == ConfigSource::Default,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
+            show_cheatsheet: false,
         })
     }
 
@@ -489,6 +492,21 @@ impl AppState {
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
         if let Action::SwitchToWorkspace(idx) = action {
             return Ok(self.switch_to_workspace(idx));
+        }
+
+        // Cheatsheet intercepts all non-Quit actions when open.
+        if self.show_cheatsheet {
+            match &action {
+                Action::CloseCheatsheet | Action::ToggleCheatsheet => {
+                    self.show_cheatsheet = false;
+                    return Ok(vec![]);
+                }
+                Action::Quit => {} // let Quit through
+                _ => {
+                    self.show_cheatsheet = false;
+                    return Ok(vec![]);
+                }
+            }
         }
 
         let mut commands = Vec::new();
@@ -1243,6 +1261,12 @@ impl AppState {
                         }
                     }
                 }
+            }
+            Action::ToggleCheatsheet => {
+                self.show_cheatsheet = !self.show_cheatsheet;
+            }
+            Action::CloseCheatsheet => {
+                self.show_cheatsheet = false;
             }
             _ => {}
         }
@@ -4370,6 +4394,7 @@ mod tests {
             show_wizard: false,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
+            show_cheatsheet: false,
         }
     }
 
@@ -6114,5 +6139,32 @@ mod tests {
             state.focus_layer(),
             FocusLayer::Modal(ModalKind::UpdatePrompt)
         ));
+    }
+
+    #[test]
+    fn toggle_cheatsheet_flips_flag() {
+        let mut state = test_state();
+        assert!(!state.show_cheatsheet);
+        state.apply(Action::ToggleCheatsheet).unwrap();
+        assert!(state.show_cheatsheet);
+        state.apply(Action::ToggleCheatsheet).unwrap();
+        assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn cheatsheet_closed_by_close_action() {
+        let mut state = test_state();
+        state.show_cheatsheet = true;
+        state.apply(Action::CloseCheatsheet).unwrap();
+        assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn cheatsheet_intercepts_actions_when_open() {
+        let mut state = test_state();
+        state.show_cheatsheet = true;
+        // Any non-quit action should close cheatsheet and be consumed
+        state.apply(Action::MoveSelectionDown).unwrap();
+        assert!(!state.show_cheatsheet);
     }
 }

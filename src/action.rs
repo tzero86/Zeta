@@ -198,6 +198,10 @@ pub enum Action {
     DiffSyncToOther,
     /// Toggle between the compact name-only list and the detailed columns view.
     ToggleDetailsView,
+    /// Open or close the context-aware quick-reference cheatsheet overlay.
+    ToggleCheatsheet,
+    /// Close the cheatsheet overlay if open (used by Esc handler).
+    CloseCheatsheet,
     /// Mouse click on a pane entry row.
     PaneClick {
         left_pane: bool,
@@ -747,6 +751,11 @@ impl Action {
             return Some(Self::ToggleTerminalFullscreen);
         }
 
+        // ? key opens the cheatsheet. This is an app-level feature.
+        if key_event.code == KeyCode::Char('?') && key_event.modifiers == KeyModifiers::NONE {
+            return Some(Self::ToggleCheatsheet);
+        }
+
         // ============================================================================
         // SHELL PASSTHROUGH: All other keys are converted to terminal sequences
         // ============================================================================
@@ -928,6 +937,9 @@ impl Action {
         if key_event.code == KeyCode::Char('d') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::ToggleGitDiff);
         }
+        if key_event.code == KeyCode::Char('?') && key_event.modifiers == KeyModifiers::NONE {
+            return Some(Self::ToggleCheatsheet);
+        }
         // Delegate remaining keys to the comprehensive fallback handler.
         Self::from_key_event_with_settings(key_event, keymap)
     }
@@ -1028,6 +1040,9 @@ impl Action {
             }
             KeyCode::Char('x') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorCut)
+            }
+            KeyCode::Char('?') if key_event.modifiers.is_empty() => {
+                Some(Self::ToggleCheatsheet)
             }
             KeyCode::Char(ch)
                 if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
