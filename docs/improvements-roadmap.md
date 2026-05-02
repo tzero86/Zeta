@@ -30,12 +30,35 @@
 | Editor Shift+arrow selection | `extend_left/right/up/down`; Shift+arrow wired; typing replaces selection |
 | SSH known-hosts trust prompt | `JobResult::SshHostUnknown/SshConnected`; `ModalState::SshTrustPrompt`; trust prompt UI; `Command::ConnectSSH` wired through SFTP worker |
 | SSH host key persistence | `persist_host_key` writes OpenSSH entry to `~/.ssh/known_hosts` after user accepts; inline base64 encoder; creates `~/.ssh/` with mode 0700 |
+| **Phase 1 — State decomposition** | `apply_view()` monolith refactored into focused handler methods; no user-visible changes; merged PR #26 |
+| **Phase 2 — UI polish** | Status message severity colors (info/warning/error); contextual pane keyboard hints; merged PR #27 |
+| **Phase 3 — First-Run Wizard** | Welcome wizard on first launch; live theme preview; annotated config generation; merged PR #28 |
 
 Also shipped beyond original scope: multi-workspace, SSH/SFTP browsing, configurable hotkeys via settings panel, markdown preview, file finder, bookmarks.
 
 ---
 
-## Open — one low-priority defensive item
+## In Progress — Phase 4: Shell Hooks
+
+**Branch:** `feat/phase4-shell-hooks` | **Target version:** v0.5
+
+| Item | Status | Notes |
+|---|---|---|
+| `HookEvent` + `HookConfig` types | ✅ Done | `src/config.rs`; `AppConfig.hooks: Vec<HookConfig>` field added |
+| Hook executor (fire-and-forget) | 🔲 Pending | Background thread; env vars injected; errors to status bar |
+| `on_start` / `on_exit` wiring | 🔲 Pending | Fired in `App::new` and on quit respectively |
+| `on_cd` wiring | 🔲 Pending | Fired after directory navigation; `ZETA_OLD_PATH` env var |
+| `on_open` wiring | 🔲 Pending | Fired when file opened in editor; `ZETA_PANE` env var |
+| Config docs + annotated example | 🔲 Pending | Update wizard-generated config template |
+
+**Environment variables passed to hooks:**
+- `ZETA_PATH` — current working directory (all events)
+- `ZETA_OLD_PATH` — previous directory (`on_cd` only)
+- `ZETA_PANE` — triggering pane (`on_cd`, `on_open`)
+- `ZETA_VERSION` — Zeta version string (`on_start`)
+
+---
+
 
 ### P3: Search highlight row alignment in word-wrap mode
 
