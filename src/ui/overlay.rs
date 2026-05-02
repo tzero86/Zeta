@@ -3,7 +3,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{
-    Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
+    Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
     ScrollbarOrientation, ScrollbarState, Widget, Wrap,
 };
 use ratatui::Frame;
@@ -755,7 +755,6 @@ pub fn render_open_with_popup(
     frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
 }
 
-#[allow(dead_code)]
 pub fn render_update_prompt(
     frame: &mut Frame,
     area: Rect,
@@ -813,19 +812,9 @@ pub fn render_update_prompt(
         ),
         Line::raw(""),
         Line::from(vec![
-            Span::styled(
-                "Y",
-                Style::default()
-                    .fg(palette.key_hint_fg)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("Y", overlay_key_hint_style(palette)),
             Span::raw("  Install on exit    "),
-            Span::styled(
-                "N",
-                Style::default()
-                    .fg(palette.key_hint_fg)
-                    .add_modifier(Modifier::BOLD),
-            ),
+            Span::styled("N", overlay_key_hint_style(palette)),
             Span::raw("  Skip"),
         ]),
     ];
