@@ -827,77 +827,8 @@ impl AppState {
             ) => {
                 commands.extend(self.apply_open_with(action)?);
             }
-            Action::ToggleDiffMode => {
-                self.diff_mode = !self.diff_mode;
-                if self.diff_mode {
-                    self.diff_map = crate::diff::compute_diff(
-                        &self.panes.left.entries,
-                        &self.panes.right.entries,
-                    );
-                    self.status_message =
-                        format!("diff mode — {}", crate::diff::diff_summary(&self.diff_map));
-                } else {
-                    self.diff_map.clear();
-                    self.status_message = String::from("diff mode off");
-                }
-            }
-            Action::DiffSyncToOther => {
-                if self.diff_mode {
-                    let is_left_active = matches!(
-                        self.panes.focus,
-                        crate::state::types::PaneFocus::Left
-                            | crate::state::types::PaneFocus::Preview
-                    );
-                    let src_cwd = self.panes.active_pane().cwd.clone();
-                    let dst_cwd = self.panes.inactive_pane().cwd.clone();
-                    let entries_to_sync: Vec<_> = self
-                        .panes
-                        .active_pane()
-                        .entries
-                        .iter()
-                        .filter(|e| match self.diff_map.get(&e.name) {
-                            Some(crate::diff::DiffStatus::LeftOnly) => is_left_active,
-                            Some(crate::diff::DiffStatus::RightOnly) => !is_left_active,
-                            Some(crate::diff::DiffStatus::Different) => true,
-                            _ => false,
-                        })
-                        .map(|e| e.path.clone())
-                        .collect();
-                    let count = entries_to_sync.len();
-                    let pane = self.panes.focused_pane_id();
-                    let inactive_pane = if is_left_active {
-                        crate::pane::PaneId::Right
-                    } else {
-                        crate::pane::PaneId::Left
-                    };
-                    for src_path in entries_to_sync {
-                        let name = src_path
-                            .file_name()
-                            .map(|n| n.to_os_string())
-                            .unwrap_or_default();
-                        let dst_path = dst_cwd.join(name);
-                        commands.push(Command::RunFileOperation {
-                            operation: crate::action::FileOperation::Copy {
-                                source: src_path,
-                                destination: dst_path,
-                            },
-                            refresh: vec![
-                                crate::action::RefreshTarget {
-                                    pane,
-                                    path: src_cwd.clone(),
-                                },
-                                crate::action::RefreshTarget {
-                                    pane: inactive_pane,
-                                    path: dst_cwd.clone(),
-                                },
-                            ],
-                            collision: CollisionPolicy::Fail,
-                        });
-                    }
-                    self.status_message = format!("queued {count} file(s) to sync");
-                } else {
-                    self.status_message = String::from("enable diff mode (F10) first");
-                }
+            _ if matches!(action, Action::ToggleDiffMode | Action::DiffSyncToOther) => {
+                commands.extend(self.apply_diff_mode(action)?);
             }
             Action::OpenShell => {
                 let path = self.panes.active_pane().cwd.clone();
@@ -2140,6 +2071,87 @@ impl AppState {
                             .min(self.config.bookmarks.len().saturating_sub(1));
                     }
                     self.status_message = format!("bookmark removed: {}", removed.display());
+                }
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles directory diff mode toggle and sync.
+    fn apply_diff_mode(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::ToggleDiffMode => {
+                self.diff_mode = !self.diff_mode;
+                if self.diff_mode {
+                    self.diff_map = crate::diff::compute_diff(
+                        &self.panes.left.entries,
+                        &self.panes.right.entries,
+                    );
+                    self.status_message =
+                        format!("diff mode — {}", crate::diff::diff_summary(&self.diff_map));
+                } else {
+                    self.diff_map.clear();
+                    self.status_message = String::from("diff mode off");
+                }
+            }
+            Action::DiffSyncToOther => {
+                if self.diff_mode {
+                    let is_left_active = matches!(
+                        self.panes.focus,
+                        crate::state::types::PaneFocus::Left
+                            | crate::state::types::PaneFocus::Preview
+                    );
+                    let src_cwd = self.panes.active_pane().cwd.clone();
+                    let dst_cwd = self.panes.inactive_pane().cwd.clone();
+                    let entries_to_sync: Vec<_> = self
+                        .panes
+                        .active_pane()
+                        .entries
+                        .iter()
+                        .filter(|e| match self.diff_map.get(&e.name) {
+                            Some(crate::diff::DiffStatus::LeftOnly) => is_left_active,
+                            Some(crate::diff::DiffStatus::RightOnly) => !is_left_active,
+                            Some(crate::diff::DiffStatus::Different) => true,
+                            _ => false,
+                        })
+                        .map(|e| e.path.clone())
+                        .collect();
+                    let count = entries_to_sync.len();
+                    let pane = self.panes.focused_pane_id();
+                    let inactive_pane = if is_left_active {
+                        crate::pane::PaneId::Right
+                    } else {
+                        crate::pane::PaneId::Left
+                    };
+                    for src_path in entries_to_sync {
+                        let name = src_path
+                            .file_name()
+                            .map(|n| n.to_os_string())
+                            .unwrap_or_default();
+                        let dst_path = dst_cwd.join(name);
+                        commands.push(Command::RunFileOperation {
+                            operation: crate::action::FileOperation::Copy {
+                                source: src_path,
+                                destination: dst_path,
+                            },
+                            refresh: vec![
+                                crate::action::RefreshTarget {
+                                    pane,
+                                    path: src_cwd.clone(),
+                                },
+                                crate::action::RefreshTarget {
+                                    pane: inactive_pane,
+                                    path: dst_cwd.clone(),
+                                },
+                            ],
+                            collision: CollisionPolicy::Fail,
+                        });
+                    }
+                    self.status_message = format!("queued {count} file(s) to sync");
+                } else {
+                    self.status_message = String::from("enable diff mode (F10) first");
                 }
             }
             _ => {}
