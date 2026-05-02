@@ -15,6 +15,7 @@ mod settings;
 pub mod ssh;
 mod styles;
 pub mod terminal;
+pub mod wizard;
 
 pub mod layout_cache;
 pub use layout_cache::LayoutCache;
@@ -324,6 +325,25 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                 render_flyout_popup(frame, areas[1], rect, &flyout_items, flyout_sel, palette);
             }
         }
+    }
+
+    if let Some(crate::state::overlay::ModalState::FirstRunWizard(wizard_state)) =
+        &state.overlay.modal
+    {
+        wizard::render_first_run_wizard(frame, areas[1], wizard_state, &palette);
+        return LayoutCache {
+            menu_bar: areas[0],
+            left_pane: left_pane_rect,
+            right_pane: right_pane_rect,
+            tools_panel: tools_area_opt,
+            editor_panel: editor_panel_rect,
+            file_preview_panel: file_preview_panel_rect,
+            markdown_preview_panel: markdown_preview_panel_rect,
+            status_bar: areas[2],
+            hint_bar: areas[3],
+            menu_popup: menu_popup_rect,
+            terminal_panel: terminal_area,
+        };
     }
 
     if let Some(prompt) = state.prompt() {

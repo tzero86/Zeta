@@ -83,6 +83,26 @@ impl OverlayState {
         self.modal = None;
     }
 
+    pub fn modal_kind(&self) -> Option<crate::state::types::ModalKind> {
+        use crate::state::types::ModalKind;
+        match &self.modal {
+            None => None,
+            Some(ModalState::Menu { .. }) => Some(ModalKind::Menu),
+            Some(ModalState::Prompt(_)) => Some(ModalKind::Prompt),
+            Some(ModalState::Dialog(_)) => Some(ModalKind::Dialog),
+            Some(ModalState::Collision(_)) => Some(ModalKind::Collision),
+            Some(ModalState::DestructiveConfirm(_)) => Some(ModalKind::DestructiveConfirm),
+            Some(ModalState::Palette(_)) => Some(ModalKind::Palette),
+            Some(ModalState::Settings(_)) => Some(ModalKind::Settings),
+            Some(ModalState::Bookmarks(_)) => Some(ModalKind::Bookmarks),
+            Some(ModalState::FileFinder(_)) => Some(ModalKind::FileFinder),
+            Some(ModalState::SshConnect(_)) => Some(ModalKind::SshConnect),
+            Some(ModalState::SshTrustPrompt { .. }) => Some(ModalKind::SshTrustPrompt),
+            Some(ModalState::FirstRunWizard(_)) => Some(ModalKind::FirstRunWizard),
+            Some(ModalState::OpenWith { .. }) => Some(ModalKind::OpenWith),
+        }
+    }
+
     pub fn is_menu_open(&self) -> bool {
         matches!(self.modal, Some(ModalState::Menu { .. }))
     }
@@ -234,26 +254,6 @@ impl OverlayState {
         match &mut self.modal {
             Some(ModalState::FileFinder(f)) => Some(f),
             _ => None,
-        }
-    }
-
-    pub fn modal_kind(&self) -> Option<crate::state::types::ModalKind> {
-        use crate::state::types::ModalKind;
-        match &self.modal {
-            Some(ModalState::Menu { .. }) => Some(ModalKind::Menu),
-            Some(ModalState::Prompt(_)) => Some(ModalKind::Prompt),
-            Some(ModalState::Dialog(_)) => Some(ModalKind::Dialog),
-            Some(ModalState::Collision(_)) => Some(ModalKind::Collision),
-            Some(ModalState::DestructiveConfirm(_)) => Some(ModalKind::DestructiveConfirm),
-            Some(ModalState::Palette(_)) => Some(ModalKind::Palette),
-            Some(ModalState::Settings(_)) => Some(ModalKind::Settings),
-            Some(ModalState::Bookmarks(_)) => Some(ModalKind::Bookmarks),
-            Some(ModalState::FileFinder(_)) => Some(ModalKind::FileFinder),
-            Some(ModalState::SshConnect(_)) => Some(ModalKind::SshConnect),
-            Some(ModalState::SshTrustPrompt { .. }) => Some(ModalKind::SshTrustPrompt),
-            Some(ModalState::FirstRunWizard(_)) => Some(ModalKind::FirstRunWizard),
-            Some(ModalState::OpenWith { .. }) => Some(ModalKind::OpenWith),
-            None => None,
         }
     }
 
