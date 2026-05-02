@@ -176,6 +176,7 @@ If the repository grows and you cannot run the full sequence, say exactly what w
 - Preserve low-overhead architecture decisions.
 - If you add a dependency, justify CPU, RAM, and binary-size impact.
 - If the crate layout or commands change, update this file.
+- Do NOT add `Co-authored-by:` trailers to commit messages. Write only the commit subject and body.
 
 ## Cursor And Copilot Rules
 
