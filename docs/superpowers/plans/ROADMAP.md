@@ -29,6 +29,11 @@ a wave ships.
 | 3A | `2026-04-08-wave3a-editor-rope-backend.md` | Rope backend, O(log n) ops, delta undo, highlight cache |
 | 4A | `2026-04-08-wave4a-git-integration.md` | Git status indicators, branch name in status bar |
 | 4B | `2026-04-08-wave4b-markdown-live-preview.md` | Native markdown renderer, split editor/preview panel |
+| 4C | `2026-04-08-wave4c-editor-fullscreen-sync.md` | Full-window editor (F11), preview focus/toggle — **scroll sync pending** |
+| 4D | `2026-04-08-wave4d-quickfilter-fuzzy-find.md` | In-pane quick filter (`/`), fuzzy file finder (`Ctrl+P`) |
+| 5B | `2026-04-08-wave5b-bookmarks-trash.md` | Bookmarks (`BookmarksState`), trash/recycle bin (`trash` crate v3) |
+| 5C | `2026-04-08-wave5c-shell-integration.md` | F2 toggles embedded terminal at current pane directory |
+| 5A (partial) | `2026-04-08-wave5a-find-replace-watcher.md` | Directory watcher auto-refresh (`notify` crate, `DirectoryChanged` events) |
 
 ---
 
@@ -38,16 +43,13 @@ a wave ships.
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 4C | `2026-04-08-wave4c-editor-fullscreen-sync.md` | Full-window editor, scroll sync, preview focus/toggle | 📋 |
-| 4D | `2026-04-08-wave4d-quickfilter-fuzzy-find.md` | In-pane quick filter, Ctrl+P fuzzy file find | 📋 |
+| 4C (scroll sync) | `2026-04-08-wave4c-editor-fullscreen-sync.md` | Editor ↔ markdown preview scroll position synchronisation | 📋 |
 
 ### Phase 5 — Power features
 
 | Wave | Plan | Summary | Status |
 |---|---|---|---|
-| 5A | `2026-04-08-wave5a-find-replace-watcher.md` | Find & Replace in editor, directory watcher auto-refresh | 📋 |
-| 5B | `2026-04-08-wave5b-bookmarks-trash.md` | Bookmarks (persist in config), trash/recycle bin instead of permanent delete | 📋 |
-| 5C | `2026-04-08-wave5c-shell-integration.md` | F2 opens shell in current pane directory | 📋 |
+| 5A (find & replace) | `2026-04-08-wave5a-find-replace-watcher.md` | Find & Replace in the embedded editor | 📋 |
 
 ### Phase 6 — Advanced file operations
 
