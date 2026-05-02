@@ -41,6 +41,23 @@ impl ThemePreset {
     }
 }
 
+/// The lifecycle event that triggers a user-defined hook command.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HookEvent {
+    OnCd,
+    OnOpen,
+    OnStart,
+    OnExit,
+}
+
+/// A single user-defined shell hook entry from `[[hooks]]` in `config.toml`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct HookConfig {
+    pub event: HookEvent,
+    pub command: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AppConfig {
     // NOTE: scalar / leaf fields must come BEFORE nested table fields
@@ -64,6 +81,8 @@ pub struct AppConfig {
     pub check_updates_on_startup: bool,
     #[serde(default)]
     pub last_check_timestamp: Option<String>,
+    #[serde(default)]
+    pub hooks: Vec<HookConfig>,
     pub theme: ThemeConfig,
     pub keymap: KeymapConfig,
     #[serde(default)]
@@ -82,6 +101,7 @@ impl Default for AppConfig {
             openers: Vec::new(),
             check_updates_on_startup: true,
             last_check_timestamp: None,
+            hooks: Vec::new(),
             theme: ThemeConfig::default(),
             keymap: KeymapConfig::default(),
             editor: EditorConfig::default(),
@@ -267,6 +287,20 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         ));
     }
 
+    let mut hooks_toml = String::new();
+    for hook in &config.hooks {
+        let event_str = match hook.event {
+            HookEvent::OnCd => "on_cd",
+            HookEvent::OnOpen => "on_open",
+            HookEvent::OnStart => "on_start",
+            HookEvent::OnExit => "on_exit",
+        };
+        hooks_toml.push_str(&format!(
+            "\n[[hooks]]\nevent = \"{event_str}\"\ncommand = \"{}\"\n",
+            esc(&hook.command)
+        ));
+    }
+
     format!(
         "# Zeta configuration file\n\
          # Documentation: https://github.com/tzero86/zeta\n\
@@ -324,7 +358,15 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
          \n\
          # Soft-wrap lines at the viewport edge in the embedded editor.\n\
          word_wrap = {word_wrap}\n\
-         {openers}",
+         {openers}\n\
+         # Shell hooks — run commands when Zeta changes directory, opens a file, starts, or exits.\n\
+         # Available events: \"on_cd\", \"on_open\", \"on_start\", \"on_exit\"\n\
+         # Environment variables: ZETA_PATH, ZETA_OLD_PATH (on_cd), ZETA_PANE, ZETA_VERSION (on_start)\n\
+         # Example:\n\
+         #   [[hooks]]\n\
+         #   event = \"on_cd\"\n\
+         #   command = \"~/.config/zeta/hooks/on_cd.sh\"\n\
+         {hooks_toml}",
         icon_mode = icon_mode,
         pane_layout = pane_layout,
         preview_panel_open = config.preview_panel_open,
@@ -343,6 +385,7 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         tab_width = config.editor.tab_width,
         word_wrap = config.editor.word_wrap,
         openers = openers,
+        hooks_toml = hooks_toml,
     )
 }
 
@@ -1499,7 +1542,11 @@ mod tests {
         let cfg = AppConfig::default();
         let text = generate_annotated_config(&cfg);
         let result: Result<AppConfig, _> = basic_toml::from_str(&text);
-        assert!(result.is_ok(), "generated config is not valid TOML: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "generated config is not valid TOML: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -1509,5 +1556,27 @@ mod tests {
         let text = generate_annotated_config(&cfg);
         let result: Result<AppConfig, _> = basic_toml::from_str(&text);
         assert!(result.is_ok(), "failed with special chars: {result:?}");
+    }
+
+    #[test]
+    fn hook_config_round_trips() {
+        use crate::config::{AppConfig, HookConfig, HookEvent};
+        let mut cfg = AppConfig::default();
+        cfg.hooks = vec![
+            HookConfig {
+                event: HookEvent::OnCd,
+                command: String::from("echo cd"),
+            },
+            HookConfig {
+                event: HookEvent::OnOpen,
+                command: String::from("echo open"),
+            },
+        ];
+        let text = generate_annotated_config(&cfg);
+        let parsed: AppConfig = basic_toml::from_str(&text).expect("valid TOML");
+        assert_eq!(parsed.hooks.len(), 2);
+        assert_eq!(parsed.hooks[0].event, HookEvent::OnCd);
+        assert_eq!(parsed.hooks[0].command, "echo cd");
+        assert_eq!(parsed.hooks[1].event, HookEvent::OnOpen);
     }
 }
