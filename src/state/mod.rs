@@ -592,69 +592,21 @@ impl AppState {
         }
 
         match action {
-            Action::OpenAboutDialog => {
-                self.overlay.open_about(DialogState::about(
-                    self.theme.preset.clone(),
-                    self.config_path.clone(),
-                ));
-                self.status_message = String::from("opened about");
-            }
-            Action::SetPaneLayout(layout) => {
-                self.panes.pane_layout = *layout;
-                self.config.pane_layout = *layout;
-                self.status_message = match layout {
-                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
-                    PaneLayout::Stacked => String::from("layout set to stacked"),
-                };
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::SetTheme(preset) => {
-                self.theme = ThemePalette::from_preset(*preset);
-                self.config.theme.preset = preset.as_str().to_string();
-                self.status_message = format!("theme set to {}", preset.as_str());
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::TogglePreviewPanel => {
-                self.config.preview_panel_open = self.preview.panel_open;
-                if self.preview.panel_open {
-                    let selected_file = self
-                        .panes
-                        .active_pane()
-                        .selected_entry()
-                        .filter(|entry| entry.kind == EntryKind::File)
-                        .map(|entry| entry.path.clone());
-                    if let Some(path) = selected_file {
-                        self.preview.request_debounced_preview(path);
-                    }
-                }
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::ToggleEditorFullscreen => {
-                if self.editor.is_open() {
-                    self.editor_fullscreen = !self.editor_fullscreen;
-                    self.sync_editor_menu_mode();
-                    self.status_message = if self.editor_fullscreen {
-                        String::from("editor fullscreen enabled")
-                    } else {
-                        String::from("editor fullscreen disabled")
-                    };
-                }
-            }
-            Action::ToggleMarkdownPreview => {
-                if self.editor.is_markdown_file() {
-                    self.status_message = if self.editor.markdown_preview_visible {
-                        String::from("markdown preview shown")
-                    } else {
-                        String::from("markdown preview hidden")
-                    };
-                }
-            }
-            Action::ToggleHiddenFiles => {
-                self.status_message = if self.panes.active_pane().show_hidden {
-                    String::from("showing hidden files")
-                } else {
-                    String::from("hiding hidden files")
-                };
+            _ if matches!(action,
+                Action::SetPaneLayout(_)
+                | Action::TogglePreviewPanel
+                | Action::ToggleEditorFullscreen
+                | Action::ToggleMarkdownPreview
+                | Action::ToggleHiddenFiles
+                | Action::ShrinkLeftPane
+                | Action::GrowLeftPane
+                | Action::Resize { .. }
+                | Action::ToggleDebugPanel
+                | Action::ToggleDetailsView
+                | Action::OpenAboutDialog
+                | Action::SetTheme(_)
+            ) => {
+                commands.extend(self.apply_layout(action)?);
             }
             Action::OpenPaneFilter => {
                 let pane = self.panes.active_pane_mut();
@@ -815,10 +767,6 @@ impl AppState {
                     self.should_quit = true;
                 }
             }
-            Action::Resize { width, height } => {
-                self.last_size = Some((*width, *height));
-                self.status_message = format!("resized to {width}x{height}");
-            }
             Action::OpenSelectedInEditor => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
@@ -851,17 +799,6 @@ impl AppState {
                         }
                     }
                 }
-            }
-            Action::ShrinkLeftPane => {
-                self.pane_split_ratio = self.pane_split_ratio.saturating_sub(5).max(20);
-                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
-            }
-            Action::GrowLeftPane => {
-                self.pane_split_ratio = (self.pane_split_ratio + 5).min(80);
-                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
-            }
-            Action::ToggleDebugPanel => {
-                self.debug_visible = !self.debug_visible;
             }
             Action::ToggleGitDiff => {
                 if self.git_diff_active {
@@ -1796,16 +1733,6 @@ impl AppState {
             Action::ExtendSelectionUp => {
                 self.panes.active_pane_mut().extend_selection_up();
             }
-            Action::ToggleDetailsView => {
-                let new_state = !self.panes.active_pane().details_view;
-                self.panes.left.details_view = new_state;
-                self.panes.right.details_view = new_state;
-                self.status_message = if new_state {
-                    String::from("rich columns: enabled (both panes)")
-                } else {
-                    String::from("rich columns: hidden (both panes)")
-                };
-            }
             Action::BeginInlineRename => {
                 // Pre-fill buffer with the current entry name (without trailing slash).
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
@@ -2044,6 +1971,104 @@ impl AppState {
             self.editor.sync_markdown_preview_to_cursor(preview_height);
         }
 
+        Ok(commands)
+    }
+
+    /// Handles layout, theme, and view-toggle actions.
+    fn apply_layout(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::OpenAboutDialog => {
+                self.overlay.open_about(DialogState::about(
+                    self.theme.preset.clone(),
+                    self.config_path.clone(),
+                ));
+                self.status_message = String::from("opened about");
+            }
+            Action::SetPaneLayout(layout) => {
+                self.panes.pane_layout = *layout;
+                self.config.pane_layout = *layout;
+                self.status_message = match layout {
+                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
+                    PaneLayout::Stacked => String::from("layout set to stacked"),
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::SetTheme(preset) => {
+                self.theme = ThemePalette::from_preset(*preset);
+                self.config.theme.preset = preset.as_str().to_string();
+                self.status_message = format!("theme set to {}", preset.as_str());
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::TogglePreviewPanel => {
+                self.config.preview_panel_open = self.preview.panel_open;
+                if self.preview.panel_open {
+                    let selected_file = self
+                        .panes
+                        .active_pane()
+                        .selected_entry()
+                        .filter(|entry| entry.kind == EntryKind::File)
+                        .map(|entry| entry.path.clone());
+                    if let Some(path) = selected_file {
+                        self.preview.request_debounced_preview(path);
+                    }
+                }
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::ToggleEditorFullscreen => {
+                if self.editor.is_open() {
+                    self.editor_fullscreen = !self.editor_fullscreen;
+                    self.sync_editor_menu_mode();
+                    self.status_message = if self.editor_fullscreen {
+                        String::from("editor fullscreen enabled")
+                    } else {
+                        String::from("editor fullscreen disabled")
+                    };
+                }
+            }
+            Action::ToggleMarkdownPreview => {
+                if self.editor.is_markdown_file() {
+                    self.status_message = if self.editor.markdown_preview_visible {
+                        String::from("markdown preview shown")
+                    } else {
+                        String::from("markdown preview hidden")
+                    };
+                }
+            }
+            Action::ToggleHiddenFiles => {
+                self.status_message = if self.panes.active_pane().show_hidden {
+                    String::from("showing hidden files")
+                } else {
+                    String::from("hiding hidden files")
+                };
+            }
+            Action::Resize { width, height } => {
+                self.last_size = Some((*width, *height));
+                self.status_message = format!("resized to {width}x{height}");
+            }
+            Action::ShrinkLeftPane => {
+                self.pane_split_ratio = self.pane_split_ratio.saturating_sub(5).max(20);
+                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+            }
+            Action::GrowLeftPane => {
+                self.pane_split_ratio = (self.pane_split_ratio + 5).min(80);
+                self.status_message = format!("pane split: {}%", self.pane_split_ratio);
+            }
+            Action::ToggleDebugPanel => {
+                self.debug_visible = !self.debug_visible;
+            }
+            Action::ToggleDetailsView => {
+                let new_state = !self.panes.active_pane().details_view;
+                self.panes.left.details_view = new_state;
+                self.panes.right.details_view = new_state;
+                self.status_message = if new_state {
+                    String::from("rich columns: enabled (both panes)")
+                } else {
+                    String::from("rich columns: hidden (both panes)")
+                };
+            }
+            _ => {}
+        }
         Ok(commands)
     }
 
