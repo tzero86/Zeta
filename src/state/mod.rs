@@ -904,20 +904,8 @@ impl AppState {
                 commands.push(Command::OpenShell { path: path.clone() });
                 self.status_message = format!("opening shell in {}", path.display());
             }
-            Action::OpenArchive { path } => {
-                commands.push(Command::OpenArchive {
-                    path: path.clone(),
-                    inner: std::path::PathBuf::new(),
-                });
-                self.status_message = format!("opening archive {}", path.display());
-            }
-            Action::ExitArchive => {
-                self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
-                commands.push(Command::ScanPane {
-                    pane: self.panes.focused_pane_id(),
-                    path: self.panes.active_pane().cwd.clone(),
-                });
-                self.status_message = String::from("exited archive");
+            _ if matches!(action, Action::OpenArchive { .. } | Action::ExitArchive) => {
+                commands.extend(self.apply_archive(action)?);
             }
             Action::AddBookmark => {
                 let cwd = self.panes.active_pane().cwd.clone();
@@ -2111,6 +2099,30 @@ impl AppState {
             }
             Action::CloseOpenWithMenu => {
                 self.overlay.close_all();
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles archive open and exit.
+    fn apply_archive(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::OpenArchive { path } => {
+                commands.push(Command::OpenArchive {
+                    path: path.clone(),
+                    inner: std::path::PathBuf::new(),
+                });
+                self.status_message = format!("opening archive {}", path.display());
+            }
+            Action::ExitArchive => {
+                self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
+                commands.push(Command::ScanPane {
+                    pane: self.panes.focused_pane_id(),
+                    path: self.panes.active_pane().cwd.clone(),
+                });
+                self.status_message = String::from("exited archive");
             }
             _ => {}
         }
