@@ -258,6 +258,16 @@ pub enum Action {
     OpenWithConfirm,
     /// Dismiss the open-with menu without opening anything.
     CloseOpenWithMenu,
+    /// Open the right-click context menu anchored at the given terminal cell.
+    OpenContextMenu { x: u16, y: u16 },
+    /// Move context menu selection up (skipping separators).
+    ContextMenuMoveUp,
+    /// Move context menu selection down (skipping separators).
+    ContextMenuMoveDown,
+    /// Execute the highlighted context menu item.
+    ContextMenuConfirm,
+    /// Dismiss the context menu without executing.
+    CloseContextMenu,
     /// Toggle the floating debug panel (F12).
     ToggleDebugPanel,
     /// Activate / deactivate git diff viewer mode.

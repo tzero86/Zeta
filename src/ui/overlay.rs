@@ -980,3 +980,77 @@ pub fn render_cheatsheet(frame: &mut Frame<'_>, area: Rect, state: &crate::state
 
     frame.render_widget(Paragraph::new(lines), inner);
 }
+
+pub fn render_context_menu(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    items: &[crate::state::overlay::ContextMenuItem],
+    selection: usize,
+    pos: (u16, u16),
+    palette: ThemePalette,
+) {
+    let width: u16 = 26;
+    let height: u16 = items.len() as u16 + 2; // borders
+
+    // Clamp to terminal area
+    let x = pos.0.min(area.width.saturating_sub(width));
+    let y = pos.1.min(area.height.saturating_sub(height));
+    let popup_area = Rect {
+        x,
+        y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.accent_teal));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let available_width = inner.width as usize;
+    let hint_width = 7usize;
+    let label_width = available_width.saturating_sub(hint_width).saturating_sub(2);
+
+    let list_items: Vec<ListItem<'_>> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            if item.is_separator() {
+                return ListItem::new(Span::styled(
+                    "─".repeat(available_width),
+                    Style::default().fg(palette.prompt_border),
+                ));
+            }
+            let selected = i == selection;
+            let (label_style, hint_style) = if selected {
+                (
+                    Style::default()
+                        .bg(palette.selection_bg)
+                        .fg(palette.selection_fg)
+                        .add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .bg(palette.selection_bg)
+                        .fg(palette.accent_teal),
+                )
+            } else {
+                (
+                    Style::default().fg(palette.text_primary),
+                    Style::default().fg(palette.text_muted),
+                )
+            };
+            let label = format!(" {:<width$}", item.label, width = label_width);
+            let hint = format!("{:>width$} ", item.hint, width = hint_width - 1);
+            ListItem::new(Line::from(vec![
+                Span::styled(label, label_style),
+                Span::styled(hint, hint_style),
+            ]))
+        })
+        .collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(selection));
+    frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
+}

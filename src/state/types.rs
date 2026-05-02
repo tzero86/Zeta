@@ -69,6 +69,7 @@ pub enum ModalKind {
     FirstRunWizard,
     /// On-exit / on-demand update install confirmation prompt.
     UpdatePrompt,
+    ContextMenu,
 }
 
 /// Structured application-level error type.

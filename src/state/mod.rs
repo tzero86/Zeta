@@ -447,6 +447,58 @@ impl AppState {
         self.overlay.modal_kind()
     }
 
+    fn build_context_menu_items(&self) -> Vec<crate::state::overlay::ContextMenuItem> {
+        use crate::state::overlay::ContextMenuItem;
+
+        let is_file = self
+            .panes
+            .active_pane()
+            .selected_entry()
+            .map(|e| matches!(e.kind, crate::fs::EntryKind::File))
+            .unwrap_or(false);
+
+        let mut items = vec![ContextMenuItem {
+            label: "Open",
+            hint: "Enter",
+            action: Some(Action::EnterSelection),
+        }];
+        if is_file {
+            items.push(ContextMenuItem {
+                label: "Edit",
+                hint: "F4",
+                action: Some(Action::OpenSelectedInEditor),
+            });
+            items.push(ContextMenuItem {
+                label: "Preview",
+                hint: "F3",
+                action: Some(Action::TogglePreviewPanel),
+            });
+        }
+        items.push(ContextMenuItem::separator());
+        items.push(ContextMenuItem {
+            label: "Copy",
+            hint: "F5",
+            action: Some(Action::OpenCopyPrompt),
+        });
+        items.push(ContextMenuItem {
+            label: "Rename",
+            hint: "F6",
+            action: Some(Action::BeginInlineRename),
+        });
+        items.push(ContextMenuItem {
+            label: "Delete",
+            hint: "F8",
+            action: Some(Action::OpenDeletePrompt),
+        });
+        items.push(ContextMenuItem::separator());
+        items.push(ContextMenuItem {
+            label: "Open With…",
+            hint: "Alt+O",
+            action: Some(Action::OpenOpenWithMenu),
+        });
+        items
+    }
+
     /// Apply a freshly loaded config without a full restart.
     /// Only updates fields that can change at runtime (theme, icon mode, editor prefs).
     pub fn apply_config_reload(&mut self, new_config: AppConfig) {
@@ -504,6 +556,47 @@ impl AppState {
                 Action::Quit => {} // let Quit through
                 _ => {
                     self.show_cheatsheet = false;
+                    return Ok(vec![]);
+                }
+            }
+        }
+
+        // Context menu intercepts ↑↓ Enter Esc when open.
+        if matches!(
+            self.overlay.modal_kind(),
+            Some(crate::state::types::ModalKind::ContextMenu)
+        ) {
+            match &action {
+                Action::ContextMenuMoveUp | Action::ContextMenuMoveDown => {
+                    return self.overlay.apply(&action);
+                }
+                Action::ContextMenuConfirm => {
+                    // extract inner action, close modal, re-apply inner action
+                    let inner = if let Some(crate::state::overlay::ModalState::ContextMenu {
+                        items,
+                        selection,
+                        ..
+                    }) = &self.overlay.modal
+                    {
+                        items.get(*selection).and_then(|i| i.action.clone())
+                    } else {
+                        None
+                    };
+                    self.overlay.modal = None;
+                    if let Some(act) = inner {
+                        return self.apply(act);
+                    }
+                    return Ok(vec![]);
+                }
+                Action::CloseContextMenu | Action::Quit => {
+                    if matches!(&action, Action::CloseContextMenu) {
+                        self.overlay.modal = None;
+                        return Ok(vec![]);
+                    }
+                }
+                _ => {
+                    // Any other action closes the menu and is consumed
+                    self.overlay.modal = None;
                     return Ok(vec![]);
                 }
             }
@@ -907,6 +1000,15 @@ impl AppState {
             ) =>
             {
                 commands.extend(self.apply_git_diff(action)?);
+            }
+            Action::OpenContextMenu { x, y } => {
+                let items = self.build_context_menu_items();
+                let selection = items.iter().position(|i| !i.is_separator()).unwrap_or(0);
+                self.overlay.modal = Some(crate::state::overlay::ModalState::ContextMenu {
+                    items,
+                    selection,
+                    pos: (*x, *y),
+                });
             }
             _ if matches!(
                 action,
@@ -6166,5 +6268,29 @@ mod tests {
         // Any non-quit action should close cheatsheet and be consumed
         state.apply(Action::MoveSelectionDown).unwrap();
         assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn open_context_menu_sets_modal() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 10, y: 5 }).unwrap();
+        assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
+    }
+
+    #[test]
+    fn close_context_menu_clears_modal() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 10, y: 5 }).unwrap();
+        state.apply(Action::CloseContextMenu).unwrap();
+        assert_eq!(state.modal_kind(), None);
+    }
+
+    #[test]
+    fn context_menu_intercepts_unrelated_action() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 0, y: 0 }).unwrap();
+        assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
+        state.apply(Action::MoveSelectionDown).unwrap();
+        assert_eq!(state.modal_kind(), None);
     }
 }
