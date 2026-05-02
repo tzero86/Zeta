@@ -11,6 +11,7 @@ use crate::state::menu::menu_items_for;
 use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
 use crate::state::ssh::SshConnectionState;
+use crate::state::wizard::WizardState;
 use crate::state::types::MenuItem;
 
 /// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
@@ -51,6 +52,7 @@ pub enum ModalState {
         credential: String,
         pane: crate::pane::PaneId,
     },
+    FirstRunWizard(WizardState),
     /// Context menu for opening a file with a specific program.
     OpenWith {
         /// `(display_name, command)` — command is empty string for the OS default.
@@ -188,6 +190,22 @@ impl OverlayState {
         match &self.modal {
             Some(ModalState::Settings(s)) => Some(s),
             _ => None,
+        }
+    }
+
+    pub fn wizard_state(&self) -> Option<&WizardState> {
+        if let Some(ModalState::FirstRunWizard(s)) = &self.modal {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    pub fn wizard_state_mut(&mut self) -> Option<&mut WizardState> {
+        if let Some(ModalState::FirstRunWizard(s)) = &mut self.modal {
+            Some(s)
+        } else {
+            None
         }
     }
 

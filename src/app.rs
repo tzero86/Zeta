@@ -829,6 +829,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshTrustPrompt) => Action::from_ssh_trust_key_event(key_event),
+        FocusLayer::Modal(ModalKind::FirstRunWizard) => Action::from_wizard_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::PaneInlineRename => Action::from_inline_rename_key_event(key_event),
         FocusLayer::Preview => Action::from_preview_key_event(key_event),

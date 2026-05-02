@@ -2849,6 +2849,9 @@ impl AppState {
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);
         }
+        if self.overlay.wizard_state().is_some() {
+            return FocusLayer::Modal(ModalKind::FirstRunWizard);
+        }
         if self.terminal.is_open() && self.terminal.focused {
             return FocusLayer::Terminal;
         }
