@@ -29,45 +29,22 @@ a wave ships.
 | 3A | `2026-04-08-wave3a-editor-rope-backend.md` | Rope backend, O(log n) ops, delta undo, highlight cache |
 | 4A | `2026-04-08-wave4a-git-integration.md` | Git status indicators, branch name in status bar |
 | 4B | `2026-04-08-wave4b-markdown-live-preview.md` | Native markdown renderer, split editor/preview panel |
+| 4C | `2026-04-08-wave4c-editor-fullscreen-sync.md` | Full-window editor (F11), preview scroll sync (cursor-driven), preview focus/toggle |
+| 4D | `2026-04-08-wave4d-quickfilter-fuzzy-find.md` | In-pane quick filter (`/`), fuzzy file finder (`Ctrl+P`) |
+| 5A | `2026-04-08-wave5a-find-replace-watcher.md` | Find & Replace (`Ctrl+H`), directory watcher auto-refresh |
+| 5B | `2026-04-08-wave5b-bookmarks-trash.md` | Bookmarks (`BookmarksState`), trash/recycle bin (`trash` crate v3) |
+| 5C | `2026-04-08-wave5c-shell-integration.md` | F2 toggles embedded terminal at current pane directory |
+| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz / .tar.bz2 / .tar.xz like directories |
+| 6B | `2026-04-08-wave6b-directory-diff.md` | Left/right pane diff mode — colour-code unique/matching/different entries |
+| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP Remote pane via ssh2 + FsBackend trait refactor |
+| 7B | `2026-04-12-wave7b-ssh-agent.md` | SSH Agent and Host Key Verification |
+| 8A | `2026-04-12-wave8a-embedded-terminal.md` | Fully embedded terminal emulator (PTY + rendering) |
 
 ---
 
 ## Active roadmap
 
-### Phase 4 — Editor + Navigation maturity
-
-| Wave | Plan | Summary | Status |
-|---|---|---|---|
-| 4C | `2026-04-08-wave4c-editor-fullscreen-sync.md` | Full-window editor, scroll sync, preview focus/toggle | 📋 |
-| 4D | `2026-04-08-wave4d-quickfilter-fuzzy-find.md` | In-pane quick filter, Ctrl+P fuzzy file find | 📋 |
-
-### Phase 5 — Power features
-
-| Wave | Plan | Summary | Status |
-|---|---|---|---|
-| 5A | `2026-04-08-wave5a-find-replace-watcher.md` | Find & Replace in editor, directory watcher auto-refresh | 📋 |
-| 5B | `2026-04-08-wave5b-bookmarks-trash.md` | Bookmarks (persist in config), trash/recycle bin instead of permanent delete | 📋 |
-| 5C | `2026-04-08-wave5c-shell-integration.md` | F2 opens shell in current pane directory | 📋 |
-
-### Phase 6 — Advanced file operations
-
-| Wave | Plan | Summary | Status |
-|---|---|---|---|
-| 6A | `2026-04-08-wave6a-archive-browsing.md` | Navigate into .zip / .tar.gz / .tar.bz2 / .tar.xz like directories | ✅ |
-| 6B | `2026-04-08-wave6b-directory-diff.md` | Left/right pane diff mode — colour-code unique/matching/different entries | ✅ |
-
-### Phase 7 — Remote filesystems
-
-| Wave | Plan | Summary | Status |
-|---|---|---|---|
-| 7A | `2026-04-08-wave7a-ssh-sftp.md` | SSH/SFTP Remote pane via ssh2 + FsBackend trait refactor | 📋 |
-| 7B | `2026-04-12-wave7b-ssh-agent.md` | SSH Agent and Host Key Verification | ✅ |
-
-### Phase 8 — Embedded Terminal
-
-| Wave | Plan | Summary | Status |
-|---|---|---|---|
-| 8A | `2026-04-12-wave8a-embedded-terminal.md` | Fully embedded terminal emulator (PTY + rendering) | ✅ |
+_All planned waves shipped. No pending work._
 
 ---
 
