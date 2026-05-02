@@ -2281,7 +2281,7 @@ impl AppState {
                 }
             }
             Action::WizardClose => {
-                self.finish_wizard();
+                self.cancel_wizard();
             }
             _ => {}
         }
@@ -2313,6 +2313,14 @@ impl AppState {
                 Err(e) => self.set_status_error(format!("could not write config: {e}")),
             }
         }
+    }
+
+    /// Dismisses the wizard without writing config. Restores the original theme
+    /// so that live preview navigation does not persist on cancel.
+    fn cancel_wizard(&mut self) {
+        self.theme = ThemePalette::resolve(&self.config.theme);
+        self.overlay.close_all();
+        self.show_wizard = false;
     }
 
     pub fn apply_job_result(&mut self, result: JobResult) {
