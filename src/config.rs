@@ -239,6 +239,108 @@ impl AppConfig {
     }
 }
 
+/// Build a human-readable, fully-commented TOML string for `config`.
+///
+/// Used by the first-run wizard to write an annotated `config.toml` that teaches
+/// the user what every field does. Unlike `basic_toml::to_string`, this function
+/// adds inline `#` doc comments above each setting.
+pub fn generate_annotated_config(config: &AppConfig) -> String {
+    let icon_mode = match config.icon_mode {
+        IconMode::Unicode => "unicode",
+        IconMode::Ascii => "ascii",
+        IconMode::NerdFont => "nerd_font",
+    };
+    let pane_layout = match config.pane_layout {
+        PaneLayout::SideBySide => "SideBySide",
+        PaneLayout::Stacked => "Stacked",
+    };
+
+    let mut openers = String::new();
+    for opener in &config.openers {
+        let exts: Vec<String> = opener.extensions.iter().map(|e| format!("{e:?}")).collect();
+        let exts_str = format!("[{}]", exts.join(", "));
+        openers.push_str(&format!(
+            "\n[[openers]]\nname = {:?}\ncommand = {:?}\nextensions = {}\n",
+            opener.name, opener.command, exts_str
+        ));
+    }
+
+    format!(
+        "# Zeta configuration file\n\
+         # Documentation: https://github.com/tzero86/zeta\n\
+         # Changes take effect immediately (live reload on save).\n\
+         \n\
+         # Icon style: \"unicode\" | \"ascii\" | \"nerd_font\"\n\
+         # \"nerd_font\" requires a Nerd Font in your terminal.\n\
+         icon_mode = \"{icon_mode}\"\n\
+         \n\
+         # Default pane split: \"SideBySide\" | \"Stacked\"\n\
+         pane_layout = \"{pane_layout}\"\n\
+         \n\
+         # Open the preview panel on startup.\n\
+         preview_panel_open = {preview_panel_open}\n\
+         \n\
+         # Auto-preview the highlighted file (requires preview panel open).\n\
+         preview_on_selection = {preview_on_selection}\n\
+         \n\
+         # Open an embedded terminal pane on startup.\n\
+         terminal_open_by_default = {terminal_open_by_default}\n\
+         \n\
+         # Check GitHub releases for updates when Zeta starts.\n\
+         check_updates_on_startup = {check_updates_on_startup}\n\
+         \n\
+         [theme]\n\
+         # Theme preset. Available: zeta | catppuccin_mocha | dracula | fjord |\n\
+         #   matrix | monochrome | neon | norton | oxide | sandbar\n\
+         preset = \"{theme_preset}\"\n\
+         \n\
+         # Label shown in the bottom-left status bar corner.\n\
+         status_bar_label = \"{status_bar_label}\"\n\
+         \n\
+         [keymap]\n\
+         # Key binding to quit Zeta.\n\
+         quit = \"{quit}\"\n\
+         \n\
+         # Key binding to switch focus between left and right panes.\n\
+         switch_pane = \"{switch_pane}\"\n\
+         \n\
+         # Key binding to refresh the active pane directory listing.\n\
+         refresh = \"{refresh}\"\n\
+         \n\
+         # Key bindings to switch between the four workspaces.\n\
+         workspace_1 = \"{ws1}\"\n\
+         workspace_2 = \"{ws2}\"\n\
+         workspace_3 = \"{ws3}\"\n\
+         workspace_4 = \"{ws4}\"\n\
+         \n\
+         [editor]\n\
+         # Number of spaces a tab character expands to in the embedded editor.\n\
+         tab_width = {tab_width}\n\
+         \n\
+         # Soft-wrap lines at the viewport edge in the embedded editor.\n\
+         word_wrap = {word_wrap}\n\
+         {openers}",
+        icon_mode = icon_mode,
+        pane_layout = pane_layout,
+        preview_panel_open = config.preview_panel_open,
+        preview_on_selection = config.preview_on_selection,
+        terminal_open_by_default = config.terminal_open_by_default,
+        check_updates_on_startup = config.check_updates_on_startup,
+        theme_preset = config.theme.preset,
+        status_bar_label = config.theme.status_bar_label,
+        quit = config.keymap.quit,
+        switch_pane = config.keymap.switch_pane,
+        refresh = config.keymap.refresh,
+        ws1 = config.keymap.workspace_1,
+        ws2 = config.keymap.workspace_2,
+        ws3 = config.keymap.workspace_3,
+        ws4 = config.keymap.workspace_4,
+        tab_width = config.editor.tab_width,
+        word_wrap = config.editor.word_wrap,
+        openers = openers,
+    )
+}
+
 fn default_preview_on_selection() -> bool {
     true
 }
@@ -1106,8 +1208,8 @@ mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
 
     use super::{
-        resolve_config_path_from_env, AppConfig, ConfigSource, IconMode, KeymapConfig, ThemeConfig,
-        ThemePalette,
+        generate_annotated_config, resolve_config_path_from_env, AppConfig, ConfigSource, IconMode,
+        KeymapConfig, ThemeConfig, ThemePalette,
     };
     use crate::state::PaneLayout;
 
@@ -1361,5 +1463,37 @@ mod tests {
         .palette;
 
         assert_palette_ladder(palette);
+    }
+
+    #[test]
+    fn annotated_config_contains_section_headers() {
+        let cfg = AppConfig::default();
+        let text = generate_annotated_config(&cfg);
+        assert!(text.contains("[theme]"), "missing [theme] section");
+        assert!(text.contains("[keymap]"), "missing [keymap] section");
+        assert!(text.contains("[editor]"), "missing [editor] section");
+    }
+
+    #[test]
+    fn annotated_config_contains_comments() {
+        let cfg = AppConfig::default();
+        let text = generate_annotated_config(&cfg);
+        assert!(text.contains("# "), "expected at least one comment line");
+    }
+
+    #[test]
+    fn annotated_config_theme_preset_round_trips() {
+        let mut cfg = AppConfig::default();
+        cfg.theme.preset = "dracula".to_string();
+        let text = generate_annotated_config(&cfg);
+        assert!(text.contains("preset = \"dracula\""));
+    }
+
+    #[test]
+    fn annotated_config_is_valid_toml() {
+        let cfg = AppConfig::default();
+        let text = generate_annotated_config(&cfg);
+        let result: Result<AppConfig, _> = basic_toml::from_str(&text);
+        assert!(result.is_ok(), "generated config is not valid TOML: {:?}", result.err());
     }
 }
