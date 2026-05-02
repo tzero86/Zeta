@@ -3002,7 +3002,7 @@ impl AppState {
     }
 
     pub fn set_error_status(&mut self, message: impl Into<String>) {
-        self.set_status(message.into());
+        self.set_status_error(message.into());
     }
 
     // Theme/config

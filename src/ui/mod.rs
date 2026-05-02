@@ -665,10 +665,9 @@ fn render_key_hints(
             if pane.marked_count() > 0 {
                 vec![
                     ("F5", "Copy marked"),
-                    ("F6", "Move marked"),
+                    ("Shift+F6", "Move marked"),
                     ("F8", "Delete marked"),
-                    ("M", "Clear marks"),
-                    ("Esc", "Deselect"),
+                    ("Shift+M", "Clear marks"),
                 ]
             } else {
                 let is_dir = pane
