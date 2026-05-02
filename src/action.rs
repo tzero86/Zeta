@@ -280,6 +280,12 @@ pub enum Action {
     GitDiffContentPageDown,
     /// Check for available updates to the application.
     CheckForUpdates,
+    WizardMoveDown,
+    WizardMoveUp,
+    /// On ThemePicker: advance to cheatsheet. On Cheatsheet: finish wizard.
+    WizardConfirm,
+    /// Close wizard without writing config (Esc).
+    WizardClose,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1191,6 +1197,17 @@ impl Action {
             _ => None,
         }
     }
+
+    pub fn from_wizard_key_event(key_event: KeyEvent) -> Option<Self> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        match key_event.code {
+            KeyCode::Up | KeyCode::Char('k') => Some(Self::WizardMoveUp),
+            KeyCode::Down | KeyCode::Char('j') => Some(Self::WizardMoveDown),
+            KeyCode::Enter => Some(Self::WizardConfirm),
+            KeyCode::Esc => Some(Self::WizardClose),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1706,5 +1723,17 @@ mod tests {
         let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
         assert_eq!(Action::from_git_diff_file_list_key_event(&key), None);
         assert_eq!(Action::from_git_diff_content_key_event(&key), None);
+    }
+
+    #[test]
+    fn wizard_key_event_up_maps_to_move_up() {
+        let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardMoveUp));
+    }
+
+    #[test]
+    fn wizard_key_event_enter_maps_to_confirm() {
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardConfirm));
     }
 }
