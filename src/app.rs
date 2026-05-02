@@ -383,7 +383,10 @@ impl App {
                         } else {
                             None
                         };
-                    self.state.apply_job_result(other);
+                    let hook_cmds = self.state.apply_job_result_commands(other);
+                    for cmd in hook_cmds {
+                        self.execute_command_try(cmd)?;
+                    }
                     if let Some((workspace_id, pane)) = scanned_target {
                         self.post_scan_completed(workspace_id, pane)?;
                     }
@@ -641,7 +644,10 @@ impl App {
                             entries,
                             elapsed_ms: 0,
                         };
-                        self.state.apply_job_result(result);
+                        let hook_cmds = self.state.apply_job_result_commands(result);
+                        for cmd in hook_cmds {
+                            self.execute_command_try(cmd)?;
+                        }
                         self.post_scan_completed(workspace_id, pane)?;
                     } else {
                         self.workers

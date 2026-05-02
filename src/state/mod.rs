@@ -472,6 +472,17 @@ impl AppState {
             use crate::state::wizard::WizardState;
             self.overlay.modal = Some(ModalState::FirstRunWizard(WizardState::new()));
         }
+        let hook_env = crate::hooks::HookEnv {
+            path: self.panes.active_pane().cwd.display().to_string(),
+            old_path: None,
+            pane: "left".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        };
+        commands.extend(crate::hooks::commands_for_event(
+            &self.config.hooks,
+            crate::config::HookEvent::OnStart,
+            &hook_env,
+        ));
         commands
     }
 
@@ -2731,6 +2742,36 @@ impl AppState {
             self.active_workspace_idx = previous_workspace;
             self.sync_editor_menu_mode();
         }
+    }
+
+    /// Like `apply_job_result` but also fires `on_cd` hooks when the active pane
+    /// navigates to a new directory (not a refresh of the same directory).
+    pub fn apply_job_result_commands(&mut self, result: JobResult) -> Vec<Command> {
+        let before_cwd = self.panes.active_pane().cwd.clone();
+
+        self.apply_job_result(result);
+
+        let after_cwd = self.panes.active_pane().cwd.clone();
+
+        if after_cwd != before_cwd {
+            let pane_label = match self.panes.focus {
+                PaneFocus::Left | PaneFocus::Preview => "left",
+                PaneFocus::Right => "right",
+            };
+            let hook_env = crate::hooks::HookEnv {
+                path: after_cwd.display().to_string(),
+                old_path: Some(before_cwd.display().to_string()),
+                pane: pane_label.into(),
+                version: String::new(),
+            };
+            return crate::hooks::commands_for_event(
+                &self.config.hooks,
+                crate::config::HookEvent::OnCd,
+                &hook_env,
+            );
+        }
+
+        Vec::new()
     }
 
     fn apply_settings_entry(&mut self, entry: SettingsEntry) {
