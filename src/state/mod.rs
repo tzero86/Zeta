@@ -6064,4 +6064,48 @@ mod tests {
         assert!(!state.update_state.is_prompt_open());
         assert!(!state.should_quit);
     }
+
+    #[test]
+    fn apply_update_opens_prompt_when_update_available() {
+        use crate::update::{Release, UpdateStatus};
+        let mut state = test_state();
+        state.update_state.status = UpdateStatus::Available(Release {
+            version: String::from("0.2.0"),
+            tag_name: String::from("v0.2.0"),
+            body: String::from("Release notes"),
+            prerelease: false,
+            published_at: String::from("2025-01-01T00:00:00Z"),
+        });
+        assert!(!state.update_state.is_prompt_open());
+        state
+            .apply(Action::ApplyUpdate)
+            .expect("apply update should succeed");
+        assert!(
+            state.update_state.is_prompt_open(),
+            "prompt should open when update is available"
+        );
+    }
+
+    #[test]
+    fn apply_update_is_noop_when_no_update() {
+        let mut state = test_state();
+        assert!(!state.update_state.is_prompt_open());
+        state
+            .apply(Action::ApplyUpdate)
+            .expect("apply update should succeed");
+        assert!(
+            !state.update_state.is_prompt_open(),
+            "prompt should not open when no update"
+        );
+    }
+
+    #[test]
+    fn focus_layer_returns_update_prompt_when_open() {
+        let mut state = test_state();
+        state.update_state.show_update_prompt();
+        assert!(matches!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::UpdatePrompt)
+        ));
+    }
 }
