@@ -11,6 +11,7 @@ use crate::state::menu::menu_items_for;
 use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
 use crate::state::ssh::SshConnectionState;
+use crate::state::wizard::WizardState;
 use crate::state::types::MenuItem;
 
 /// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
@@ -51,6 +52,7 @@ pub enum ModalState {
         credential: String,
         pane: crate::pane::PaneId,
     },
+    FirstRunWizard(WizardState),
     /// Context menu for opening a file with a specific program.
     OpenWith {
         /// `(display_name, command)` — command is empty string for the OS default.
@@ -79,6 +81,26 @@ impl OverlayState {
     /// Close any open modal.
     pub fn close_all(&mut self) {
         self.modal = None;
+    }
+
+    pub fn modal_kind(&self) -> Option<crate::state::types::ModalKind> {
+        use crate::state::types::ModalKind;
+        match &self.modal {
+            None => None,
+            Some(ModalState::Menu { .. }) => Some(ModalKind::Menu),
+            Some(ModalState::Prompt(_)) => Some(ModalKind::Prompt),
+            Some(ModalState::Dialog(_)) => Some(ModalKind::Dialog),
+            Some(ModalState::Collision(_)) => Some(ModalKind::Collision),
+            Some(ModalState::DestructiveConfirm(_)) => Some(ModalKind::DestructiveConfirm),
+            Some(ModalState::Palette(_)) => Some(ModalKind::Palette),
+            Some(ModalState::Settings(_)) => Some(ModalKind::Settings),
+            Some(ModalState::Bookmarks(_)) => Some(ModalKind::Bookmarks),
+            Some(ModalState::FileFinder(_)) => Some(ModalKind::FileFinder),
+            Some(ModalState::SshConnect(_)) => Some(ModalKind::SshConnect),
+            Some(ModalState::SshTrustPrompt { .. }) => Some(ModalKind::SshTrustPrompt),
+            Some(ModalState::FirstRunWizard(_)) => Some(ModalKind::FirstRunWizard),
+            Some(ModalState::OpenWith { .. }) => Some(ModalKind::OpenWith),
+        }
     }
 
     pub fn is_menu_open(&self) -> bool {
@@ -188,6 +210,22 @@ impl OverlayState {
         match &self.modal {
             Some(ModalState::Settings(s)) => Some(s),
             _ => None,
+        }
+    }
+
+    pub fn wizard_state(&self) -> Option<&WizardState> {
+        if let Some(ModalState::FirstRunWizard(s)) = &self.modal {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    pub fn wizard_state_mut(&mut self) -> Option<&mut WizardState> {
+        if let Some(ModalState::FirstRunWizard(s)) = &mut self.modal {
+            Some(s)
+        } else {
+            None
         }
     }
 

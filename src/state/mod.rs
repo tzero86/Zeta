@@ -11,6 +11,7 @@ pub mod ssh;
 pub mod terminal;
 mod types;
 pub mod update_state;
+pub mod wizard;
 
 pub use editor_state::EditorState;
 pub use overlay::{ModalState, OverlayState};
@@ -30,8 +31,8 @@ use ratatui_image::picker::Picker;
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{
-    key_event_to_string, AppConfig, IconMode, LoadedConfig, ResolvedTheme, ThemePalette,
-    ThemePreset,
+    key_event_to_string, AppConfig, ConfigSource, IconMode, LoadedConfig, ResolvedTheme,
+    ThemePalette, ThemePreset,
 };
 use crate::editor::EditorBuffer;
 use crate::finder::FileFinderState;
@@ -267,6 +268,8 @@ pub struct AppState {
     pub debug_visible: bool,
     /// Live debug state: last key, last action, action log.
     pub debug: DebugState,
+    /// `true` when no config file was found on startup; opens the first-run wizard.
+    show_wizard: bool,
     /// Update checking and self-update state.
     pub update_state: UpdateState,
     /// Frame counter for pulsing update indicator animation (0-255, wraps around).
@@ -427,6 +430,7 @@ impl AppState {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            show_wizard: loaded_config.source == ConfigSource::Default,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
         })
@@ -434,6 +438,10 @@ impl AppState {
 
     pub fn config_path(&self) -> &str {
         &self.config_path
+    }
+
+    pub fn modal_kind(&self) -> Option<crate::state::types::ModalKind> {
+        self.overlay.modal_kind()
     }
 
     /// Apply a freshly loaded config without a full restart.
@@ -458,6 +466,11 @@ impl AppState {
         if self.config.terminal_open_by_default {
             let cwd = self.panes.active_pane().cwd.clone();
             commands.extend(self.terminal.toggle(cwd));
+        }
+        if self.show_wizard {
+            use crate::state::overlay::ModalState;
+            use crate::state::wizard::WizardState;
+            self.overlay.modal = Some(ModalState::FirstRunWizard(WizardState::new()));
         }
         commands
     }
@@ -506,6 +519,17 @@ impl AppState {
 
     fn apply_view(&mut self, action: &Action) -> Result<Vec<Command>> {
         let mut commands = Vec::new();
+
+        // Wizard actions: handle before the main match so they can return early.
+        if matches!(
+            action,
+            Action::WizardMoveDown
+                | Action::WizardMoveUp
+                | Action::WizardConfirm
+                | Action::WizardClose
+        ) {
+            return self.apply_wizard(action);
+        }
 
         // Rebind capture: process before the main match so it can return early.
         if let Action::SettingsRebindCapture(key_event) = action {
@@ -2220,6 +2244,85 @@ impl AppState {
         Ok(commands)
     }
 
+    /// Handles WizardMoveDown, WizardMoveUp, WizardConfirm, WizardClose.
+    fn apply_wizard(&mut self, action: &Action) -> Result<Vec<Command>> {
+        use crate::state::wizard::WizardStep;
+        match action {
+            Action::WizardMoveDown => {
+                if let Some(w) = self.overlay.wizard_state_mut() {
+                    w.move_down();
+                    if w.step == WizardStep::ThemePicker {
+                        let preset = w.selected_preset();
+                        self.theme = ThemePalette::from_preset(preset);
+                    }
+                }
+            }
+            Action::WizardMoveUp => {
+                if let Some(w) = self.overlay.wizard_state_mut() {
+                    w.move_up();
+                    if w.step == WizardStep::ThemePicker {
+                        let preset = w.selected_preset();
+                        self.theme = ThemePalette::from_preset(preset);
+                    }
+                }
+            }
+            Action::WizardConfirm => {
+                let step = self.overlay.wizard_state().map(|w| w.step);
+                match step {
+                    Some(WizardStep::ThemePicker) => {
+                        if let Some(w) = self.overlay.wizard_state_mut() {
+                            w.advance();
+                        }
+                    }
+                    Some(WizardStep::Cheatsheet) => {
+                        self.finish_wizard();
+                    }
+                    None => {}
+                }
+            }
+            Action::WizardClose => {
+                self.cancel_wizard();
+            }
+            _ => {}
+        }
+        Ok(vec![])
+    }
+
+    fn finish_wizard(&mut self) {
+        if let Some(preset) = self.overlay.wizard_state().map(|w| w.selected_preset()) {
+            self.theme = ThemePalette::from_preset(preset);
+            self.config.theme.preset = preset.as_str().to_string();
+        }
+        self.overlay.close_all();
+        self.show_wizard = false;
+
+        let path_str = self.config_path.clone();
+        let path = std::path::PathBuf::from(&path_str);
+        if !path_str.is_empty() {
+            let text = crate::config::generate_annotated_config(&self.config);
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+            }
+            match std::fs::write(&path, text) {
+                Ok(()) => self.set_status_success(format!(
+                    "Welcome to Zeta! Config saved to {}",
+                    path.display()
+                )),
+                Err(e) => self.set_status_error(format!("could not write config: {e}")),
+            }
+        }
+    }
+
+    /// Dismisses the wizard without writing config. Restores the original theme
+    /// so that live preview navigation does not persist on cancel.
+    fn cancel_wizard(&mut self) {
+        self.theme = ThemePalette::resolve(&self.config.theme);
+        self.overlay.close_all();
+        self.show_wizard = false;
+    }
+
     pub fn apply_job_result(&mut self, result: JobResult) {
         let target_workspace = match &result {
             JobResult::DirectoryScanned { workspace_id, .. }
@@ -2847,6 +2950,9 @@ impl AppState {
         }
         if self.bookmarks().is_some() {
             return FocusLayer::Modal(ModalKind::Bookmarks);
+        }
+        if self.overlay.wizard_state().is_some() {
+            return FocusLayer::Modal(ModalKind::FirstRunWizard);
         }
         if self.terminal.is_open() && self.terminal.focused {
             return FocusLayer::Terminal;
@@ -4160,6 +4266,7 @@ mod tests {
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
+            show_wizard: false,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
         }
@@ -5782,5 +5889,31 @@ mod tests {
         state.git_diff_scroll = 3;
         state.apply(Action::GitDiffContentPageDown).unwrap();
         assert_eq!(state.git_diff_scroll, 3); // clamped at 3 (len - viewport)
+    }
+
+    #[test]
+    fn bootstrap_with_default_config_sets_show_wizard() {
+        use crate::config::{AppConfig, ConfigSource, LoadedConfig};
+        use std::time::Instant;
+        let loaded = LoadedConfig {
+            config: AppConfig::default(),
+            path: PathBuf::from(""),
+            source: ConfigSource::Default,
+        };
+        let state = AppState::bootstrap(loaded, Instant::now()).unwrap();
+        assert!(state.show_wizard);
+    }
+
+    #[test]
+    fn bootstrap_with_file_config_does_not_set_show_wizard() {
+        use crate::config::{AppConfig, ConfigSource, LoadedConfig};
+        use std::time::Instant;
+        let loaded = LoadedConfig {
+            config: AppConfig::default(),
+            path: PathBuf::from(""),
+            source: ConfigSource::File,
+        };
+        let state = AppState::bootstrap(loaded, Instant::now()).unwrap();
+        assert!(!state.show_wizard);
     }
 }
