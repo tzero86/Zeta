@@ -135,6 +135,7 @@ impl App {
                 &self.state.config().hooks,
                 crate::config::HookEvent::OnExit,
                 &hook_env,
+                self.state.active_workspace_index(),
             );
             for cmd in hook_cmds {
                 let _ = self.execute_command_try(cmd);
@@ -825,9 +826,12 @@ impl App {
             Command::UpdateKeymap(new_keymap) => {
                 self.keymap = new_keymap;
             }
-            Command::RunHook { command, env } => {
+            Command::RunHook {
+                command,
+                env,
+                workspace_id,
+            } => {
                 let result_tx = self.workers.result_tx.clone();
-                let workspace_id = self.state.active_workspace_index();
                 std::thread::spawn(move || {
                     let status = std::process::Command::new("sh")
                         .arg("-c")

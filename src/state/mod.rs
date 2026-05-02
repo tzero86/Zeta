@@ -481,6 +481,7 @@ impl AppState {
             &self.config.hooks,
             crate::config::HookEvent::OnStart,
             &hook_env,
+            self.active_workspace_idx,
         ));
         commands
     }
@@ -832,6 +833,7 @@ impl AppState {
                                 &self.config.hooks,
                                 crate::config::HookEvent::OnOpen,
                                 &env,
+                                self.active_workspace_idx,
                             )
                         };
                         commands.extend(hook_cmds);
@@ -2764,18 +2766,22 @@ impl AppState {
     /// navigates to a new directory (not a refresh of the same directory).
     pub fn apply_job_result_commands(&mut self, result: JobResult) -> Vec<Command> {
         if let JobResult::DirectoryScanned {
-            ref pane, ref path, ..
+            ref pane,
+            ref path,
+            workspace_id,
+            ..
         } = result
         {
             let pane = *pane;
-            let is_refresh =
-                self.panes.pane(pane).cwd == *path && !self.panes.pane(pane).entries.is_empty();
+            let scanned_ws = self.workspace(workspace_id);
+            let is_refresh = scanned_ws.panes.pane(pane).cwd == *path
+                && !scanned_ws.panes.pane(pane).entries.is_empty();
             if !is_refresh {
                 let pane_label = match pane {
                     crate::pane::PaneId::Right => String::from("right"),
                     _ => String::from("left"),
                 };
-                let old_path = self.panes.pane(pane).cwd.display().to_string();
+                let old_path = scanned_ws.panes.pane(pane).cwd.display().to_string();
                 let cd_env = crate::hooks::HookEnv {
                     path: path.display().to_string(),
                     old_path: Some(old_path),
@@ -2786,6 +2792,7 @@ impl AppState {
                     &self.config.hooks,
                     crate::config::HookEvent::OnCd,
                     &cd_env,
+                    workspace_id,
                 );
                 self.apply_job_result(result);
                 return hook_cmds;

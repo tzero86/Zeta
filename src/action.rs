@@ -346,6 +346,8 @@ pub enum Command {
     UpdateKeymap(crate::config::RuntimeKeymap),
     /// Spawn a user-defined shell hook command as a detached process.
     RunHook {
+        /// Which workspace originated this hook (used to attribute `JobFailed` errors).
+        workspace_id: usize,
         /// The raw argument forwarded to `sh -c`.
         command: String,
         /// Pre-computed `ZETA_*` environment variable pairs for this event.
@@ -1794,11 +1796,17 @@ mod tests {
     #[test]
     fn run_hook_command_builds() {
         let cmd = Command::RunHook {
+            workspace_id: 0,
             command: String::from("echo hello"),
             env: vec![(String::from("ZETA_PATH"), String::from("/home/user"))],
         };
         match cmd {
-            Command::RunHook { command, env } => {
+            Command::RunHook {
+                workspace_id,
+                command,
+                env,
+            } => {
+                assert_eq!(workspace_id, 0);
                 assert_eq!(command, "echo hello");
                 assert_eq!(env.len(), 1);
                 assert_eq!(env[0].0, "ZETA_PATH");

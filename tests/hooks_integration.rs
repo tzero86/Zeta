@@ -53,10 +53,12 @@ fn on_open_hook_command_built_correctly() {
         pane: "left".into(),
         version: String::new(),
     };
-    let cmds = commands_for_event(&hooks, HookEvent::OnOpen, &env);
+    let cmds = commands_for_event(&hooks, HookEvent::OnOpen, &env, 0);
     assert_eq!(cmds.len(), 1);
     match &cmds[0] {
-        Command::RunHook { command, env: e } => {
+        Command::RunHook {
+            command, env: e, ..
+        } => {
             assert_eq!(command, "echo open");
             assert!(e
                 .iter()

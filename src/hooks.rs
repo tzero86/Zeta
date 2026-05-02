@@ -21,7 +21,12 @@ pub struct HookEnv {
 /// - `ZETA_OLD_PATH` — only when `old_path` is `Some`
 /// - `ZETA_PANE` — for `on_cd` and `on_open`
 /// - `ZETA_VERSION` — for `on_start`
-pub fn commands_for_event(hooks: &[HookConfig], event: HookEvent, env: &HookEnv) -> Vec<Command> {
+pub fn commands_for_event(
+    hooks: &[HookConfig],
+    event: HookEvent,
+    env: &HookEnv,
+    workspace_id: usize,
+) -> Vec<Command> {
     hooks
         .iter()
         .filter(|h| h.event == event)
@@ -41,6 +46,7 @@ pub fn commands_for_event(hooks: &[HookConfig], event: HookEvent, env: &HookEnv)
                 HookEvent::OnExit => {}
             }
             Command::RunHook {
+                workspace_id,
                 command: h.command.clone(),
                 env: vars,
             }
@@ -62,7 +68,7 @@ mod tests {
             pane: "left".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&[], HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&[], HookEvent::OnCd, &env, 0);
         assert!(cmds.is_empty());
     }
 
@@ -78,10 +84,12 @@ mod tests {
             pane: "left".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
-            Command::RunHook { command, env: e } => {
+            Command::RunHook {
+                command, env: e, ..
+            } => {
                 assert_eq!(command, "echo cd");
                 assert!(e.iter().any(|(k, v)| k == "ZETA_PATH" && v == "/home/user"));
                 assert!(e.iter().any(|(k, v)| k == "ZETA_OLD_PATH" && v == "/tmp"));
@@ -102,7 +110,7 @@ mod tests {
             pane: "left".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         assert!(cmds.is_empty());
     }
 
@@ -124,7 +132,7 @@ mod tests {
             pane: "right".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         assert_eq!(cmds.len(), 2);
     }
 
@@ -140,7 +148,7 @@ mod tests {
             pane: "left".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnStart, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnStart, &env, 0);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
             Command::RunHook { env: e, .. } => {
@@ -163,7 +171,7 @@ mod tests {
             pane: "left".into(),
             version: "0.5.0".into(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         match &cmds[0] {
             Command::RunHook { env: e, .. } => {
                 assert!(!e.iter().any(|(k, _)| k == "ZETA_OLD_PATH"));
@@ -190,7 +198,7 @@ mod tests {
             pane: "left".into(),
             version: String::new(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         assert_eq!(cmds.len(), 2);
         match (&cmds[0], &cmds[1]) {
             (Command::RunHook { command: c0, .. }, Command::RunHook { command: c1, .. }) => {
@@ -213,7 +221,7 @@ mod tests {
             pane: "right".into(),
             version: String::new(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnCd, &env, 0);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
             Command::RunHook { env: e, .. } => {
@@ -238,7 +246,7 @@ mod tests {
             pane: String::new(),
             version: String::new(),
         };
-        let cmds = commands_for_event(&hooks, HookEvent::OnExit, &env);
+        let cmds = commands_for_event(&hooks, HookEvent::OnExit, &env, 0);
         assert_eq!(cmds.len(), 1);
         match &cmds[0] {
             Command::RunHook { env: e, .. } => {
