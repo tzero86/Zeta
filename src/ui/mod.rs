@@ -36,6 +36,7 @@ use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
     menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
     render_flyout_popup, render_menu_popup, render_open_with_popup, render_prompt,
+    render_update_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -362,6 +363,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         render_destructive_confirm(frame, areas[1], destructive_state, palette);
     }
 
+    if state.update_state.is_prompt_open() {
+        render_update_prompt(frame, areas[1], state, palette);
+    }
+
     if let Some(palette_state) = state.palette() {
         render_command_palette(frame, areas[1], palette_state, palette);
     }
@@ -640,6 +645,10 @@ fn render_key_hints(
             ("R", "Rename"),
             ("S", "Skip"),
             ("Esc", "Cancel"),
+        ],
+        crate::state::FocusLayer::Modal(ModalKind::UpdatePrompt) => vec![
+            ("Y", "Install on exit"),
+            ("N / Esc", "Skip"),
         ],
         crate::state::FocusLayer::Modal(ModalKind::Prompt) => {
             vec![("Enter", "Confirm"), ("Esc", "Cancel")]
