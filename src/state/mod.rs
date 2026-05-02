@@ -592,69 +592,23 @@ impl AppState {
         }
 
         match action {
-            Action::OpenAboutDialog => {
-                self.overlay.open_about(DialogState::about(
-                    self.theme.preset.clone(),
-                    self.config_path.clone(),
-                ));
-                self.status_message = String::from("opened about");
-            }
-            Action::SetPaneLayout(layout) => {
-                self.panes.pane_layout = *layout;
-                self.config.pane_layout = *layout;
-                self.status_message = match layout {
-                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
-                    PaneLayout::Stacked => String::from("layout set to stacked"),
-                };
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::SetTheme(preset) => {
-                self.theme = ThemePalette::from_preset(*preset);
-                self.config.theme.preset = preset.as_str().to_string();
-                self.status_message = format!("theme set to {}", preset.as_str());
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::TogglePreviewPanel => {
-                self.config.preview_panel_open = self.preview.panel_open;
-                if self.preview.panel_open {
-                    let selected_file = self
-                        .panes
-                        .active_pane()
-                        .selected_entry()
-                        .filter(|entry| entry.kind == EntryKind::File)
-                        .map(|entry| entry.path.clone());
-                    if let Some(path) = selected_file {
-                        self.preview.request_debounced_preview(path);
-                    }
-                }
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            Action::ToggleEditorFullscreen => {
-                if self.editor.is_open() {
-                    self.editor_fullscreen = !self.editor_fullscreen;
-                    self.sync_editor_menu_mode();
-                    self.status_message = if self.editor_fullscreen {
-                        String::from("editor fullscreen enabled")
-                    } else {
-                        String::from("editor fullscreen disabled")
-                    };
-                }
-            }
-            Action::ToggleMarkdownPreview => {
-                if self.editor.is_markdown_file() {
-                    self.status_message = if self.editor.markdown_preview_visible {
-                        String::from("markdown preview shown")
-                    } else {
-                        String::from("markdown preview hidden")
-                    };
-                }
-            }
-            Action::ToggleHiddenFiles => {
-                self.status_message = if self.panes.active_pane().show_hidden {
-                    String::from("showing hidden files")
-                } else {
-                    String::from("hiding hidden files")
-                };
+            _ if matches!(
+                action,
+                Action::SetPaneLayout(_)
+                    | Action::TogglePreviewPanel
+                    | Action::ToggleEditorFullscreen
+                    | Action::ToggleMarkdownPreview
+                    | Action::ToggleHiddenFiles
+                    | Action::ShrinkLeftPane
+                    | Action::GrowLeftPane
+                    | Action::Resize { .. }
+                    | Action::ToggleDebugPanel
+                    | Action::ToggleDetailsView
+                    | Action::OpenAboutDialog
+                    | Action::SetTheme(_)
+            ) =>
+            {
+                commands.extend(self.apply_layout(action)?);
             }
             Action::OpenPaneFilter => {
                 let pane = self.panes.active_pane_mut();
@@ -815,10 +769,6 @@ impl AppState {
                     self.should_quit = true;
                 }
             }
-            Action::Resize { width, height } => {
-                self.last_size = Some((*width, *height));
-                self.status_message = format!("resized to {width}x{height}");
-            }
             Action::OpenSelectedInEditor => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
@@ -852,6 +802,473 @@ impl AppState {
                     }
                 }
             }
+            _ if matches!(
+                action,
+                Action::ToggleGitDiff
+                    | Action::GitDiffSelectPrev
+                    | Action::GitDiffSelectNext
+                    | Action::GitDiffPageUp
+                    | Action::GitDiffPageDown
+                    | Action::GitDiffScrollUp
+                    | Action::GitDiffScrollDown
+                    | Action::GitDiffToggleFocus
+                    | Action::GitDiffContentPageUp
+                    | Action::GitDiffContentPageDown
+                    | Action::GitDiffSetViewport(_)
+            ) =>
+            {
+                commands.extend(self.apply_git_diff(action)?);
+            }
+            _ if matches!(
+                action,
+                Action::OpenOpenWithMenu
+                    | Action::OpenWithMoveUp
+                    | Action::OpenWithMoveDown
+                    | Action::OpenWithConfirm
+                    | Action::CloseOpenWithMenu
+            ) =>
+            {
+                commands.extend(self.apply_open_with(action)?);
+            }
+            _ if matches!(action, Action::ToggleDiffMode | Action::DiffSyncToOther) => {
+                commands.extend(self.apply_diff_mode(action)?);
+            }
+            Action::OpenShell => {
+                let path = self.panes.active_pane().cwd.clone();
+                commands.push(Command::OpenShell { path: path.clone() });
+                self.status_message = format!("opening shell in {}", path.display());
+            }
+            _ if matches!(action, Action::OpenArchive { .. } | Action::ExitArchive) => {
+                commands.extend(self.apply_archive(action)?);
+            }
+            _ if matches!(
+                action,
+                Action::AddBookmark
+                    | Action::OpenBookmarks
+                    | Action::BookmarkSelect(_)
+                    | Action::DeleteBookmark(_)
+            ) =>
+            {
+                commands.extend(self.apply_bookmarks(action)?);
+            }
+            // File operation prompts: delegated to apply_file_ops
+            _ if matches!(
+                action,
+                Action::OpenCopyPrompt
+                    | Action::OpenMovePrompt
+                    | Action::OpenDeletePrompt
+                    | Action::OpenPermanentDeletePrompt
+                    | Action::OpenNewFilePrompt
+                    | Action::OpenNewDirectoryPrompt
+                    | Action::OpenRenamePrompt
+                    | Action::OpenBulkRenamePrompt
+                    | Action::PromptSubmit
+                    | Action::BeginInlineRename
+                    | Action::CancelInlineRename
+                    | Action::ConfirmInlineRename
+            ) =>
+            {
+                commands.extend(self.apply_file_ops(action)?);
+            }
+            Action::OpenGoToPrompt => {
+                let cwd = self.panes.active_pane().cwd.clone();
+                self.overlay
+                    .open_prompt(PromptState::new(PromptKind::GoTo, "Go to Path", cwd));
+                self.status_message = String::from("type an absolute or relative path");
+            }
+            Action::CloseEditor => {
+                if self.editor.is_dirty() {
+                    self.status_message =
+                        String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
+                } else if !self.editor.is_open() {
+                    self.editor_fullscreen = false;
+                    self.sync_editor_menu_mode();
+                }
+            }
+            Action::DiscardEditorChanges => {
+                self.editor_fullscreen = false;
+                self.sync_editor_menu_mode();
+                self.status_message = String::from("discarded editor changes");
+            }
+            Action::SettingsToggleCurrent => {
+                let (selection, active_tab) =
+                    if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                        (s.selection, s.active_tab)
+                    } else {
+                        return Ok(commands);
+                    };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if let Some(entry) = entries.get(selection).cloned() {
+                    if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
+                        // Begin rebind: enter key-capture mode for this entry.
+                        if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                            s.rebind_mode = Some(selection);
+                        }
+                        self.status_message = String::from("press new key combo (Esc to cancel)");
+                    } else {
+                        self.apply_settings_entry(entry);
+                    }
+                }
+            }
+            Action::SettingsMoveDown => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = (s.selection + 1) % entries.len();
+                    }
+                }
+            }
+            Action::SettingsMoveUp => {
+                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    s.active_tab
+                } else {
+                    return Ok(commands);
+                };
+                let entries = self.settings_entries_for_tab(active_tab);
+                if !entries.is_empty() {
+                    if let Some(s) = self.settings_mut() {
+                        s.selection = if s.selection == 0 {
+                            entries.len() - 1
+                        } else {
+                            s.selection - 1
+                        };
+                    }
+                }
+            }
+            Action::SettingsBeginRebind => {
+                if let Some(ModalState::Settings(s)) = &self.overlay.modal {
+                    let selection = s.selection;
+                    if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                        s.rebind_mode = Some(selection);
+                    }
+                    self.status_message = String::from("press new key combo (Esc to cancel)");
+                }
+            }
+            Action::SettingsCancelRebind => {
+                if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
+                    s.rebind_mode = None;
+                }
+                self.status_message = String::from("rebind cancelled");
+            }
+            Action::SettingsNextTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.next();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsPrevTab => {
+                if let Some(s) = self.settings_mut() {
+                    s.active_tab = s.active_tab.prev();
+                    s.selection = 0;
+                }
+            }
+            Action::SettingsSelectTab(n) => {
+                if let Some(s) = self.settings_mut() {
+                    if let Some(tab) = crate::state::settings::SettingsTab::from_number(*n) {
+                        s.active_tab = tab;
+                        s.selection = 0;
+                    }
+                }
+            }
+            // Auto-preview after navigation
+            Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
+                // Non-extend movement clears the range anchor.
+                self.panes.active_pane_mut().reset_mark_anchor();
+                if self.preview.should_auto_preview() {
+                    let selected_kind_and_path = self
+                        .panes
+                        .active_pane()
+                        .selected_entry()
+                        .map(|entry| (entry.kind, entry.path.clone()));
+                    if let Some((EntryKind::File, path)) = selected_kind_and_path {
+                        self.preview.request_debounced_preview(path);
+                    } else {
+                        self.preview.view = None;
+                    }
+                }
+            }
+            Action::ExtendSelectionDown => {
+                self.panes.active_pane_mut().extend_selection_down();
+            }
+            Action::ExtendSelectionUp => {
+                self.panes.active_pane_mut().extend_selection_up();
+            }
+            Action::InlineRenameType(ch) => {
+                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
+                    rs.buffer.push(*ch);
+                }
+            }
+            Action::InlineRenameBackspace => {
+                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
+                    rs.buffer.pop();
+                }
+            }
+            Action::CopyPathToClipboard => {
+                let marked = &self.panes.active_pane().marked;
+                if !marked.is_empty() {
+                    let text = marked
+                        .iter()
+                        .map(|p| p.display().to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let count = marked.len();
+                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                        Ok(()) => {
+                            self.status_message = format!("copied {count} paths to clipboard");
+                        }
+                        Err(e) => {
+                            self.status_message = format!("clipboard error: {e}");
+                        }
+                    }
+                } else if let Some(path) = self.panes.active_pane().selected_path() {
+                    match arboard::Clipboard::new()
+                        .and_then(|mut cb| cb.set_text(path.display().to_string()))
+                    {
+                        Ok(()) => {
+                            self.status_message =
+                                format!("copied to clipboard: {}", path.display());
+                        }
+                        Err(e) => {
+                            self.status_message = format!("clipboard error: {e}");
+                        }
+                    }
+                }
+            }
+            Action::OpenSshConnect => {
+                self.overlay.open_ssh_connect(Default::default());
+                self.status_message = String::from("enter SSH connection details");
+            }
+            Action::SshConnectConfirm => {
+                if let Some(ModalState::SshConnect(state)) = &self.overlay.modal {
+                    let address = state.address.clone();
+                    let auth_method = state.auth_method;
+                    let credential = state.credential.clone();
+                    let pane = self.panes.focused_pane_id();
+                    commands.push(Command::ConnectSSH {
+                        address: address.clone(),
+                        auth_method,
+                        credential,
+                        pane,
+                        trust_unknown_host: false,
+                    });
+                    self.overlay.close_all();
+                    self.status_message = format!("connecting to {}", address);
+                }
+            }
+            Action::SshDialogInput(ch) => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => state.address.push(*ch),
+                        crate::state::ssh::SshDialogField::Credential => state.credential.push(*ch),
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogBackspace => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => {
+                            state.address.pop();
+                        }
+                        crate::state::ssh::SshDialogField::Credential => {
+                            state.credential.pop();
+                        }
+                    }
+                    state.error = None;
+                }
+            }
+            Action::SshDialogToggleField => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.focused_field = match state.focused_field {
+                        crate::state::ssh::SshDialogField::Address => {
+                            crate::state::ssh::SshDialogField::Credential
+                        }
+                        crate::state::ssh::SshDialogField::Credential => {
+                            crate::state::ssh::SshDialogField::Address
+                        }
+                    };
+                }
+            }
+            Action::SshDialogToggleAuthMethod => {
+                if let Some(state) = self.overlay.ssh_connect_mut() {
+                    state.auth_method = match state.auth_method {
+                        crate::state::ssh::SshAuthMethod::Password => {
+                            crate::state::ssh::SshAuthMethod::KeyFile
+                        }
+                        crate::state::ssh::SshAuthMethod::KeyFile => {
+                            crate::state::ssh::SshAuthMethod::Agent
+                        }
+                        crate::state::ssh::SshAuthMethod::Agent => {
+                            crate::state::ssh::SshAuthMethod::Password
+                        }
+                    };
+                }
+            }
+            Action::CloseSshConnect => {
+                self.overlay.close_all();
+                self.status_message = String::from("SSH connection cancelled");
+            }
+            Action::SshTrustAccept => {
+                if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
+                    address,
+                    auth_method,
+                    credential,
+                    pane,
+                    ..
+                }) = self.overlay.modal.clone()
+                {
+                    self.overlay.close_all();
+                    self.status_message = format!("connecting to {} (trusted)…", address);
+                    commands.push(Command::ConnectSSH {
+                        address,
+                        auth_method,
+                        credential,
+                        pane,
+                        trust_unknown_host: true,
+                    });
+                }
+            }
+            Action::SshTrustReject => {
+                self.overlay.close_all();
+                self.status_message = String::from("SSH connection cancelled");
+            }
+            Action::ShowSymlinkTarget => {
+                if let Some(entry) = self.panes.active_pane().selected_entry() {
+                    if entry.kind == EntryKind::Symlink {
+                        self.status_message = match &entry.link_target {
+                            Some(t) => format!("symlink → {}", t.display()),
+                            None => String::from("symlink target unavailable"),
+                        };
+                    }
+                }
+            }
+            Action::FollowSymlink => {
+                if let Some(entry) = self.panes.active_pane().selected_entry().cloned() {
+                    if entry.kind == EntryKind::Symlink {
+                        if let Some(target) = entry.link_target {
+                            if target.is_dir() {
+                                let pane = self.panes.active_pane_mut();
+                                pane.push_history();
+                                pane.cwd = target;
+                                return Ok(vec![Command::DispatchAction(Action::Refresh)]);
+                            } else if target.is_file() {
+                                return Ok(vec![Command::DispatchAction(
+                                    Action::OpenSelectedInEditor,
+                                )]);
+                            } else {
+                                self.status_message =
+                                    format!("target does not exist: {}", target.display());
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        if matches!(
+            action,
+            Action::EditorMoveUp
+                | Action::EditorMoveDown
+                | Action::EditorMoveLeft
+                | Action::EditorMoveRight
+                | Action::EditorInsert(_)
+                | Action::EditorPaste
+                | Action::EditorBackspace
+                | Action::EditorNewline
+                | Action::EditorSearchNext
+                | Action::EditorSearchPrev
+                | Action::EditorReplaceNext
+                | Action::EditorReplaceAll
+                | Action::ToggleMarkdownPreview
+        ) {
+            let preview_height = self
+                .last_size
+                .map(|(_, h)| usize::from(h.saturating_sub(6) / 2).max(1))
+                .unwrap_or(12);
+            self.editor.sync_markdown_preview_to_cursor(preview_height);
+        }
+
+        Ok(commands)
+    }
+
+    /// Handles layout, theme, and view-toggle actions.
+    fn apply_layout(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let commands = Vec::new();
+        match action {
+            Action::OpenAboutDialog => {
+                self.overlay.open_about(DialogState::about(
+                    self.theme.preset.clone(),
+                    self.config_path.clone(),
+                ));
+                self.status_message = String::from("opened about");
+            }
+            Action::SetPaneLayout(layout) => {
+                self.panes.pane_layout = *layout;
+                self.config.pane_layout = *layout;
+                self.status_message = match layout {
+                    PaneLayout::SideBySide => String::from("layout set to side-by-side"),
+                    PaneLayout::Stacked => String::from("layout set to stacked"),
+                };
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::SetTheme(preset) => {
+                self.theme = ThemePalette::from_preset(*preset);
+                self.config.theme.preset = preset.as_str().to_string();
+                self.status_message = format!("theme set to {}", preset.as_str());
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::TogglePreviewPanel => {
+                self.config.preview_panel_open = self.preview.panel_open;
+                if self.preview.panel_open {
+                    let selected_file = self
+                        .panes
+                        .active_pane()
+                        .selected_entry()
+                        .filter(|entry| entry.kind == EntryKind::File)
+                        .map(|entry| entry.path.clone());
+                    if let Some(path) = selected_file {
+                        self.preview.request_debounced_preview(path);
+                    }
+                }
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            Action::ToggleEditorFullscreen => {
+                if self.editor.is_open() {
+                    self.editor_fullscreen = !self.editor_fullscreen;
+                    self.sync_editor_menu_mode();
+                    self.status_message = if self.editor_fullscreen {
+                        String::from("editor fullscreen enabled")
+                    } else {
+                        String::from("editor fullscreen disabled")
+                    };
+                }
+            }
+            Action::ToggleMarkdownPreview => {
+                if self.editor.is_markdown_file() {
+                    self.status_message = if self.editor.markdown_preview_visible {
+                        String::from("markdown preview shown")
+                    } else {
+                        String::from("markdown preview hidden")
+                    };
+                }
+            }
+            Action::ToggleHiddenFiles => {
+                self.status_message = if self.panes.active_pane().show_hidden {
+                    String::from("showing hidden files")
+                } else {
+                    String::from("hiding hidden files")
+                };
+            }
+            Action::Resize { width, height } => {
+                self.last_size = Some((*width, *height));
+                self.status_message = format!("resized to {width}x{height}");
+            }
             Action::ShrinkLeftPane => {
                 self.pane_split_ratio = self.pane_split_ratio.saturating_sub(5).max(20);
                 self.status_message = format!("pane split: {}%", self.pane_split_ratio);
@@ -863,6 +1280,25 @@ impl AppState {
             Action::ToggleDebugPanel => {
                 self.debug_visible = !self.debug_visible;
             }
+            Action::ToggleDetailsView => {
+                let new_state = !self.panes.active_pane().details_view;
+                self.panes.left.details_view = new_state;
+                self.panes.right.details_view = new_state;
+                self.status_message = if new_state {
+                    String::from("rich columns: enabled (both panes)")
+                } else {
+                    String::from("rich columns: hidden (both panes)")
+                };
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles all git-diff viewer actions.
+    fn apply_git_diff(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let commands = Vec::new();
+        match action {
             Action::ToggleGitDiff => {
                 if self.git_diff_active {
                     // Deactivate: clear all diff state
@@ -952,6 +1388,15 @@ impl AppState {
             Action::GitDiffSetViewport(height) => {
                 self.git_diff_viewport_height = *height;
             }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles the "open with" application menu.
+    fn apply_open_with(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let commands = Vec::new();
+        match action {
             Action::OpenOpenWithMenu => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
                     let ext = path
@@ -1044,6 +1489,90 @@ impl AppState {
             Action::CloseOpenWithMenu => {
                 self.overlay.close_all();
             }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles archive open and exit.
+    fn apply_archive(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::OpenArchive { path } => {
+                commands.push(Command::OpenArchive {
+                    path: path.clone(),
+                    inner: std::path::PathBuf::new(),
+                });
+                self.status_message = format!("opening archive {}", path.display());
+            }
+            Action::ExitArchive => {
+                self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
+                commands.push(Command::ScanPane {
+                    pane: self.panes.focused_pane_id(),
+                    path: self.panes.active_pane().cwd.clone(),
+                });
+                self.status_message = String::from("exited archive");
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles bookmark add, open, select, and delete.
+    fn apply_bookmarks(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::AddBookmark => {
+                let cwd = self.panes.active_pane().cwd.clone();
+                if self.config.bookmarks.contains(&cwd) {
+                    self.status_message = String::from("bookmark already exists");
+                } else {
+                    self.config.bookmarks.push(cwd.clone());
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    self.status_message = format!("bookmark added: {}", cwd.display());
+                }
+            }
+            Action::OpenBookmarks => {
+                self.overlay
+                    .open_bookmarks(crate::state::BookmarksState::new());
+                self.status_message = if self.config.bookmarks.is_empty() {
+                    String::from("no bookmarks saved yet")
+                } else {
+                    String::from("bookmarks opened")
+                };
+            }
+            Action::BookmarkSelect(index) => {
+                if let Some(path) = self.config.bookmarks.get(*index).cloned() {
+                    let pane = self.panes.focused_pane_id();
+                    self.overlay.close_all();
+                    commands.push(Command::ScanPane {
+                        pane,
+                        path: path.clone(),
+                    });
+                    self.status_message = format!("jumping to bookmark: {}", path.display());
+                }
+            }
+            Action::DeleteBookmark(index) => {
+                if *index < self.config.bookmarks.len() {
+                    let removed = self.config.bookmarks.remove(*index);
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    if let Some(bookmarks) = self.overlay.bookmarks_mut() {
+                        bookmarks.selection = bookmarks
+                            .selection
+                            .min(self.config.bookmarks.len().saturating_sub(1));
+                    }
+                    self.status_message = format!("bookmark removed: {}", removed.display());
+                }
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles directory diff mode toggle and sync.
+    fn apply_diff_mode(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
             Action::ToggleDiffMode => {
                 self.diff_mode = !self.diff_mode;
                 if self.diff_mode {
@@ -1116,68 +1645,15 @@ impl AppState {
                     self.status_message = String::from("enable diff mode (F10) first");
                 }
             }
-            Action::OpenShell => {
-                let path = self.panes.active_pane().cwd.clone();
-                commands.push(Command::OpenShell { path: path.clone() });
-                self.status_message = format!("opening shell in {}", path.display());
-            }
-            Action::OpenArchive { path } => {
-                commands.push(Command::OpenArchive {
-                    path: path.clone(),
-                    inner: std::path::PathBuf::new(),
-                });
-                self.status_message = format!("opening archive {}", path.display());
-            }
-            Action::ExitArchive => {
-                self.panes.active_pane_mut().mode = crate::pane::PaneMode::Real;
-                commands.push(Command::ScanPane {
-                    pane: self.panes.focused_pane_id(),
-                    path: self.panes.active_pane().cwd.clone(),
-                });
-                self.status_message = String::from("exited archive");
-            }
-            Action::AddBookmark => {
-                let cwd = self.panes.active_pane().cwd.clone();
-                if self.config.bookmarks.contains(&cwd) {
-                    self.status_message = String::from("bookmark already exists");
-                } else {
-                    self.config.bookmarks.push(cwd.clone());
-                    let _ = self.config.save(Path::new(&self.config_path));
-                    self.status_message = format!("bookmark added: {}", cwd.display());
-                }
-            }
-            Action::OpenBookmarks => {
-                self.overlay
-                    .open_bookmarks(crate::state::BookmarksState::new());
-                self.status_message = if self.config.bookmarks.is_empty() {
-                    String::from("no bookmarks saved yet")
-                } else {
-                    String::from("bookmarks opened")
-                };
-            }
-            Action::BookmarkSelect(index) => {
-                if let Some(path) = self.config.bookmarks.get(*index).cloned() {
-                    let pane = self.panes.focused_pane_id();
-                    self.overlay.close_all();
-                    commands.push(Command::ScanPane {
-                        pane,
-                        path: path.clone(),
-                    });
-                    self.status_message = format!("jumping to bookmark: {}", path.display());
-                }
-            }
-            Action::DeleteBookmark(index) => {
-                if *index < self.config.bookmarks.len() {
-                    let removed = self.config.bookmarks.remove(*index);
-                    let _ = self.config.save(Path::new(&self.config_path));
-                    if let Some(bookmarks) = self.overlay.bookmarks_mut() {
-                        bookmarks.selection = bookmarks
-                            .selection
-                            .min(self.config.bookmarks.len().saturating_sub(1));
-                    }
-                    self.status_message = format!("bookmark removed: {}", removed.display());
-                }
-            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles all file operation prompt actions (copy, move, delete, rename, collision).
+    fn apply_file_ops(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
             Action::OpenCopyPrompt => {
                 let marks: Vec<PathBuf> = {
                     let m = &self.panes.active_pane().marked;
@@ -1377,12 +1853,6 @@ impl AppState {
                 } else {
                     self.status_message = String::from("no item selected to rename");
                 }
-            }
-            Action::OpenGoToPrompt => {
-                let cwd = self.panes.active_pane().cwd.clone();
-                self.overlay
-                    .open_prompt(PromptState::new(PromptKind::GoTo, "Go to Path", cwd));
-                self.status_message = String::from("type an absolute or relative path");
             }
             Action::OpenBulkRenamePrompt => {
                 let marked: Vec<PathBuf> = {
@@ -1674,138 +2144,6 @@ impl AppState {
                     }
                 }
             }
-            Action::CloseEditor => {
-                if self.editor.is_dirty() {
-                    self.status_message =
-                        String::from("unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel");
-                } else if !self.editor.is_open() {
-                    self.editor_fullscreen = false;
-                    self.sync_editor_menu_mode();
-                }
-            }
-            Action::DiscardEditorChanges => {
-                self.editor_fullscreen = false;
-                self.sync_editor_menu_mode();
-                self.status_message = String::from("discarded editor changes");
-            }
-            Action::SettingsToggleCurrent => {
-                let (selection, active_tab) =
-                    if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                        (s.selection, s.active_tab)
-                    } else {
-                        return Ok(commands);
-                    };
-                let entries = self.settings_entries_for_tab(active_tab);
-                if let Some(entry) = entries.get(selection).cloned() {
-                    if matches!(entry.field, SettingsField::KeymapBinding { .. }) {
-                        // Begin rebind: enter key-capture mode for this entry.
-                        if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
-                            s.rebind_mode = Some(selection);
-                        }
-                        self.status_message = String::from("press new key combo (Esc to cancel)");
-                    } else {
-                        self.apply_settings_entry(entry);
-                    }
-                }
-            }
-            Action::SettingsMoveDown => {
-                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                    s.active_tab
-                } else {
-                    return Ok(commands);
-                };
-                let entries = self.settings_entries_for_tab(active_tab);
-                if !entries.is_empty() {
-                    if let Some(s) = self.settings_mut() {
-                        s.selection = (s.selection + 1) % entries.len();
-                    }
-                }
-            }
-            Action::SettingsMoveUp => {
-                let active_tab = if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                    s.active_tab
-                } else {
-                    return Ok(commands);
-                };
-                let entries = self.settings_entries_for_tab(active_tab);
-                if !entries.is_empty() {
-                    if let Some(s) = self.settings_mut() {
-                        s.selection = if s.selection == 0 {
-                            entries.len() - 1
-                        } else {
-                            s.selection - 1
-                        };
-                    }
-                }
-            }
-            Action::SettingsBeginRebind => {
-                if let Some(ModalState::Settings(s)) = &self.overlay.modal {
-                    let selection = s.selection;
-                    if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
-                        s.rebind_mode = Some(selection);
-                    }
-                    self.status_message = String::from("press new key combo (Esc to cancel)");
-                }
-            }
-            Action::SettingsCancelRebind => {
-                if let Some(ModalState::Settings(s)) = &mut self.overlay.modal {
-                    s.rebind_mode = None;
-                }
-                self.status_message = String::from("rebind cancelled");
-            }
-            Action::SettingsNextTab => {
-                if let Some(s) = self.settings_mut() {
-                    s.active_tab = s.active_tab.next();
-                    s.selection = 0;
-                }
-            }
-            Action::SettingsPrevTab => {
-                if let Some(s) = self.settings_mut() {
-                    s.active_tab = s.active_tab.prev();
-                    s.selection = 0;
-                }
-            }
-            Action::SettingsSelectTab(n) => {
-                if let Some(s) = self.settings_mut() {
-                    if let Some(tab) = crate::state::settings::SettingsTab::from_number(*n) {
-                        s.active_tab = tab;
-                        s.selection = 0;
-                    }
-                }
-            }
-            // Auto-preview after navigation
-            Action::MoveSelectionDown | Action::MoveSelectionUp | Action::EnterSelection => {
-                // Non-extend movement clears the range anchor.
-                self.panes.active_pane_mut().reset_mark_anchor();
-                if self.preview.should_auto_preview() {
-                    let selected_kind_and_path = self
-                        .panes
-                        .active_pane()
-                        .selected_entry()
-                        .map(|entry| (entry.kind, entry.path.clone()));
-                    if let Some((EntryKind::File, path)) = selected_kind_and_path {
-                        self.preview.request_debounced_preview(path);
-                    } else {
-                        self.preview.view = None;
-                    }
-                }
-            }
-            Action::ExtendSelectionDown => {
-                self.panes.active_pane_mut().extend_selection_down();
-            }
-            Action::ExtendSelectionUp => {
-                self.panes.active_pane_mut().extend_selection_up();
-            }
-            Action::ToggleDetailsView => {
-                let new_state = !self.panes.active_pane().details_view;
-                self.panes.left.details_view = new_state;
-                self.panes.right.details_view = new_state;
-                self.status_message = if new_state {
-                    String::from("rich columns: enabled (both panes)")
-                } else {
-                    String::from("rich columns: hidden (both panes)")
-                };
-            }
             Action::BeginInlineRename => {
                 // Pre-fill buffer with the current entry name (without trailing slash).
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
@@ -1848,202 +2186,8 @@ impl AppState {
                     }
                 }
             }
-            Action::InlineRenameType(ch) => {
-                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
-                    rs.buffer.push(*ch);
-                }
-            }
-            Action::InlineRenameBackspace => {
-                if let Some(ref mut rs) = self.panes.active_pane_mut().rename_state {
-                    rs.buffer.pop();
-                }
-            }
-            Action::CopyPathToClipboard => {
-                let marked = &self.panes.active_pane().marked;
-                if !marked.is_empty() {
-                    let text = marked
-                        .iter()
-                        .map(|p| p.display().to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    let count = marked.len();
-                    match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
-                        Ok(()) => {
-                            self.status_message = format!("copied {count} paths to clipboard");
-                        }
-                        Err(e) => {
-                            self.status_message = format!("clipboard error: {e}");
-                        }
-                    }
-                } else if let Some(path) = self.panes.active_pane().selected_path() {
-                    match arboard::Clipboard::new()
-                        .and_then(|mut cb| cb.set_text(path.display().to_string()))
-                    {
-                        Ok(()) => {
-                            self.status_message =
-                                format!("copied to clipboard: {}", path.display());
-                        }
-                        Err(e) => {
-                            self.status_message = format!("clipboard error: {e}");
-                        }
-                    }
-                }
-            }
-            Action::OpenSshConnect => {
-                self.overlay.open_ssh_connect(Default::default());
-                self.status_message = String::from("enter SSH connection details");
-            }
-            Action::SshConnectConfirm => {
-                if let Some(ModalState::SshConnect(state)) = &self.overlay.modal {
-                    let address = state.address.clone();
-                    let auth_method = state.auth_method;
-                    let credential = state.credential.clone();
-                    let pane = self.panes.focused_pane_id();
-                    commands.push(Command::ConnectSSH {
-                        address: address.clone(),
-                        auth_method,
-                        credential,
-                        pane,
-                        trust_unknown_host: false,
-                    });
-                    self.overlay.close_all();
-                    self.status_message = format!("connecting to {}", address);
-                }
-            }
-            Action::SshDialogInput(ch) => {
-                if let Some(state) = self.overlay.ssh_connect_mut() {
-                    match state.focused_field {
-                        crate::state::ssh::SshDialogField::Address => state.address.push(*ch),
-                        crate::state::ssh::SshDialogField::Credential => state.credential.push(*ch),
-                    }
-                    state.error = None;
-                }
-            }
-            Action::SshDialogBackspace => {
-                if let Some(state) = self.overlay.ssh_connect_mut() {
-                    match state.focused_field {
-                        crate::state::ssh::SshDialogField::Address => {
-                            state.address.pop();
-                        }
-                        crate::state::ssh::SshDialogField::Credential => {
-                            state.credential.pop();
-                        }
-                    }
-                    state.error = None;
-                }
-            }
-            Action::SshDialogToggleField => {
-                if let Some(state) = self.overlay.ssh_connect_mut() {
-                    state.focused_field = match state.focused_field {
-                        crate::state::ssh::SshDialogField::Address => {
-                            crate::state::ssh::SshDialogField::Credential
-                        }
-                        crate::state::ssh::SshDialogField::Credential => {
-                            crate::state::ssh::SshDialogField::Address
-                        }
-                    };
-                }
-            }
-            Action::SshDialogToggleAuthMethod => {
-                if let Some(state) = self.overlay.ssh_connect_mut() {
-                    state.auth_method = match state.auth_method {
-                        crate::state::ssh::SshAuthMethod::Password => {
-                            crate::state::ssh::SshAuthMethod::KeyFile
-                        }
-                        crate::state::ssh::SshAuthMethod::KeyFile => {
-                            crate::state::ssh::SshAuthMethod::Agent
-                        }
-                        crate::state::ssh::SshAuthMethod::Agent => {
-                            crate::state::ssh::SshAuthMethod::Password
-                        }
-                    };
-                }
-            }
-            Action::CloseSshConnect => {
-                self.overlay.close_all();
-                self.status_message = String::from("SSH connection cancelled");
-            }
-            Action::SshTrustAccept => {
-                if let Some(crate::state::overlay::ModalState::SshTrustPrompt {
-                    address,
-                    auth_method,
-                    credential,
-                    pane,
-                    ..
-                }) = self.overlay.modal.clone()
-                {
-                    self.overlay.close_all();
-                    self.status_message = format!("connecting to {} (trusted)…", address);
-                    commands.push(Command::ConnectSSH {
-                        address,
-                        auth_method,
-                        credential,
-                        pane,
-                        trust_unknown_host: true,
-                    });
-                }
-            }
-            Action::SshTrustReject => {
-                self.overlay.close_all();
-                self.status_message = String::from("SSH connection cancelled");
-            }
-            Action::ShowSymlinkTarget => {
-                if let Some(entry) = self.panes.active_pane().selected_entry() {
-                    if entry.kind == EntryKind::Symlink {
-                        self.status_message = match &entry.link_target {
-                            Some(t) => format!("symlink → {}", t.display()),
-                            None => String::from("symlink target unavailable"),
-                        };
-                    }
-                }
-            }
-            Action::FollowSymlink => {
-                if let Some(entry) = self.panes.active_pane().selected_entry().cloned() {
-                    if entry.kind == EntryKind::Symlink {
-                        if let Some(target) = entry.link_target {
-                            if target.is_dir() {
-                                let pane = self.panes.active_pane_mut();
-                                pane.push_history();
-                                pane.cwd = target;
-                                return Ok(vec![Command::DispatchAction(Action::Refresh)]);
-                            } else if target.is_file() {
-                                return Ok(vec![Command::DispatchAction(
-                                    Action::OpenSelectedInEditor,
-                                )]);
-                            } else {
-                                self.status_message =
-                                    format!("target does not exist: {}", target.display());
-                            }
-                        }
-                    }
-                }
-            }
             _ => {}
         }
-
-        if matches!(
-            action,
-            Action::EditorMoveUp
-                | Action::EditorMoveDown
-                | Action::EditorMoveLeft
-                | Action::EditorMoveRight
-                | Action::EditorInsert(_)
-                | Action::EditorPaste
-                | Action::EditorBackspace
-                | Action::EditorNewline
-                | Action::EditorSearchNext
-                | Action::EditorSearchPrev
-                | Action::EditorReplaceNext
-                | Action::EditorReplaceAll
-                | Action::ToggleMarkdownPreview
-        ) {
-            let preview_height = self
-                .last_size
-                .map(|(_, h)| usize::from(h.saturating_sub(6) / 2).max(1))
-                .unwrap_or(12);
-            self.editor.sync_markdown_preview_to_cursor(preview_height);
-        }
-
         Ok(commands)
     }
 
