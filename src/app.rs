@@ -122,9 +122,7 @@ impl App {
         {
             let hook_env = crate::hooks::HookEnv {
                 path: self.state.active_workspace().panes.active_pane().cwd.display().to_string(),
-                old_path: None,
-                pane: "left".into(),
-                version: String::new(),
+                ..crate::hooks::HookEnv::default()
             };
             let hook_cmds = crate::hooks::commands_for_event(
                 &self.state.config().hooks,
@@ -822,6 +820,7 @@ impl App {
             }
             Command::RunHook { command, env } => {
                 let result_tx = self.workers.result_tx.clone();
+                let workspace_id = self.state.active_workspace_index();
                 std::thread::spawn(move || {
                     let status = std::process::Command::new("sh")
                         .arg("-c")
@@ -830,7 +829,7 @@ impl App {
                         .status();
                     if let Err(e) = status {
                         let _ = result_tx.send(crate::jobs::JobResult::JobFailed {
-                            workspace_id: 0,
+                            workspace_id,
                             pane: crate::pane::PaneId::Left,
                             path: std::path::PathBuf::new(),
                             file_op: None,

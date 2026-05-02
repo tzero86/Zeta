@@ -825,9 +825,8 @@ impl AppState {
                             };
                             let env = crate::hooks::HookEnv {
                                 path: path.display().to_string(),
-                                old_path: None,
                                 pane: pane_label.into(),
-                                version: String::new(),
+                                ..crate::hooks::HookEnv::default()
                             };
                             crate::hooks::commands_for_event(
                                 &self.config.hooks,

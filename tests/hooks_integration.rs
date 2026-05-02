@@ -61,6 +61,72 @@ fn on_open_hook_command_built_correctly() {
 }
 
 #[test]
+fn on_open_hook_fires_via_apply_for_file_not_dir() {
+    use zeta::action::{Action, Command};
+    use zeta::config::HookEvent;
+    use zeta::fs::{EntryInfo, EntryKind};
+    use zeta::jobs::JobResult;
+    use zeta::pane::PaneId;
+
+    let cfg = config_with_hook(HookEvent::OnOpen, "echo open");
+    let mut state = make_state(cfg);
+
+    let base = PathBuf::from("/test");
+
+    // Populate left pane with a file entry so OpenSelectedInEditor has something to open.
+    let file_entry = EntryInfo {
+        name: "readme.md".into(),
+        path: base.join("readme.md"),
+        kind: EntryKind::File,
+        size_bytes: Some(42),
+        modified: None,
+        link_target: None,
+    };
+    state.apply_job_result_commands(JobResult::DirectoryScanned {
+        workspace_id: 0,
+        pane: PaneId::Left,
+        path: base.clone(),
+        entries: vec![file_entry],
+        elapsed_ms: 0,
+    });
+
+    // Positive case: file selected → on_open hook fires.
+    let cmds = state
+        .apply(Action::OpenSelectedInEditor)
+        .expect("apply should succeed");
+    let hook_cmds: Vec<_> = cmds
+        .iter()
+        .filter(|c| matches!(c, Command::RunHook { .. }))
+        .collect();
+    assert_eq!(hook_cmds.len(), 1, "expected 1 on_open RunHook for file entry");
+
+    // Negative case: directory selected → hook must NOT fire.
+    let dir_entry = EntryInfo {
+        name: "subdir".into(),
+        path: base.join("subdir"),
+        kind: EntryKind::Directory,
+        size_bytes: None,
+        modified: None,
+        link_target: None,
+    };
+    state.apply_job_result_commands(JobResult::DirectoryScanned {
+        workspace_id: 0,
+        pane: PaneId::Left,
+        path: base.clone(),
+        entries: vec![dir_entry],
+        elapsed_ms: 0,
+    });
+
+    let dir_cmds = state
+        .apply(Action::OpenSelectedInEditor)
+        .expect("apply should succeed");
+    assert!(
+        dir_cmds.iter().all(|c| !matches!(c, Command::RunHook { .. })),
+        "on_open hook must not fire for directory entry"
+    );
+}
+
+#[test]
 fn no_hooks_initial_commands_has_no_run_hook() {
     let mut state = make_state(AppConfig::default());
     let cmds = state.initial_commands();
