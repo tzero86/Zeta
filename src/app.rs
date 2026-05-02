@@ -796,6 +796,9 @@ impl App {
             Command::UpdateKeymap(new_keymap) => {
                 self.keymap = new_keymap;
             }
+            Command::RunHook { .. } => {
+                // placeholder — wired in Task 5
+            }
         }
 
         Ok(())

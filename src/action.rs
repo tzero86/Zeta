@@ -344,6 +344,13 @@ pub enum Command {
     SaveEditor,
     /// Replace the compiled keymap after a successful settings rebind.
     UpdateKeymap(crate::config::RuntimeKeymap),
+    /// Spawn a user-defined shell hook command as a detached process.
+    RunHook {
+        /// The shell command string to execute.
+        command: String,
+        /// Environment variable overrides passed to the child process.
+        env: Vec<(String, String)>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1230,7 +1237,7 @@ mod tests {
 
     use crate::config::RuntimeKeymap;
 
-    use super::{Action, KeyBinding, MenuId};
+    use super::{Action, Command, KeyBinding, MenuId};
 
     #[test]
     fn from_palette_key_event_handles_esc() {
@@ -1767,5 +1774,21 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
         assert_eq!(Action::from_wizard_key_event(key), None);
+    }
+
+    #[test]
+    fn run_hook_command_builds() {
+        let cmd = Command::RunHook {
+            command: String::from("echo hello"),
+            env: vec![(String::from("ZETA_PATH"), String::from("/home/user"))],
+        };
+        match cmd {
+            Command::RunHook { command, env } => {
+                assert_eq!(command, "echo hello");
+                assert_eq!(env.len(), 1);
+                assert_eq!(env[0].0, "ZETA_PATH");
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 }
