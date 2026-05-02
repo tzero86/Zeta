@@ -17,7 +17,10 @@ fn make_state(config: AppConfig) -> AppState {
 
 fn config_with_hook(event: HookEvent, command: &str) -> AppConfig {
     AppConfig {
-        hooks: vec![HookConfig { event, command: command.into() }],
+        hooks: vec![HookConfig {
+            event,
+            command: command.into(),
+        }],
         ..AppConfig::default()
     }
 }
@@ -40,7 +43,10 @@ fn on_open_hook_command_built_correctly() {
     use zeta::config::{HookConfig, HookEvent};
     use zeta::hooks::{commands_for_event, HookEnv};
 
-    let hooks = vec![HookConfig { event: HookEvent::OnOpen, command: "echo open".into() }];
+    let hooks = vec![HookConfig {
+        event: HookEvent::OnOpen,
+        command: "echo open".into(),
+    }];
     let env = HookEnv {
         path: "/home/user/file.txt".into(),
         old_path: None,
@@ -52,7 +58,9 @@ fn on_open_hook_command_built_correctly() {
     match &cmds[0] {
         Command::RunHook { command, env: e } => {
             assert_eq!(command, "echo open");
-            assert!(e.iter().any(|(k, v)| k == "ZETA_PATH" && v == "/home/user/file.txt"));
+            assert!(e
+                .iter()
+                .any(|(k, v)| k == "ZETA_PATH" && v == "/home/user/file.txt"));
             assert!(e.iter().any(|(k, v)| k == "ZETA_PANE" && v == "left"));
             assert!(!e.iter().any(|(k, _)| k == "ZETA_OLD_PATH"));
         }
@@ -98,7 +106,11 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
         .iter()
         .filter(|c| matches!(c, Command::RunHook { .. }))
         .collect();
-    assert_eq!(hook_cmds.len(), 1, "expected 1 on_open RunHook for file entry");
+    assert_eq!(
+        hook_cmds.len(),
+        1,
+        "expected 1 on_open RunHook for file entry"
+    );
 
     // Negative case: directory selected → hook must NOT fire.
     let dir_entry = EntryInfo {
@@ -121,7 +133,9 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
         .apply(Action::OpenSelectedInEditor)
         .expect("apply should succeed");
     assert!(
-        dir_cmds.iter().all(|c| !matches!(c, Command::RunHook { .. })),
+        dir_cmds
+            .iter()
+            .all(|c| !matches!(c, Command::RunHook { .. })),
         "on_open hook must not fire for directory entry"
     );
 }
@@ -131,7 +145,8 @@ fn no_hooks_initial_commands_has_no_run_hook() {
     let mut state = make_state(AppConfig::default());
     let cmds = state.initial_commands();
     assert!(
-        cmds.iter().all(|c| !matches!(c, zeta::action::Command::RunHook { .. })),
+        cmds.iter()
+            .all(|c| !matches!(c, zeta::action::Command::RunHook { .. })),
         "expected no RunHook commands with no hooks configured"
     );
 }
@@ -188,7 +203,9 @@ fn on_cd_hook_fires_on_directory_change_not_refresh() {
         elapsed_ms: 0,
     });
     assert!(
-        refresh_cmds.iter().all(|c| !matches!(c, Command::RunHook { .. })),
+        refresh_cmds
+            .iter()
+            .all(|c| !matches!(c, Command::RunHook { .. })),
         "expected no RunHook for directory refresh"
     );
 }

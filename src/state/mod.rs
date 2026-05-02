@@ -2763,7 +2763,10 @@ impl AppState {
     /// Like `apply_job_result` but also fires `on_cd` hooks when a pane
     /// navigates to a new directory (not a refresh of the same directory).
     pub fn apply_job_result_commands(&mut self, result: JobResult) -> Vec<Command> {
-        if let JobResult::DirectoryScanned { ref pane, ref path, .. } = result {
+        if let JobResult::DirectoryScanned {
+            ref pane, ref path, ..
+        } = result
+        {
             let pane = *pane;
             let is_refresh =
                 self.panes.pane(pane).cwd == *path && !self.panes.pane(pane).entries.is_empty();

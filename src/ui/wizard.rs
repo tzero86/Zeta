@@ -59,11 +59,20 @@ pub fn render_first_run_wizard(
 ) {
     frame.render_widget(Dim, area);
 
-    let width = (area.width * 6 / 10).max(60).min(area.width.saturating_sub(4));
-    let height = (area.height * 8 / 10).max(20).min(area.height.saturating_sub(4));
+    let width = (area.width * 6 / 10)
+        .max(60)
+        .min(area.width.saturating_sub(4));
+    let height = (area.height * 8 / 10)
+        .max(20)
+        .min(area.height.saturating_sub(4));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
-    let modal = Rect { x, y, width, height };
+    let modal = Rect {
+        x,
+        y,
+        width,
+        height,
+    };
 
     frame.render_widget(Clear, modal);
 
@@ -102,8 +111,7 @@ fn render_theme_picker(
     let items: Vec<ListItem> = WIZARD_THEMES
         .iter()
         .map(|(label, _)| {
-            ListItem::new(format!("  {label}  "))
-                .style(Style::default().fg(palette.text_primary))
+            ListItem::new(format!("  {label}  ")).style(Style::default().fg(palette.text_primary))
         })
         .collect();
 

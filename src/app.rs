@@ -121,7 +121,14 @@ impl App {
         // Fire on_exit hooks (fire-and-forget, best effort — may outlive Zeta).
         {
             let hook_env = crate::hooks::HookEnv {
-                path: self.state.active_workspace().panes.active_pane().cwd.display().to_string(),
+                path: self
+                    .state
+                    .active_workspace()
+                    .panes
+                    .active_pane()
+                    .cwd
+                    .display()
+                    .to_string(),
                 ..crate::hooks::HookEnv::default()
             };
             let hook_cmds = crate::hooks::commands_for_event(

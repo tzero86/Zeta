@@ -21,11 +21,7 @@ pub struct HookEnv {
 /// - `ZETA_OLD_PATH` — only when `old_path` is `Some`
 /// - `ZETA_PANE` — for `on_cd` and `on_open`
 /// - `ZETA_VERSION` — for `on_start`
-pub fn commands_for_event(
-    hooks: &[HookConfig],
-    event: HookEvent,
-    env: &HookEnv,
-) -> Vec<Command> {
+pub fn commands_for_event(hooks: &[HookConfig], event: HookEvent, env: &HookEnv) -> Vec<Command> {
     hooks
         .iter()
         .filter(|h| h.event == event)
@@ -72,7 +68,10 @@ mod tests {
 
     #[test]
     fn matching_hook_returns_command() {
-        let hooks = vec![HookConfig { event: HookEvent::OnCd, command: "echo cd".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnCd,
+            command: "echo cd".into(),
+        }];
         let env = HookEnv {
             path: "/home/user".into(),
             old_path: Some("/tmp".into()),
@@ -93,7 +92,10 @@ mod tests {
 
     #[test]
     fn non_matching_hook_skipped() {
-        let hooks = vec![HookConfig { event: HookEvent::OnOpen, command: "echo open".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnOpen,
+            command: "echo open".into(),
+        }];
         let env = HookEnv {
             path: "/home/user".into(),
             old_path: None,
@@ -107,8 +109,14 @@ mod tests {
     #[test]
     fn multiple_hooks_same_event_all_returned() {
         let hooks = vec![
-            HookConfig { event: HookEvent::OnCd, command: "echo first".into() },
-            HookConfig { event: HookEvent::OnCd, command: "echo second".into() },
+            HookConfig {
+                event: HookEvent::OnCd,
+                command: "echo first".into(),
+            },
+            HookConfig {
+                event: HookEvent::OnCd,
+                command: "echo second".into(),
+            },
         ];
         let env = HookEnv {
             path: "/tmp".into(),
@@ -122,7 +130,10 @@ mod tests {
 
     #[test]
     fn on_start_env_includes_version() {
-        let hooks = vec![HookConfig { event: HookEvent::OnStart, command: "echo start".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnStart,
+            command: "echo start".into(),
+        }];
         let env = HookEnv {
             path: "/home".into(),
             old_path: None,
@@ -142,7 +153,10 @@ mod tests {
 
     #[test]
     fn old_path_none_omitted_from_env() {
-        let hooks = vec![HookConfig { event: HookEvent::OnCd, command: "echo cd".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnCd,
+            command: "echo cd".into(),
+        }];
         let env = HookEnv {
             path: "/tmp".into(),
             old_path: None,
@@ -161,8 +175,14 @@ mod tests {
     #[test]
     fn commands_are_in_declaration_order() {
         let hooks = vec![
-            HookConfig { event: HookEvent::OnCd, command: "echo first".into() },
-            HookConfig { event: HookEvent::OnCd, command: "echo second".into() },
+            HookConfig {
+                event: HookEvent::OnCd,
+                command: "echo first".into(),
+            },
+            HookConfig {
+                event: HookEvent::OnCd,
+                command: "echo second".into(),
+            },
         ];
         let env = HookEnv {
             path: "/tmp".into(),
@@ -183,7 +203,10 @@ mod tests {
 
     #[test]
     fn on_cd_env_vars_correct() {
-        let hooks = vec![HookConfig { event: HookEvent::OnCd, command: "echo cd".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnCd,
+            command: "echo cd".into(),
+        }];
         let env = HookEnv {
             path: "/new".into(),
             old_path: Some("/old".into()),
@@ -205,7 +228,10 @@ mod tests {
 
     #[test]
     fn on_exit_env_has_no_extras() {
-        let hooks = vec![HookConfig { event: HookEvent::OnExit, command: "echo bye".into() }];
+        let hooks = vec![HookConfig {
+            event: HookEvent::OnExit,
+            command: "echo bye".into(),
+        }];
         let env = HookEnv {
             path: "/home".into(),
             old_path: None,
