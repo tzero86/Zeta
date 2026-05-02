@@ -60,9 +60,9 @@ They are tracked in CHANGELOG.md and the enhancements roadmap.
 - Annotated config generation — writes `~/.config/zeta/config.toml` with inline comments
 
 ### Shell Hook System
-- Configurable hooks that execute shell commands on file events (open, copy, move, delete, enter, exit, rename)
-- Per-event hook lists with `{file}`, `{dir}`, `{src}`, `{dst}` placeholders
-- Non-blocking execution; hooks run via worker thread without stalling the UI
+- Configurable hooks that execute shell commands on four lifecycle events: `on_cd`, `on_open`, `on_start`, `on_exit`
+- Context passed via environment variables: `ZETA_PATH` (always), `ZETA_OLD_PATH` (on_cd only), `ZETA_PANE`, `ZETA_VERSION` (on_start only)
+- Per-event hook lists; hooks run in config order via worker thread without stalling the UI
 
 ### Git Diff Viewer
 - Full-screen git diff view (`Ctrl+D`) — file list (38%) + unified diff content (62%)
