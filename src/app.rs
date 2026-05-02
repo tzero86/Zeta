@@ -118,6 +118,30 @@ impl App {
             }
         }
 
+        // Fire on_exit hooks (fire-and-forget, best effort — may outlive Zeta).
+        {
+            let hook_env = crate::hooks::HookEnv {
+                path: self
+                    .state
+                    .active_workspace()
+                    .panes
+                    .active_pane()
+                    .cwd
+                    .display()
+                    .to_string(),
+                ..crate::hooks::HookEnv::default()
+            };
+            let hook_cmds = crate::hooks::commands_for_event(
+                &self.state.config().hooks,
+                crate::config::HookEvent::OnExit,
+                &hook_env,
+                self.state.active_workspace_index(),
+            );
+            for cmd in hook_cmds {
+                let _ = self.execute_command_try(cmd);
+            }
+        }
+
         let session = crate::session::SessionState {
             active_workspace: Some(self.state.active_workspace_index()),
             workspaces: (0..self.state.workspace_count())
@@ -383,7 +407,10 @@ impl App {
                         } else {
                             None
                         };
-                    self.state.apply_job_result(other);
+                    let hook_cmds = self.state.apply_job_result_commands(other);
+                    for cmd in hook_cmds {
+                        self.execute_command_try(cmd)?;
+                    }
                     if let Some((workspace_id, pane)) = scanned_target {
                         self.post_scan_completed(workspace_id, pane)?;
                     }
@@ -641,7 +668,10 @@ impl App {
                             entries,
                             elapsed_ms: 0,
                         };
-                        self.state.apply_job_result(result);
+                        let hook_cmds = self.state.apply_job_result_commands(result);
+                        for cmd in hook_cmds {
+                            self.execute_command_try(cmd)?;
+                        }
                         self.post_scan_completed(workspace_id, pane)?;
                     } else {
                         self.workers
@@ -795,6 +825,30 @@ impl App {
             }
             Command::UpdateKeymap(new_keymap) => {
                 self.keymap = new_keymap;
+            }
+            Command::RunHook {
+                command,
+                env,
+                workspace_id,
+            } => {
+                let result_tx = self.workers.result_tx.clone();
+                std::thread::spawn(move || {
+                    let status = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&command)
+                        .envs(env)
+                        .status();
+                    if let Err(e) = status {
+                        let _ = result_tx.send(crate::jobs::JobResult::JobFailed {
+                            workspace_id,
+                            pane: crate::pane::PaneId::Left,
+                            path: std::path::PathBuf::new(),
+                            file_op: None,
+                            message: format!("hook failed: {e}"),
+                            elapsed_ms: 0,
+                        });
+                    }
+                });
             }
         }
 

@@ -472,6 +472,17 @@ impl AppState {
             use crate::state::wizard::WizardState;
             self.overlay.modal = Some(ModalState::FirstRunWizard(WizardState::new()));
         }
+        let hook_env = crate::hooks::HookEnv {
+            path: self.panes.active_pane().cwd.display().to_string(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            ..crate::hooks::HookEnv::default()
+        };
+        commands.extend(crate::hooks::commands_for_event(
+            &self.config.hooks,
+            crate::config::HookEvent::OnStart,
+            &hook_env,
+            self.active_workspace_idx,
+        ));
         commands
     }
 
@@ -804,10 +815,28 @@ impl AppState {
             Action::OpenSelectedInEditor => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
-                        commands.push(Command::OpenEditor {
-                            path: entry.path.clone(),
-                        });
-                        self.set_status(format!("opening {}", entry.path.display()));
+                        let path = entry.path.clone();
+                        commands.push(Command::OpenEditor { path: path.clone() });
+                        self.set_status(format!("opening {}", path.display()));
+                        let hook_cmds = {
+                            let pane_label = match self.panes.focus {
+                                crate::state::PaneFocus::Left
+                                | crate::state::PaneFocus::Preview => "left",
+                                crate::state::PaneFocus::Right => "right",
+                            };
+                            let env = crate::hooks::HookEnv {
+                                path: path.display().to_string(),
+                                pane: pane_label.into(),
+                                ..crate::hooks::HookEnv::default()
+                            };
+                            crate::hooks::commands_for_event(
+                                &self.config.hooks,
+                                crate::config::HookEvent::OnOpen,
+                                &env,
+                                self.active_workspace_idx,
+                            )
+                        };
+                        commands.extend(hook_cmds);
                     } else if entry.kind == EntryKind::Archive {
                         commands.push(Command::OpenArchive {
                             path: entry.path.clone(),
@@ -2731,6 +2760,46 @@ impl AppState {
             self.active_workspace_idx = previous_workspace;
             self.sync_editor_menu_mode();
         }
+    }
+
+    /// Like `apply_job_result` but also fires `on_cd` hooks when a pane
+    /// navigates to a new directory (not a refresh of the same directory).
+    pub fn apply_job_result_commands(&mut self, result: JobResult) -> Vec<Command> {
+        if let JobResult::DirectoryScanned {
+            ref pane,
+            ref path,
+            workspace_id,
+            ..
+        } = result
+        {
+            let pane = *pane;
+            let scanned_ws = self.workspace(workspace_id);
+            let is_refresh = scanned_ws.panes.pane(pane).cwd == *path
+                && !scanned_ws.panes.pane(pane).entries.is_empty();
+            if !is_refresh {
+                let pane_label = match pane {
+                    crate::pane::PaneId::Right => String::from("right"),
+                    _ => String::from("left"),
+                };
+                let old_path = scanned_ws.panes.pane(pane).cwd.display().to_string();
+                let cd_env = crate::hooks::HookEnv {
+                    path: path.display().to_string(),
+                    old_path: Some(old_path),
+                    pane: pane_label,
+                    ..crate::hooks::HookEnv::default()
+                };
+                let hook_cmds = crate::hooks::commands_for_event(
+                    &self.config.hooks,
+                    crate::config::HookEvent::OnCd,
+                    &cd_env,
+                    workspace_id,
+                );
+                self.apply_job_result(result);
+                return hook_cmds;
+            }
+        }
+        self.apply_job_result(result);
+        Vec::new()
     }
 
     fn apply_settings_entry(&mut self, entry: SettingsEntry) {

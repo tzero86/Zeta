@@ -11,8 +11,8 @@ use crate::state::menu::menu_items_for;
 use crate::state::prompt::PromptState;
 use crate::state::settings::SettingsState;
 use crate::state::ssh::SshConnectionState;
-use crate::state::wizard::WizardState;
 use crate::state::types::MenuItem;
+use crate::state::wizard::WizardState;
 
 /// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
 fn flyout_trigger(item: &MenuItem) -> Option<MenuId> {

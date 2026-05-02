@@ -344,6 +344,15 @@ pub enum Command {
     SaveEditor,
     /// Replace the compiled keymap after a successful settings rebind.
     UpdateKeymap(crate::config::RuntimeKeymap),
+    /// Spawn a user-defined shell hook command as a detached process.
+    RunHook {
+        /// Which workspace originated this hook (used to attribute `JobFailed` errors).
+        workspace_id: usize,
+        /// The raw argument forwarded to `sh -c`.
+        command: String,
+        /// Pre-computed `ZETA_*` environment variable pairs for this event.
+        env: Vec<(String, String)>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1230,7 +1239,7 @@ mod tests {
 
     use crate::config::RuntimeKeymap;
 
-    use super::{Action, KeyBinding, MenuId};
+    use super::{Action, Command, KeyBinding, MenuId};
 
     #[test]
     fn from_palette_key_event_handles_esc() {
@@ -1730,27 +1739,39 @@ mod tests {
     #[test]
     fn wizard_key_event_up_maps_to_move_up() {
         let key = KeyEvent::new(KeyCode::Up, KeyModifiers::NONE);
-        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardMoveUp));
+        assert_eq!(
+            Action::from_wizard_key_event(key),
+            Some(Action::WizardMoveUp)
+        );
     }
 
     #[test]
     fn wizard_key_event_enter_maps_to_confirm() {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
-        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardConfirm));
+        assert_eq!(
+            Action::from_wizard_key_event(key),
+            Some(Action::WizardConfirm)
+        );
     }
 
     #[test]
     fn wizard_key_event_down_maps_to_move_down() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
-        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardMoveDown));
+        assert_eq!(
+            Action::from_wizard_key_event(key),
+            Some(Action::WizardMoveDown)
+        );
     }
 
     #[test]
     fn wizard_key_event_esc_maps_to_close() {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
-        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardClose));
+        assert_eq!(
+            Action::from_wizard_key_event(key),
+            Some(Action::WizardClose)
+        );
     }
 
     #[test]
@@ -1759,7 +1780,10 @@ mod tests {
         let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
         let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
         assert_eq!(Action::from_wizard_key_event(k), Some(Action::WizardMoveUp));
-        assert_eq!(Action::from_wizard_key_event(j), Some(Action::WizardMoveDown));
+        assert_eq!(
+            Action::from_wizard_key_event(j),
+            Some(Action::WizardMoveDown)
+        );
     }
 
     #[test]
@@ -1767,5 +1791,27 @@ mod tests {
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
         let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
         assert_eq!(Action::from_wizard_key_event(key), None);
+    }
+
+    #[test]
+    fn run_hook_command_builds() {
+        let cmd = Command::RunHook {
+            workspace_id: 0,
+            command: String::from("echo hello"),
+            env: vec![(String::from("ZETA_PATH"), String::from("/home/user"))],
+        };
+        match cmd {
+            Command::RunHook {
+                workspace_id,
+                command,
+                env,
+            } => {
+                assert_eq!(workspace_id, 0);
+                assert_eq!(command, "echo hello");
+                assert_eq!(env.len(), 1);
+                assert_eq!(env[0].0, "ZETA_PATH");
+            }
+            _ => panic!("wrong variant"),
+        }
     }
 }

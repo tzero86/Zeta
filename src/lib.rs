@@ -8,6 +8,7 @@ pub mod finder;
 pub mod fs;
 pub mod git;
 pub mod highlight;
+pub mod hooks;
 pub mod icon;
 pub mod jobs;
 pub mod palette;
