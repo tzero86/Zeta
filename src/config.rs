@@ -1561,17 +1561,19 @@ mod tests {
     #[test]
     fn hook_config_round_trips() {
         use crate::config::{AppConfig, HookConfig, HookEvent};
-        let mut cfg = AppConfig::default();
-        cfg.hooks = vec![
-            HookConfig {
-                event: HookEvent::OnCd,
-                command: String::from("echo cd"),
-            },
-            HookConfig {
-                event: HookEvent::OnOpen,
-                command: String::from("echo open"),
-            },
-        ];
+        let cfg = AppConfig {
+            hooks: vec![
+                HookConfig {
+                    event: HookEvent::OnCd,
+                    command: String::from("echo cd"),
+                },
+                HookConfig {
+                    event: HookEvent::OnOpen,
+                    command: String::from("echo open"),
+                },
+            ],
+            ..Default::default()
+        };
         let text = generate_annotated_config(&cfg);
         let parsed: AppConfig = basic_toml::from_str(&text).expect("valid TOML");
         assert_eq!(parsed.hooks.len(), 2);

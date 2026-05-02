@@ -346,9 +346,9 @@ pub enum Command {
     UpdateKeymap(crate::config::RuntimeKeymap),
     /// Spawn a user-defined shell hook command as a detached process.
     RunHook {
-        /// The shell command string to execute.
+        /// The raw argument forwarded to `sh -c`.
         command: String,
-        /// Environment variable overrides passed to the child process.
+        /// Pre-computed `ZETA_*` environment variable pairs for this event.
         env: Vec<(String, String)>,
     },
 }
