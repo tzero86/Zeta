@@ -592,20 +592,22 @@ impl AppState {
         }
 
         match action {
-            _ if matches!(action,
+            _ if matches!(
+                action,
                 Action::SetPaneLayout(_)
-                | Action::TogglePreviewPanel
-                | Action::ToggleEditorFullscreen
-                | Action::ToggleMarkdownPreview
-                | Action::ToggleHiddenFiles
-                | Action::ShrinkLeftPane
-                | Action::GrowLeftPane
-                | Action::Resize { .. }
-                | Action::ToggleDebugPanel
-                | Action::ToggleDetailsView
-                | Action::OpenAboutDialog
-                | Action::SetTheme(_)
-            ) => {
+                    | Action::TogglePreviewPanel
+                    | Action::ToggleEditorFullscreen
+                    | Action::ToggleMarkdownPreview
+                    | Action::ToggleHiddenFiles
+                    | Action::ShrinkLeftPane
+                    | Action::GrowLeftPane
+                    | Action::Resize { .. }
+                    | Action::ToggleDebugPanel
+                    | Action::ToggleDetailsView
+                    | Action::OpenAboutDialog
+                    | Action::SetTheme(_)
+            ) =>
+            {
                 commands.extend(self.apply_layout(action)?);
             }
             Action::OpenPaneFilter => {
@@ -824,7 +826,8 @@ impl AppState {
                     | Action::OpenWithMoveDown
                     | Action::OpenWithConfirm
                     | Action::CloseOpenWithMenu
-            ) => {
+            ) =>
+            {
                 commands.extend(self.apply_open_with(action)?);
             }
             _ if matches!(action, Action::ToggleDiffMode | Action::DiffSyncToOther) => {
@@ -844,24 +847,27 @@ impl AppState {
                     | Action::OpenBookmarks
                     | Action::BookmarkSelect(_)
                     | Action::DeleteBookmark(_)
-            ) => {
+            ) =>
+            {
                 commands.extend(self.apply_bookmarks(action)?);
             }
             // File operation prompts: delegated to apply_file_ops
-            _ if matches!(action,
+            _ if matches!(
+                action,
                 Action::OpenCopyPrompt
-                | Action::OpenMovePrompt
-                | Action::OpenDeletePrompt
-                | Action::OpenPermanentDeletePrompt
-                | Action::OpenNewFilePrompt
-                | Action::OpenNewDirectoryPrompt
-                | Action::OpenRenamePrompt
-                | Action::OpenBulkRenamePrompt
-                | Action::PromptSubmit
-                | Action::BeginInlineRename
-                | Action::CancelInlineRename
-                | Action::ConfirmInlineRename
-            ) => {
+                    | Action::OpenMovePrompt
+                    | Action::OpenDeletePrompt
+                    | Action::OpenPermanentDeletePrompt
+                    | Action::OpenNewFilePrompt
+                    | Action::OpenNewDirectoryPrompt
+                    | Action::OpenRenamePrompt
+                    | Action::OpenBulkRenamePrompt
+                    | Action::PromptSubmit
+                    | Action::BeginInlineRename
+                    | Action::CancelInlineRename
+                    | Action::ConfirmInlineRename
+            ) =>
+            {
                 commands.extend(self.apply_file_ops(action)?);
             }
             Action::OpenGoToPrompt => {

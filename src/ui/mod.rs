@@ -525,13 +525,15 @@ fn render_status_bar(
             right_spans.push(Span::styled(
                 format!(" {} ", notification_msg),
                 Style::default()
-                    .fg(if matches!(state.update_state.status, UpdateStatus::Error(_)) {
-                        palette.accent_red
-                    } else if matches!(state.update_state.status, UpdateStatus::Available(_)) {
-                        palette.accent_peach
-                    } else {
-                        palette.accent_teal
-                    })
+                    .fg(
+                        if matches!(state.update_state.status, UpdateStatus::Error(_)) {
+                            palette.accent_red
+                        } else if matches!(state.update_state.status, UpdateStatus::Available(_)) {
+                            palette.accent_peach
+                        } else {
+                            palette.accent_teal
+                        },
+                    )
                     .bg(palette.status_bg),
             ));
         } else if state.update_state.is_update_available() {

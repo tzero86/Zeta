@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::time::{SystemTime, Instant};
+use std::time::{Instant, SystemTime};
 
 use crate::update::{Release, UpdateStatus};
 
