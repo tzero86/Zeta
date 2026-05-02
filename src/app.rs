@@ -118,6 +118,24 @@ impl App {
             }
         }
 
+        // Fire on_exit hooks (fire-and-forget, best effort — may outlive Zeta).
+        {
+            let hook_env = crate::hooks::HookEnv {
+                path: self.state.active_workspace().panes.active_pane().cwd.display().to_string(),
+                old_path: None,
+                pane: "left".into(),
+                version: String::new(),
+            };
+            let hook_cmds = crate::hooks::commands_for_event(
+                &self.state.config().hooks,
+                crate::config::HookEvent::OnExit,
+                &hook_env,
+            );
+            for cmd in hook_cmds {
+                let _ = self.execute_command_try(cmd);
+            }
+        }
+
         let session = crate::session::SessionState {
             active_workspace: Some(self.state.active_workspace_index()),
             workspaces: (0..self.state.workspace_count())
@@ -802,8 +820,25 @@ impl App {
             Command::UpdateKeymap(new_keymap) => {
                 self.keymap = new_keymap;
             }
-            Command::RunHook { .. } => {
-                // placeholder — wired in Task 5
+            Command::RunHook { command, env } => {
+                let result_tx = self.workers.result_tx.clone();
+                std::thread::spawn(move || {
+                    let status = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&command)
+                        .envs(env)
+                        .status();
+                    if let Err(e) = status {
+                        let _ = result_tx.send(crate::jobs::JobResult::JobFailed {
+                            workspace_id: 0,
+                            pane: crate::pane::PaneId::Left,
+                            path: std::path::PathBuf::new(),
+                            file_op: None,
+                            message: format!("hook failed: {e}"),
+                            elapsed_ms: 0,
+                        });
+                    }
+                });
             }
         }
 

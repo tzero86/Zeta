@@ -474,9 +474,8 @@ impl AppState {
         }
         let hook_env = crate::hooks::HookEnv {
             path: self.panes.active_pane().cwd.display().to_string(),
-            old_path: None,
-            pane: "left".into(),
             version: env!("CARGO_PKG_VERSION").into(),
+            ..crate::hooks::HookEnv::default()
         };
         commands.extend(crate::hooks::commands_for_event(
             &self.config.hooks,
@@ -815,10 +814,28 @@ impl AppState {
             Action::OpenSelectedInEditor => {
                 if let Some(entry) = self.panes.active_pane().selected_entry() {
                     if entry.kind == EntryKind::File {
-                        commands.push(Command::OpenEditor {
-                            path: entry.path.clone(),
-                        });
-                        self.set_status(format!("opening {}", entry.path.display()));
+                        let path = entry.path.clone();
+                        commands.push(Command::OpenEditor { path: path.clone() });
+                        self.set_status(format!("opening {}", path.display()));
+                        let hook_cmds = {
+                            let pane_label = match self.panes.focus {
+                                crate::state::PaneFocus::Left
+                                | crate::state::PaneFocus::Preview => "left",
+                                crate::state::PaneFocus::Right => "right",
+                            };
+                            let env = crate::hooks::HookEnv {
+                                path: path.display().to_string(),
+                                old_path: None,
+                                pane: pane_label.into(),
+                                version: String::new(),
+                            };
+                            crate::hooks::commands_for_event(
+                                &self.config.hooks,
+                                crate::config::HookEvent::OnOpen,
+                                &env,
+                            )
+                        };
+                        commands.extend(hook_cmds);
                     } else if entry.kind == EntryKind::Archive {
                         commands.push(Command::OpenArchive {
                             path: entry.path.clone(),
@@ -2744,33 +2761,35 @@ impl AppState {
         }
     }
 
-    /// Like `apply_job_result` but also fires `on_cd` hooks when the active pane
+    /// Like `apply_job_result` but also fires `on_cd` hooks when a pane
     /// navigates to a new directory (not a refresh of the same directory).
     pub fn apply_job_result_commands(&mut self, result: JobResult) -> Vec<Command> {
-        let before_cwd = self.panes.active_pane().cwd.clone();
-
-        self.apply_job_result(result);
-
-        let after_cwd = self.panes.active_pane().cwd.clone();
-
-        if after_cwd != before_cwd {
-            let pane_label = match self.panes.focus {
-                PaneFocus::Left | PaneFocus::Preview => "left",
-                PaneFocus::Right => "right",
-            };
-            let hook_env = crate::hooks::HookEnv {
-                path: after_cwd.display().to_string(),
-                old_path: Some(before_cwd.display().to_string()),
-                pane: pane_label.into(),
-                version: String::new(),
-            };
-            return crate::hooks::commands_for_event(
-                &self.config.hooks,
-                crate::config::HookEvent::OnCd,
-                &hook_env,
-            );
+        if let JobResult::DirectoryScanned { ref pane, ref path, .. } = result {
+            let pane = *pane;
+            let is_refresh =
+                self.panes.pane(pane).cwd == *path && !self.panes.pane(pane).entries.is_empty();
+            if !is_refresh {
+                let pane_label = match self.panes.focus {
+                    PaneFocus::Right => String::from("right"),
+                    _ => String::from("left"),
+                };
+                let old_path = self.panes.pane(pane).cwd.display().to_string();
+                let cd_env = crate::hooks::HookEnv {
+                    path: path.display().to_string(),
+                    old_path: Some(old_path),
+                    pane: pane_label,
+                    ..crate::hooks::HookEnv::default()
+                };
+                let hook_cmds = crate::hooks::commands_for_event(
+                    &self.config.hooks,
+                    crate::config::HookEvent::OnCd,
+                    &cd_env,
+                );
+                self.apply_job_result(result);
+                return hook_cmds;
+            }
         }
-
+        self.apply_job_result(result);
         Vec::new()
     }
 

@@ -507,6 +507,7 @@ pub struct WorkerChannels {
     pub dir_size_tx: Sender<DirSizeRequest>,
     pub update_check_tx: Sender<UpdateCheckRequest>,
     pub update_check_rx: Receiver<UpdateCheckResult>,
+    pub result_tx: Sender<JobResult>,
 }
 
 /// Spawn three dedicated background workers that all fan results into a single
@@ -1171,6 +1172,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             dir_size_tx,
             update_check_tx: update_check_tx_main,
             update_check_rx: update_check_rx_main,
+            result_tx,
         },
         result_rx,
         term_out_rx,
