@@ -17,6 +17,8 @@ pub struct UpdateState {
     pub install_on_exit: bool,
     /// Whether the on-exit update confirmation prompt is currently open.
     prompt_open: bool,
+    /// Whether the user explicitly declined the update prompt this session.
+    declined: bool,
 }
 
 impl Default for UpdateState {
@@ -31,6 +33,7 @@ impl Default for UpdateState {
             notification_shown_at: None,
             install_on_exit: false,
             prompt_open: false,
+            declined: false,
         }
     }
 }
@@ -84,9 +87,9 @@ impl UpdateState {
         }
     }
 
-    /// Returns true if an update is available and not yet scheduled.
+    /// Returns true if an update is available and not yet scheduled or declined.
     pub fn can_schedule_install(&self) -> bool {
-        matches!(self.status, UpdateStatus::Available(_)) && !self.install_on_exit
+        matches!(self.status, UpdateStatus::Available(_)) && !self.install_on_exit && !self.declined
     }
 
     /// Schedule install on exit and mark prompt closed.
@@ -105,9 +108,10 @@ impl UpdateState {
         self.prompt_open = true;
     }
 
-    /// Close the prompt without scheduling.
+    /// Close the prompt without scheduling and mark the update as declined for this session.
     pub fn hide_update_prompt(&mut self) {
         self.prompt_open = false;
+        self.declined = true;
     }
 }
 
@@ -150,6 +154,17 @@ mod tests {
         s.show_update_prompt();
         assert!(s.is_prompt_open());
         s.hide_update_prompt();
+        assert!(!s.is_prompt_open());
+    }
+
+    #[test]
+    fn decline_prevents_re_prompt_on_quit() {
+        let mut s = make_available();
+        assert!(s.can_schedule_install());
+        s.show_update_prompt();
+        s.hide_update_prompt(); // user pressed N/Esc
+                                // After declining, Quit must not be intercepted again
+        assert!(!s.can_schedule_install());
         assert!(!s.is_prompt_open());
     }
 }

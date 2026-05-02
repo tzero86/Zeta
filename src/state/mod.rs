@@ -2327,9 +2327,16 @@ impl AppState {
             }
             Action::UpdatePromptYes => {
                 self.update_state.schedule_install();
-                // Confirm always quits: either the user was already quitting (Quit intercept)
-                // or they chose on-demand install (which also exits to run cargo install).
-                self.should_quit = true;
+                // Respect unsaved-editor guard: if the editor is dirty, show the
+                // save/discard hint and let the user resolve it before quitting.
+                // install_on_exit is already set, so the next clean Quit will proceed.
+                if self.editor.is_dirty() {
+                    self.status_message = StatusMessage::info(String::from(
+                        "unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel",
+                    ));
+                } else {
+                    self.should_quit = true;
+                }
             }
             Action::UpdatePromptNo => {
                 self.update_state.hide_update_prompt();
