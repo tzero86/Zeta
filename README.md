@@ -181,7 +181,7 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 
 ### Markdown live preview
 - When editing a `.md` file the tools panel splits vertically — editor on the left, rendered preview on the right
-- Native ratatui 0.29 renderer: headings, bold, italic, inline code, fenced blocks, bullets, ordered lists, blockquotes, horizontal rules
+- Native ratatui renderer: headings, bold, italic, inline code, fenced blocks, bullets, ordered lists, blockquotes, horizontal rules
 - Preview updates on every keystroke — no background job, zero latency
 
 ### Preview panel
@@ -201,6 +201,22 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 - Navigate the file list with arrow keys / `j`/`k`, scroll diff content with `Page Up`/`Page Down`, or use `d` for vi-style page-down
 - `Tab` switches focus between the file list and diff panes
 - Press `Ctrl+D` again to return to normal dual-pane view
+
+### First-Run Wizard
+- On first launch (when no config file exists), Zeta greets you with an interactive welcome wizard
+- Scroll through all 9 built-in themes with a live preview rendered directly in the terminal — no config-file editing required
+- Completing the wizard writes a fully annotated `config.toml` with every available option documented inline
+- Press `Esc` to dismiss the wizard without writing any config; your chosen theme is only persisted when you confirm
+
+### Status Bar & Contextual Hints
+- Status messages are color-coded by severity: info (default), warning (yellow), and error (red)
+- Context-aware keyboard hints appear at the bottom of the active pane, showing only the actions relevant to what you are currently doing
+
+### Shell Hooks *(coming in v0.5)*
+- Define shell commands that fire automatically on Zeta lifecycle events
+- Supported events: `on_start`, `on_exit`, `on_cd` (directory change), `on_open` (file opened in editor)
+- Hooks run fire-and-forget in a background thread — they never block the UI; errors appear in the status bar
+- Environment variables are passed to every hook (`ZETA_PATH`, `ZETA_PANE`, `ZETA_VERSION`); `on_cd` also receives `ZETA_OLD_PATH`
 
 ### Navigation & UX
 - Menu bar with File, Navigate, View, Help menus (keyboard mnemonics + mouse click)
@@ -247,7 +263,7 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 | Crate | Purpose |
 |---|---|
 | `crossterm 0.28` | Terminal I/O, raw mode, mouse capture |
-| `ratatui 0.29` | Rendering and layout |
+| `ratatui 0.30` | Rendering and layout |
 | `ropey 1.6` | O(log n) editor buffer |
 | `syntect 5.3` | Syntax highlighting |
 | `crossbeam-channel 0.5` | Background worker messaging |
@@ -348,6 +364,16 @@ preview_panel_open = false
 
 # Auto-preview on cursor move
 preview_on_selection = true
+
+# Shell hooks — fire on lifecycle events (coming in v0.5)
+# Supported events: on_start | on_exit | on_cd | on_open
+# [[hooks]]
+# event = "on_cd"
+# command = "~/.config/zeta/hooks/on_cd.sh"
+#
+# [[hooks]]
+# event = "on_start"
+# command = "echo Zeta started"
 ```
 
 Access settings at runtime with `Ctrl+O` or via the View menu.
