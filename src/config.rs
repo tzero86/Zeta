@@ -296,8 +296,8 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
             HookEvent::OnExit => "on_exit",
         };
         hooks_toml.push_str(&format!(
-            "\n[[hooks]]\nevent = \"{event_str}\"\ncommand = \"{}\"\n",
-            esc(&hook.command)
+            "\n[[hooks]]\nevent = {event_str:?}\ncommand = {:?}\n",
+            hook.command
         ));
     }
 
@@ -1578,5 +1578,6 @@ mod tests {
         assert_eq!(parsed.hooks[0].event, HookEvent::OnCd);
         assert_eq!(parsed.hooks[0].command, "echo cd");
         assert_eq!(parsed.hooks[1].event, HookEvent::OnOpen);
+        assert_eq!(parsed.hooks[1].command, "echo open");
     }
 }
