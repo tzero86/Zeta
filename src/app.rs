@@ -85,87 +85,95 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let mut terminal = TerminalSession::enter()?;
+        // Run TUI in inner scope so terminal is fully restored before post-exit logic.
+        {
+            let mut terminal = TerminalSession::enter()?;
 
-        // Use halfblocks by default to avoid potential hangs with from_query_stdio().
-        // The query can block indefinitely in some terminal environments (e.g., WSL).
-        self.state.set_image_picker(Picker::halfblocks());
+            // Use halfblocks by default to avoid potential hangs with from_query_stdio().
+            // The query can block indefinitely in some terminal environments (e.g., WSL).
+            self.state.set_image_picker(Picker::halfblocks());
 
-        while !self.state.should_quit() {
-            // Increment pulse counter for update indicator animation (wraps 0-255).
-            self.state.update_pulse_frame = self.state.update_pulse_frame.wrapping_add(1);
+            while !self.state.should_quit() {
+                // Increment pulse counter for update indicator animation (wraps 0-255).
+                self.state.update_pulse_frame = self.state.update_pulse_frame.wrapping_add(1);
 
-            // Process events first; draw only when state actually changed.
-            self.process_next_event()?;
+                // Process events first; draw only when state actually changed.
+                self.process_next_event()?;
 
-            if self.state.needs_redraw() {
-                let mut cache = LayoutCache::default();
-                terminal.draw(|frame| {
-                    cache = ui::render(frame, &mut self.state);
-                })?;
-                self.layout_cache = cache;
-                // Propagate terminal panel size to the PTY worker when the layout changes.
-                if let Some(t_area) = cache.terminal_panel {
-                    let inner_rows = t_area.height.saturating_sub(1);
-                    let inner_cols = t_area.width;
-                    if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
-                        for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
-                            self.execute_command_try(cmd)?;
+                if self.state.needs_redraw() {
+                    let mut cache = LayoutCache::default();
+                    terminal.draw(|frame| {
+                        cache = ui::render(frame, &mut self.state);
+                    })?;
+                    self.layout_cache = cache;
+                    // Propagate terminal panel size to the PTY worker when the layout changes.
+                    if let Some(t_area) = cache.terminal_panel {
+                        let inner_rows = t_area.height.saturating_sub(1);
+                        let inner_cols = t_area.width;
+                        if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
+                            for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
+                                self.execute_command_try(cmd)?;
+                            }
                         }
                     }
+                    self.state.mark_drawn(); // clears needs_redraw
                 }
-                self.state.mark_drawn(); // clears needs_redraw
             }
-        }
 
-        // Fire on_exit hooks (fire-and-forget, best effort — may outlive Zeta).
-        {
-            let hook_env = crate::hooks::HookEnv {
-                path: self
-                    .state
-                    .active_workspace()
-                    .panes
-                    .active_pane()
-                    .cwd
-                    .display()
-                    .to_string(),
-                ..crate::hooks::HookEnv::default()
+            // Fire on_exit hooks (fire-and-forget, best effort — may outlive Zeta).
+            {
+                let hook_env = crate::hooks::HookEnv {
+                    path: self
+                        .state
+                        .active_workspace()
+                        .panes
+                        .active_pane()
+                        .cwd
+                        .display()
+                        .to_string(),
+                    ..crate::hooks::HookEnv::default()
+                };
+                let hook_cmds = crate::hooks::commands_for_event(
+                    &self.state.config().hooks,
+                    crate::config::HookEvent::OnExit,
+                    &hook_env,
+                    self.state.active_workspace_index(),
+                );
+                for cmd in hook_cmds {
+                    let _ = self.execute_command_try(cmd);
+                }
+            }
+
+            let session = crate::session::SessionState {
+                active_workspace: Some(self.state.active_workspace_index()),
+                workspaces: (0..self.state.workspace_count())
+                    .map(|workspace_id| {
+                        let workspace = self.state.workspace(workspace_id);
+                        crate::session::WorkspaceSessionState {
+                            left_cwd: Some(workspace.panes.left.cwd.clone()),
+                            right_cwd: Some(workspace.panes.right.cwd.clone()),
+                            left_sort: Some(workspace.panes.left.sort_mode),
+                            right_sort: Some(workspace.panes.right.sort_mode),
+                            left_hidden: workspace.panes.left.show_hidden,
+                            right_hidden: workspace.panes.right.show_hidden,
+                            layout: Some(workspace.panes.pane_layout),
+                            left_history: workspace.panes.left.history_back.clone(),
+                            right_history: workspace.panes.right.history_back.clone(),
+                        }
+                    })
+                    .collect(),
+                ..Default::default()
             };
-            let hook_cmds = crate::hooks::commands_for_event(
-                &self.state.config().hooks,
-                crate::config::HookEvent::OnExit,
-                &hook_env,
-                self.state.active_workspace_index(),
-            );
-            for cmd in hook_cmds {
-                let _ = self.execute_command_try(cmd);
-            }
-        }
+            let session_path = crate::session::SessionState::session_path(std::path::Path::new(
+                self.state.config_path(),
+            ));
+            let _ = session.save(&session_path); // non-fatal
+        } // terminal dropped here, raw mode restored
 
-        let session = crate::session::SessionState {
-            active_workspace: Some(self.state.active_workspace_index()),
-            workspaces: (0..self.state.workspace_count())
-                .map(|workspace_id| {
-                    let workspace = self.state.workspace(workspace_id);
-                    crate::session::WorkspaceSessionState {
-                        left_cwd: Some(workspace.panes.left.cwd.clone()),
-                        right_cwd: Some(workspace.panes.right.cwd.clone()),
-                        left_sort: Some(workspace.panes.left.sort_mode),
-                        right_sort: Some(workspace.panes.right.sort_mode),
-                        left_hidden: workspace.panes.left.show_hidden,
-                        right_hidden: workspace.panes.right.show_hidden,
-                        layout: Some(workspace.panes.pane_layout),
-                        left_history: workspace.panes.left.history_back.clone(),
-                        right_history: workspace.panes.right.history_back.clone(),
-                    }
-                })
-                .collect(),
-            ..Default::default()
-        };
-        let session_path = crate::session::SessionState::session_path(std::path::Path::new(
-            self.state.config_path(),
-        ));
-        let _ = session.save(&session_path); // non-fatal
+        // Post-exit logic: if update scheduled, run cargo install and relaunch.
+        if self.state.update_state.install_on_exit {
+            run_update_and_restart()?;
+        }
 
         Ok(())
     }
@@ -1183,6 +1191,56 @@ fn route_menu_bar_click(
     }
 
     None
+}
+
+fn run_update_and_restart() -> Result<()> {
+    println!();
+    println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
+    println!("   This may take a few minutes.");
+    println!();
+
+    let status = std::process::Command::new("cargo")
+        .args(["install", "--git", "https://github.com/tzero86/Zeta"])
+        .status()?;
+
+    if status.success() {
+        println!();
+        println!("✅ Update installed successfully!");
+        println!("   Relaunching Zeta...");
+        println!();
+        relaunch_self()?;
+    } else {
+        eprintln!();
+        eprintln!(
+            "❌ Update failed (cargo install exited with {:?})",
+            status.code()
+        );
+        eprintln!("   You can manually run: cargo install --git https://github.com/tzero86/Zeta");
+        eprintln!();
+    }
+
+    Ok(())
+}
+
+fn relaunch_self() -> Result<()> {
+    let current_exe = std::env::current_exe()?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(&current_exe)
+            .args(std::env::args().skip(1))
+            .exec(); // replaces the process image in-place (no-return on success)
+        return Err(anyhow::anyhow!("exec failed: {}", err));
+    }
+
+    #[cfg(not(unix))]
+    {
+        std::process::Command::new(&current_exe)
+            .args(std::env::args().skip(1))
+            .spawn()?;
+        Ok(())
+    }
 }
 
 struct TerminalSession {
