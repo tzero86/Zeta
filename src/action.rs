@@ -280,6 +280,12 @@ pub enum Action {
     GitDiffContentPageDown,
     /// Check for available updates to the application.
     CheckForUpdates,
+    /// User confirmed: install the available update on exit.
+    UpdatePromptYes,
+    /// User dismissed the update-on-exit prompt without installing.
+    UpdatePromptNo,
+    /// Install the available update immediately (on-demand from menu).
+    ApplyUpdate,
     /// Move the wizard selection cursor down one row (Down / j).
     WizardMoveDown,
     /// Move the wizard selection cursor up one row (Up / k).
