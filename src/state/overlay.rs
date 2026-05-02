@@ -857,13 +857,11 @@ impl OverlayState {
             Action::SettingsToggleCurrent => {
                 // Toggle logic needs full config context — handled in AppState::apply_view
             }
-            
+
             // ── Context Menu ─────────────────────────────────────────────────
             Action::ContextMenuMoveUp => {
                 if let Some(ModalState::ContextMenu {
-                    items,
-                    selection,
-                    ..
+                    items, selection, ..
                 }) = &mut self.modal
                 {
                     let n = items.len();
@@ -871,17 +869,19 @@ impl OverlayState {
                         return Ok(vec![]);
                     }
                     let mut s = selection.wrapping_sub(1).min(n - 1);
-                    while s < n && items[s].is_separator() {
+                    let mut iters = 0;
+                    while items[s].is_separator() && iters < n {
                         s = s.wrapping_sub(1).min(n - 1);
+                        iters += 1;
                     }
-                    *selection = s;
+                    if iters < n {
+                        *selection = s;
+                    }
                 }
             }
             Action::ContextMenuMoveDown => {
                 if let Some(ModalState::ContextMenu {
-                    items,
-                    selection,
-                    ..
+                    items, selection, ..
                 }) = &mut self.modal
                 {
                     let n = items.len();
@@ -889,10 +889,14 @@ impl OverlayState {
                         return Ok(vec![]);
                     }
                     let mut s = (*selection + 1) % n;
-                    while items[s].is_separator() {
+                    let mut iters = 0;
+                    while items[s].is_separator() && iters < n {
                         s = (s + 1) % n;
+                        iters += 1;
                     }
-                    *selection = s;
+                    if iters < n {
+                        *selection = s;
+                    }
                 }
             }
             Action::CloseContextMenu => {
