@@ -6,7 +6,7 @@ Dual-pane terminal file manager for developers. SSH, embedded terminal, git diff
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-blue)
 ![License](https://img.shields.io/github/license/tzero86/Zeta)
 
-<!-- TODO: record and commit assets/demo.gif — see docs/superpowers/specs/2026-05-02-adoption-push-design.md -->
+<!-- TODO: record ~30s demo and commit as assets/demo.gif (nav → Ctrl+P → F2 terminal → Ctrl+D git diff → ? cheatsheet) -->
 ![Zeta demo](assets/demo.gif)
 
 ```bash
