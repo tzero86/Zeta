@@ -884,6 +884,7 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshTrustPrompt) => Action::from_ssh_trust_key_event(key_event),
         FocusLayer::Modal(ModalKind::FirstRunWizard) => Action::from_wizard_key_event(key_event),
+        // TODO(Task 7): replace with dedicated Y/N routing for UpdatePromptYes / UpdatePromptNo.
         FocusLayer::Modal(ModalKind::UpdatePrompt) => Action::from_prompt_key_event(key_event),
         FocusLayer::PaneFilter => Action::from_pane_filter_key_event(key_event),
         FocusLayer::PaneInlineRename => Action::from_inline_rename_key_event(key_event),
