@@ -280,7 +280,9 @@ pub enum Action {
     GitDiffContentPageDown,
     /// Check for available updates to the application.
     CheckForUpdates,
+    /// Move the wizard selection cursor down one row (Down / j).
     WizardMoveDown,
+    /// Move the wizard selection cursor up one row (Up / k).
     WizardMoveUp,
     /// On ThemePicker: advance to cheatsheet. On Cheatsheet: finish wizard.
     WizardConfirm,
@@ -1199,7 +1201,7 @@ impl Action {
     }
 
     pub fn from_wizard_key_event(key_event: KeyEvent) -> Option<Self> {
-        use crossterm::event::{KeyCode, KeyModifiers};
+        use crossterm::event::KeyCode;
         match key_event.code {
             KeyCode::Up | KeyCode::Char('k') => Some(Self::WizardMoveUp),
             KeyCode::Down | KeyCode::Char('j') => Some(Self::WizardMoveDown),
@@ -1735,5 +1737,35 @@ mod tests {
     fn wizard_key_event_enter_maps_to_confirm() {
         let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
         assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardConfirm));
+    }
+
+    #[test]
+    fn wizard_key_event_down_maps_to_move_down() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let key = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardMoveDown));
+    }
+
+    #[test]
+    fn wizard_key_event_esc_maps_to_close() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let key = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(key), Some(Action::WizardClose));
+    }
+
+    #[test]
+    fn wizard_vim_keys_map_correctly() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE);
+        let j = KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(k), Some(Action::WizardMoveUp));
+        assert_eq!(Action::from_wizard_key_event(j), Some(Action::WizardMoveDown));
+    }
+
+    #[test]
+    fn wizard_unknown_key_returns_none() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let key = KeyEvent::new(KeyCode::Char('z'), KeyModifiers::NONE);
+        assert_eq!(Action::from_wizard_key_event(key), None);
     }
 }
