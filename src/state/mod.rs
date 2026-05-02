@@ -11,6 +11,7 @@ pub mod ssh;
 pub mod terminal;
 mod types;
 pub mod update_state;
+pub mod wizard;
 
 pub use editor_state::EditorState;
 pub use overlay::{ModalState, OverlayState};
