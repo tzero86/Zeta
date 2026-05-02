@@ -1976,7 +1976,7 @@ impl AppState {
 
     /// Handles layout, theme, and view-toggle actions.
     fn apply_layout(&mut self, action: &Action) -> Result<Vec<Command>> {
-        let mut commands = Vec::new();
+        let commands = Vec::new();
         match action {
             Action::OpenAboutDialog => {
                 self.overlay.open_about(DialogState::about(
