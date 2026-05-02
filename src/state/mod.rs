@@ -907,47 +907,14 @@ impl AppState {
             _ if matches!(action, Action::OpenArchive { .. } | Action::ExitArchive) => {
                 commands.extend(self.apply_archive(action)?);
             }
-            Action::AddBookmark => {
-                let cwd = self.panes.active_pane().cwd.clone();
-                if self.config.bookmarks.contains(&cwd) {
-                    self.status_message = String::from("bookmark already exists");
-                } else {
-                    self.config.bookmarks.push(cwd.clone());
-                    let _ = self.config.save(Path::new(&self.config_path));
-                    self.status_message = format!("bookmark added: {}", cwd.display());
-                }
-            }
-            Action::OpenBookmarks => {
-                self.overlay
-                    .open_bookmarks(crate::state::BookmarksState::new());
-                self.status_message = if self.config.bookmarks.is_empty() {
-                    String::from("no bookmarks saved yet")
-                } else {
-                    String::from("bookmarks opened")
-                };
-            }
-            Action::BookmarkSelect(index) => {
-                if let Some(path) = self.config.bookmarks.get(*index).cloned() {
-                    let pane = self.panes.focused_pane_id();
-                    self.overlay.close_all();
-                    commands.push(Command::ScanPane {
-                        pane,
-                        path: path.clone(),
-                    });
-                    self.status_message = format!("jumping to bookmark: {}", path.display());
-                }
-            }
-            Action::DeleteBookmark(index) => {
-                if *index < self.config.bookmarks.len() {
-                    let removed = self.config.bookmarks.remove(*index);
-                    let _ = self.config.save(Path::new(&self.config_path));
-                    if let Some(bookmarks) = self.overlay.bookmarks_mut() {
-                        bookmarks.selection = bookmarks
-                            .selection
-                            .min(self.config.bookmarks.len().saturating_sub(1));
-                    }
-                    self.status_message = format!("bookmark removed: {}", removed.display());
-                }
+            _ if matches!(
+                action,
+                Action::AddBookmark
+                    | Action::OpenBookmarks
+                    | Action::BookmarkSelect(_)
+                    | Action::DeleteBookmark(_)
+            ) => {
+                commands.extend(self.apply_bookmarks(action)?);
             }
             Action::OpenCopyPrompt => {
                 let marks: Vec<PathBuf> = {
@@ -2123,6 +2090,57 @@ impl AppState {
                     path: self.panes.active_pane().cwd.clone(),
                 });
                 self.status_message = String::from("exited archive");
+            }
+            _ => {}
+        }
+        Ok(commands)
+    }
+
+    /// Handles bookmark add, open, select, and delete.
+    fn apply_bookmarks(&mut self, action: &Action) -> Result<Vec<Command>> {
+        let mut commands = Vec::new();
+        match action {
+            Action::AddBookmark => {
+                let cwd = self.panes.active_pane().cwd.clone();
+                if self.config.bookmarks.contains(&cwd) {
+                    self.status_message = String::from("bookmark already exists");
+                } else {
+                    self.config.bookmarks.push(cwd.clone());
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    self.status_message = format!("bookmark added: {}", cwd.display());
+                }
+            }
+            Action::OpenBookmarks => {
+                self.overlay
+                    .open_bookmarks(crate::state::BookmarksState::new());
+                self.status_message = if self.config.bookmarks.is_empty() {
+                    String::from("no bookmarks saved yet")
+                } else {
+                    String::from("bookmarks opened")
+                };
+            }
+            Action::BookmarkSelect(index) => {
+                if let Some(path) = self.config.bookmarks.get(*index).cloned() {
+                    let pane = self.panes.focused_pane_id();
+                    self.overlay.close_all();
+                    commands.push(Command::ScanPane {
+                        pane,
+                        path: path.clone(),
+                    });
+                    self.status_message = format!("jumping to bookmark: {}", path.display());
+                }
+            }
+            Action::DeleteBookmark(index) => {
+                if *index < self.config.bookmarks.len() {
+                    let removed = self.config.bookmarks.remove(*index);
+                    let _ = self.config.save(Path::new(&self.config_path));
+                    if let Some(bookmarks) = self.overlay.bookmarks_mut() {
+                        bookmarks.selection = bookmarks
+                            .selection
+                            .min(self.config.bookmarks.len().saturating_sub(1));
+                    }
+                    self.status_message = format!("bookmark removed: {}", removed.display());
+                }
             }
             _ => {}
         }
