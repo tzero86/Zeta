@@ -1201,7 +1201,18 @@ fn run_update_and_restart() -> Result<()> {
 
     let status = std::process::Command::new("cargo")
         .args(["install", "--git", "https://github.com/tzero86/Zeta"])
-        .status()?;
+        .status()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!(
+                    "`cargo` was not found in PATH.\n\
+                     Install Rust from https://rustup.rs then run:\n\
+                     cargo install --git https://github.com/tzero86/Zeta"
+                )
+            } else {
+                anyhow::anyhow!("failed to run cargo install: {}", e)
+            }
+        })?;
 
     if status.success() {
         println!();
@@ -1211,12 +1222,13 @@ fn run_update_and_restart() -> Result<()> {
         relaunch_self()?;
     } else {
         eprintln!();
-        eprintln!(
-            "❌ Update failed (cargo install exited with {:?})",
-            status.code()
-        );
+        eprintln!("❌ Update failed (cargo install exited with {:?})", status.code());
         eprintln!("   You can manually run: cargo install --git https://github.com/tzero86/Zeta");
         eprintln!();
+        return Err(anyhow::anyhow!(
+            "cargo install failed with exit code {:?}",
+            status.code()
+        ));
     }
 
     Ok(())
