@@ -245,6 +245,8 @@ impl AppConfig {
 /// the user what every field does. Unlike `basic_toml::to_string`, this function
 /// adds inline `#` doc comments above each setting.
 pub fn generate_annotated_config(config: &AppConfig) -> String {
+    let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
+
     let icon_mode = match config.icon_mode {
         IconMode::Unicode => "unicode",
         IconMode::Ascii => "ascii",
@@ -286,6 +288,9 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
          # Open an embedded terminal pane on startup.\n\
          terminal_open_by_default = {terminal_open_by_default}\n\
          \n\
+         # Bookmark paths shown in the sidebar. Add full paths, one per line.\n\
+         bookmarks = []\n\
+         \n\
          # Check GitHub releases for updates when Zeta starts.\n\
          check_updates_on_startup = {check_updates_on_startup}\n\
          \n\
@@ -326,15 +331,15 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         preview_on_selection = config.preview_on_selection,
         terminal_open_by_default = config.terminal_open_by_default,
         check_updates_on_startup = config.check_updates_on_startup,
-        theme_preset = config.theme.preset,
-        status_bar_label = config.theme.status_bar_label,
-        quit = config.keymap.quit,
-        switch_pane = config.keymap.switch_pane,
-        refresh = config.keymap.refresh,
-        ws1 = config.keymap.workspace_1,
-        ws2 = config.keymap.workspace_2,
-        ws3 = config.keymap.workspace_3,
-        ws4 = config.keymap.workspace_4,
+        theme_preset = esc(&config.theme.preset),
+        status_bar_label = esc(&config.theme.status_bar_label),
+        quit = esc(&config.keymap.quit),
+        switch_pane = esc(&config.keymap.switch_pane),
+        refresh = esc(&config.keymap.refresh),
+        ws1 = esc(&config.keymap.workspace_1),
+        ws2 = esc(&config.keymap.workspace_2),
+        ws3 = esc(&config.keymap.workspace_3),
+        ws4 = esc(&config.keymap.workspace_4),
         tab_width = config.editor.tab_width,
         word_wrap = config.editor.word_wrap,
         openers = openers,
@@ -1495,5 +1500,14 @@ mod tests {
         let text = generate_annotated_config(&cfg);
         let result: Result<AppConfig, _> = basic_toml::from_str(&text);
         assert!(result.is_ok(), "generated config is not valid TOML: {:?}", result.err());
+    }
+
+    #[test]
+    fn annotated_config_escapes_special_chars() {
+        let mut cfg = AppConfig::default();
+        cfg.theme.status_bar_label = r#"it's "broken""#.to_string();
+        let text = generate_annotated_config(&cfg);
+        let result: Result<AppConfig, _> = basic_toml::from_str(&text);
+        assert!(result.is_ok(), "failed with special chars: {result:?}");
     }
 }
