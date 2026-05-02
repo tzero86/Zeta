@@ -804,6 +804,11 @@ impl AppState {
                 }
             }
             Action::Quit => {
+                // If an update is available and not yet scheduled, prompt the user first.
+                if self.update_state.can_schedule_install() {
+                    self.update_state.show_update_prompt();
+                    return Ok(vec![]);
+                }
                 if self.editor.is_dirty() {
                     self.status_message = StatusMessage::info(String::from(
                         "unsaved changes: Ctrl+S save, Ctrl+D discard, Esc cancel",
@@ -2312,6 +2317,17 @@ impl AppState {
             Action::WizardClose => {
                 self.cancel_wizard();
             }
+            Action::ApplyUpdate => {
+                if self.update_state.can_schedule_install() {
+                    self.update_state.show_update_prompt();
+                }
+            }
+            Action::UpdatePromptYes => {
+                self.update_state.schedule_install();
+            }
+            Action::UpdatePromptNo => {
+                self.update_state.hide_update_prompt();
+            }
             _ => {}
         }
         Ok(vec![])
@@ -2995,6 +3011,9 @@ impl AppState {
         }
         if self.destructive_confirm().is_some() {
             return FocusLayer::Modal(ModalKind::DestructiveConfirm);
+        }
+        if self.update_state.is_prompt_open() {
+            return FocusLayer::Modal(ModalKind::UpdatePrompt);
         }
         if self.is_prompt_open() {
             return FocusLayer::Modal(ModalKind::Prompt);
