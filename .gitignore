@@ -7,3 +7,4 @@ node_modules/
 .superpowers/
 screenshot.png
 .superpowers/
+graphify-out/cache/
