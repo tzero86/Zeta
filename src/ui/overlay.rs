@@ -969,6 +969,13 @@ pub fn render_cheatsheet(
                             ("Ctrl+R", "bulk rename marked"),
                         ],
                     },
+                    Section {
+                        title: "Context Menu",
+                        items: &[
+                            ("Right-click", "open context menu"),
+                            ("Menu / Shift+F10", "keyboard context menu"),
+                        ],
+                    },
                 ],
             ),
         };
@@ -1042,11 +1049,20 @@ pub fn render_context_menu(
     let width: u16 = 26;
     let height: u16 = items.len() as u16 + 2; // borders
 
-    // Clamp to terminal area, accounting for area offset
+    // Clamp to terminal area, accounting for area offset.
+    // u16::MAX is a sentinel meaning "center the menu" (used for keyboard-triggered open).
     let max_x = (area.x + area.width).saturating_sub(width);
     let max_y = (area.y + area.height).saturating_sub(height);
-    let x = pos.0.clamp(area.x, max_x);
-    let y = pos.1.clamp(area.y, max_y);
+    let x = if pos.0 == u16::MAX {
+        area.x + area.width.saturating_sub(width) / 2
+    } else {
+        pos.0.clamp(area.x, max_x)
+    };
+    let y = if pos.1 == u16::MAX {
+        area.y + area.height.saturating_sub(height) / 2
+    } else {
+        pos.1.clamp(area.y, max_y)
+    };
     let popup_area = Rect {
         x,
         y,

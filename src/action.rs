@@ -959,6 +959,16 @@ impl Action {
         {
             return Some(Self::ToggleCheatsheet);
         }
+        // Menu key or Shift+F10: keyboard shortcut for context menu (fallback when
+        // right-click is intercepted by the terminal emulator, e.g. Windows Terminal).
+        if key_event.code == KeyCode::Menu
+            || (key_event.code == KeyCode::F(10) && key_event.modifiers == KeyModifiers::SHIFT)
+        {
+            return Some(Self::OpenContextMenu {
+                x: u16::MAX,
+                y: u16::MAX,
+            });
+        }
         // Delegate remaining keys to the comprehensive fallback handler.
         Self::from_key_event_with_settings(key_event, keymap)
     }

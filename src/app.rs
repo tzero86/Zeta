@@ -1719,4 +1719,36 @@ mod tests {
         );
         assert_eq!(action, Some(Action::EditorOpenSearch));
     }
+
+    #[test]
+    fn route_mouse_right_click_in_pane_opens_context_menu() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Right),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, Some(Action::OpenContextMenu { x: 10, y: 5 }));
+    }
+
+    #[test]
+    fn route_mouse_right_click_in_modal_does_nothing() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Right),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Editor,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, None);
+    }
 }
