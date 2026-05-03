@@ -8,3 +8,8 @@ node_modules/
 screenshot.png
 .superpowers/
 graphify-out/cache/
+
+# TUI test framework
+tui-tests/node_modules/
+tui-tests/.tui-test/
+tui-traces/
