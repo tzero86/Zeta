@@ -6,6 +6,8 @@ Integration tests for Zeta's terminal UI using [**@microsoft/tui-test**](https:/
 
 - Node.js 18+ (22 recommended)
 - A built `zeta` binary (debug or release)
+- A POSIX-compatible shell — the test isolation wrapper (`zeta-wrapper.sh`) uses `bash` and `mktemp`.
+  On Windows, run tests inside **WSL** or **Git Bash**.
 
 ## Setup
 
@@ -65,6 +67,11 @@ ZETA_BIN=../target/debug/zeta npx tui-test
 | `navigation.test.ts` | Tab pane switch, arrow key movement, Backspace up-dir, Shift+F10 context menu |
 | `cheatsheet.test.ts` | `?` opens overlay, correct section titles, Esc closes, toggle behavior |
 | `editor.test.ts` | F4 opens editor, Esc returns to file manager, editor cheatsheet |
+| `filter.test.ts` | Sort cycling (`s`), pane filter (`/`), file marks (`Space`) |
+| `files.test.ts` | F5 copy dialog, F7 new dir dialog, F8 delete dialog, `r` rename |
+| `overlays.test.ts` | Ctrl+P file finder, Shift+P command palette, F1 help, Ctrl+O settings, bookmarks |
+| `workspaces.test.ts` | Alt+1/2/3 workspace tab switching |
+| `preview.test.ts` | F3 opens preview panel, F3 twice closes it |
 
 ## Fixtures
 

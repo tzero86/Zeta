@@ -1,9 +1,19 @@
 import { defineConfig } from "@microsoft/tui-test";
 import path from "path";
+import fs from "fs";
 
-// tui-test compiles this config into `.tui-test/cache/` before running.
-// Use process.cwd() (the tui-tests/ directory) to build absolute paths.
-const repoRoot = path.resolve(process.cwd(), "..");
+// Walk up from dir until we find Cargo.toml, which marks the repo root.
+// This makes repo-root detection independent of the CWD at invocation time.
+function findRepoRoot(dir: string): string {
+  let current = dir;
+  while (true) {
+    if (fs.existsSync(path.join(current, "Cargo.toml"))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) throw new Error("Could not find repo root (no Cargo.toml found)");
+    current = parent;
+  }
+}
+const repoRoot = findRepoRoot(process.cwd());
 
 // Resolve the zeta binary path.
 // Override with ZETA_BIN env var, e.g.: ZETA_BIN=/abs/path/to/zeta npx tui-test

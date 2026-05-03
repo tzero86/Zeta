@@ -4,6 +4,8 @@
 # A minimal valid config is written so Zeta skips the first-run wizard.
 ZETA_CONFIG="$(mktemp /tmp/zeta-test-XXXXXX.toml)"
 export ZETA_CONFIG
+# Clean up the temp config if exec fails (exec success replaces this shell, trap won't run then)
+trap 'rm -f "$ZETA_CONFIG"' EXIT
 
 cat > "$ZETA_CONFIG" <<'EOF'
 [theme]

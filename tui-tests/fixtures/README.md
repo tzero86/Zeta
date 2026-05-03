@@ -1,1 +1,3 @@
-# Test Fixture\nThis file is used by tui-tests.
+# Test Fixture
+
+This file is used by tui-tests.

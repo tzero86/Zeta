@@ -2,14 +2,12 @@
 // and check that basic editor keybindings are reachable.
 import { test, expect } from "@microsoft/tui-test";
 import path from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Navigate the active pane to the fixtures directory (contains known text
 // files) using Alt+G (GoTo prompt), then select README.md via arrow key.
 async function navigateToFixtures(terminal: any) {
-  const fixturesPath = path.join(__dirname, "fixtures");
+  // process.cwd() is always the tui-tests/ directory (npm test runs from there)
+  const fixturesPath = path.resolve(process.cwd(), "fixtures");
   // Alt+G opens the GoTo path prompt
   terminal.keyPress("g", { alt: true });
   await expect(terminal.getByText("Go to Path")).toBeVisible();
