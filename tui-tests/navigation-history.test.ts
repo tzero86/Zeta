@@ -1,39 +1,61 @@
-// Navigation history tests: Left arrow (back) and Right arrow (forward).
+// Navigation history tests: Alt+Left (back) and Alt+Right (forward).
+// Plain Left maps to NavigateToParent; history navigation requires Alt+Left/Right.
 import { test, expect } from "@microsoft/tui-test";
+import path from "path";
 
-test("Left arrow navigates back in directory history", async ({ terminal }) => {
+// ESC-prefixed arrow sequences: the standard terminal encoding for Alt+arrow.
+const ALT_LEFT = "\x1b\x1b[D";
+const ALT_RIGHT = "\x1b\x1b[C";
+
+async function navigateToFixtures(terminal: any) {
+  const fixturesPath = path.resolve(process.cwd(), "fixtures");
+  terminal.keyPress("g", { alt: true });
+  await expect(terminal.getByText("Go to Path")).toBeVisible();
+  terminal.keyPress("u", { ctrl: true });
+  terminal.write(fixturesPath);
+  terminal.keyPress("Enter");
+  await expect(terminal.getByText("README.md", { strict: false })).toBeVisible();
+}
+
+test("Alt+Left navigates back in directory history", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
 
-  // Navigate into a subdirectory first (Enter on first entry after ../)
+  // Navigate to fixtures dir (has README.md and documents/ subdirectory).
+  await navigateToFixtures(terminal);
+
+  // Move into documents/ (first entry after ../ in fixtures).
   terminal.keyDown(1);
   terminal.keyPress("Enter");
+  await expect(terminal.getByText("note1.txt", { strict: false })).toBeVisible();
 
-  // Go back with Left arrow (keyLeft is the correct method for arrow keys)
-  terminal.keyLeft(1);
-
-  // UI should remain stable — we're checking for no crash
-  await expect(terminal.getByText("[Z]eta")).toBeVisible();
-  await expect(terminal.getByText("F5")).toBeVisible();
+  // Alt+Left → NavigateBack → should return to fixtures showing README.md.
+  terminal.write(ALT_LEFT);
+  await expect(terminal.getByText("README.md", { strict: false })).toBeVisible();
 });
 
-test("Right arrow navigates forward after going back", async ({ terminal }) => {
+test("Alt+Right navigates forward after going back", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
 
-  // Navigate forward, then back, then forward again
+  // Navigate to fixtures, then into documents/, then back.
+  await navigateToFixtures(terminal);
   terminal.keyDown(1);
   terminal.keyPress("Enter");
-  terminal.keyLeft(1);
-  terminal.keyRight(1);
+  await expect(terminal.getByText("note1.txt", { strict: false })).toBeVisible();
 
-  await expect(terminal.getByText("[Z]eta")).toBeVisible();
+  terminal.write(ALT_LEFT);
+  await expect(terminal.getByText("README.md", { strict: false })).toBeVisible();
+
+  // Alt+Right → NavigateForward → back to documents/, showing note1.txt again.
+  terminal.write(ALT_RIGHT);
+  await expect(terminal.getByText("note1.txt", { strict: false })).toBeVisible();
 });
 
-test("Left arrow on history root does not crash", async ({ terminal }) => {
+test("Alt+Left with no history does not crash", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
 
-  // Press Left at the very start — no history yet, should no-op
-  terminal.keyLeft(1);
-  terminal.keyLeft(1);
+  // At startup history stack is empty; Alt+Left should be a no-op.
+  terminal.write(ALT_LEFT);
+  terminal.write(ALT_LEFT);
 
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
   await expect(terminal.getByText("F5")).toBeVisible();

@@ -36,20 +36,25 @@ test("grow then shrink returns to stable layout", async ({ terminal }) => {
 test("multiple grows do not crash at boundary", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
 
-  // Grow many times — should clamp at maximum, not panic
-  for (let i = 0; i < 10; i++) {
+  // Grow 6 times from 50% → clamps at 80%.  State emits "pane split: 80%".
+  for (let i = 0; i < 8; i++) {
     terminal.write("+");
   }
 
-  await expect(terminal.getByText("[Z]eta")).toBeVisible();
+  await expect(
+    terminal.getByText("pane split: 80%", { strict: false })
+  ).toBeVisible();
 });
 
 test("multiple shrinks do not crash at boundary", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
 
-  for (let i = 0; i < 10; i++) {
+  // Shrink 6 times from 50% → clamps at 20%.  State emits "pane split: 20%".
+  for (let i = 0; i < 8; i++) {
     terminal.write("_");
   }
 
-  await expect(terminal.getByText("[Z]eta")).toBeVisible();
+  await expect(
+    terminal.getByText("pane split: 20%", { strict: false })
+  ).toBeVisible();
 });

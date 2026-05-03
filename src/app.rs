@@ -874,6 +874,8 @@ fn route_key_event(
     use crossterm::event::{KeyCode, KeyModifiers};
 
     let alt_f3 = key_event.code == KeyCode::F(3) && key_event.modifiers == KeyModifiers::ALT;
+    let alt_p = matches!(key_event.code, KeyCode::Char('p') | KeyCode::Char('P'))
+        && key_event.modifiers == KeyModifiers::ALT;
     match focus {
         FocusLayer::Modal(ModalKind::Palette) => Action::from_palette_key_event(key_event),
         FocusLayer::Modal(ModalKind::Collision) => Action::from_collision_key_event(key_event),
@@ -917,7 +919,7 @@ fn route_key_event(
         FocusLayer::Preview => Action::from_preview_key_event(key_event),
         FocusLayer::Terminal => Action::from_terminal_key_event(key_event),
         FocusLayer::MarkdownPreview => {
-            if is_preview_open && alt_f3 {
+            if is_preview_open && (alt_f3 || alt_p) {
                 return Some(Action::FocusPreviewPanel);
             }
             Action::from_markdown_preview_key_event(key_event)
@@ -925,7 +927,7 @@ fn route_key_event(
                 .or_else(|| Action::from_pane_key_event(key_event, keymap))
         }
         FocusLayer::Editor => {
-            if is_preview_open && alt_f3 {
+            if is_preview_open && (alt_f3 || alt_p) {
                 return Some(Action::FocusPreviewPanel);
             }
             Action::from_editor_key_event(key_event, keymap)
@@ -936,7 +938,7 @@ fn route_key_event(
         FocusLayer::GitDiffContent => Action::from_git_diff_content_key_event(&key_event)
             .or_else(|| Action::from_pane_key_event(key_event, keymap)),
         FocusLayer::Pane => {
-            if is_preview_open && alt_f3 {
+            if is_preview_open && (alt_f3 || alt_p) {
                 return Some(Action::FocusPreviewPanel);
             }
             Action::from_pane_key_event(key_event, keymap)

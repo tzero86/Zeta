@@ -22,11 +22,14 @@ test("Ctrl+S saves the file from the editor", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
   await openReadmeInEditor(terminal);
 
-  // Ctrl+S triggers SaveEditor
+  // Type a space to make the buffer dirty, then save.
+  terminal.write(" ");
   terminal.keyPress("s", { ctrl: true });
 
-  // Should not crash; editor remains open
-  await expect(terminal.getByText("Editor")).toBeVisible();
+  // SaveEditor sets status "saved editor buffer <path>" when buffer is dirty.
+  await expect(
+    terminal.getByText("saved editor buffer", { strict: false })
+  ).toBeVisible();
 });
 
 test("Ctrl+F opens the inline search bar in the editor", async ({
@@ -47,27 +50,35 @@ test("Ctrl+Z undoes the last edit in the editor", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
   await openReadmeInEditor(terminal);
 
-  // Type some text then undo it
-  terminal.write("x");
+  // Type a distinctive string, verify it appears, then undo.
+  terminal.write("ZZZTESTUNDO");
+  await expect(
+    terminal.getByText("ZZZTESTUNDO", { strict: false })
+  ).toBeVisible();
+
   terminal.keyPress("z", { ctrl: true });
 
-  // Editor should still be open and stable
-  await expect(terminal.getByText("Editor")).toBeVisible();
+  // After undo the typed text should no longer be in the buffer.
+  await expect(
+    terminal.getByText("ZZZTESTUNDO", { strict: false })
+  ).not.toBeVisible();
 });
 
 test("F11 toggles editor fullscreen mode", async ({ terminal }) => {
   await expect(terminal.getByText("[Z]eta")).toBeVisible();
   await openReadmeInEditor(terminal);
 
-  // F11 maps to ToggleEditorFullscreen
+  // F11 maps to ToggleEditorFullscreen; status shows "editor fullscreen enabled".
   terminal.keyPress("F11");
+  await expect(
+    terminal.getByText("editor fullscreen enabled", { strict: false })
+  ).toBeVisible();
 
-  // Editor should still be visible in fullscreen
-  await expect(terminal.getByText("Editor")).toBeVisible();
-
-  // Toggle back
+  // Toggle back; status shows "editor fullscreen disabled".
   terminal.keyPress("F11");
-  await expect(terminal.getByText("Editor")).toBeVisible();
+  await expect(
+    terminal.getByText("editor fullscreen disabled", { strict: false })
+  ).toBeVisible();
 });
 
 test("editor search can be dismissed with Esc", async ({ terminal }) => {

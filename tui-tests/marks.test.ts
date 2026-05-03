@@ -21,8 +21,8 @@ test("marking multiple files shows increasing mark count", async ({
   terminal.keyDown(1);
   terminal.keyPress(" "); // mark second
 
-  // Two marks exist; › * should still be visible
-  await expect(terminal.getByText("›*")).toBeVisible();
+  // Status bar renders " ✦ 2 " when two items are marked.
+  await expect(terminal.getByText("✦ 2", { strict: false })).toBeVisible();
 });
 
 test("Shift+M clears all marks", async ({ terminal }) => {
