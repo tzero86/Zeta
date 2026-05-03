@@ -61,6 +61,8 @@ ZETA_BIN=../target/debug/zeta npx tui-test
 
 ## Test Files
 
+### Phase 1 — Core Features
+
 | File | What it covers |
 |------|----------------|
 | `smoke.test.ts` | App starts, dual-pane UI renders, F-key bar visible, Ctrl+Q quits |
@@ -71,7 +73,20 @@ ZETA_BIN=../target/debug/zeta npx tui-test
 | `files.test.ts` | F5 copy dialog, F7 new dir dialog, F8 delete dialog, `r` rename |
 | `overlays.test.ts` | Ctrl+P file finder, Shift+P command palette, F1 help, Ctrl+O settings, bookmarks |
 | `workspaces.test.ts` | Alt+1/2/3 workspace tab switching |
-| `preview.test.ts` | F3 opens preview panel, F3 twice closes it |
+| `preview.test.ts` | F3 opens/closes preview panel |
+
+### Phase 2 — Extended Coverage
+
+| File | What it covers |
+|------|----------------|
+| `terminal-panel.test.ts` | F2 / Ctrl+\\ toggle embedded terminal panel |
+| `git-diff.test.ts` | Ctrl+D toggle git diff panel |
+| `bookmarks.test.ts` | Ctrl+B add bookmark, Navigate menu bookmark list, Esc dismiss |
+| `pane-resize.test.ts` | `+` grow / `_` shrink left pane, boundary clamping |
+| `editor-advanced.test.ts` | Ctrl+S save, Ctrl+F search, Ctrl+Z undo, F11 fullscreen in editor |
+| `marks.test.ts` | Space mark, mark multiple, Shift+M clear all marks |
+| `navigation-history.test.ts` | Left arrow back, Right arrow forward, history-root no-op |
+| `preview-focus.test.ts` | Alt+F3 focus preview panel, file content render |
 
 ## Fixtures
 
