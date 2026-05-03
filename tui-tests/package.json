@@ -1,0 +1,20 @@
+{
+  "name": "zeta-tui-tests",
+  "version": "1.0.0",
+  "description": "TUI integration tests for Zeta using @microsoft/tui-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tui-test",
+    "test:trace": "tui-test --trace",
+    "test:smoke": "tui-test smoke.test.ts",
+    "test:navigation": "tui-test navigation.test.ts",
+    "test:cheatsheet": "tui-test cheatsheet.test.ts",
+    "test:editor": "tui-test editor.test.ts",
+    "show-trace": "tui-test show-trace"
+  },
+  "devDependencies": {
+    "@microsoft/tui-test": "^0.0.4",
+    "typescript": "^5.4.0"
+  }
+}
