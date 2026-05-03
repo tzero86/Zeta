@@ -308,6 +308,7 @@ impl EditorBuffer {
         }
         self.cursor_char_idx = edit.cursor_before;
         self.is_dirty = self.text.len_chars() > 0;
+        self.edit_version += 1;
     }
 
     /// Redo the most recently undone edit.

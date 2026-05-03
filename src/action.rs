@@ -523,6 +523,11 @@ impl Action {
             KeyCode::F(3) if key_event.modifiers == KeyModifiers::ALT => {
                 Some(Self::FocusPreviewPanel)
             }
+            // Alt+P is a testable secondary binding for FocusPreviewPanel (Alt+F3 encodes
+            // as a cursor-position CSI sequence in some terminals and can't be parsed as a key).
+            KeyCode::Char('p') | KeyCode::Char('P') if key_event.modifiers == KeyModifiers::ALT => {
+                Some(Self::FocusPreviewPanel)
+            }
             KeyCode::F(3) => Some(Self::TogglePreviewPanel),
             KeyCode::F(4) => Some(Self::OpenSelectedInEditor),
             KeyCode::F(5) => Some(Self::OpenCopyPrompt),
