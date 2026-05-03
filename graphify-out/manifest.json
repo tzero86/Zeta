@@ -1,74 +1,42 @@
 {
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/action.rs": {
-    "mtime": 1777723830.9474442,
-    "hash": "80091996b43a06a084df36c512ed5100"
-  },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/app.rs": {
-    "mtime": 1777723830.9574456,
-    "hash": "186038fffbb0f1a500b7604acf9fafd9"
-  },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/config.rs": {
-    "mtime": 1777702263.7614737,
+    "mtime": 1777725786.8286037,
     "hash": "e11255f16171390b6829f27be0b1e1cd"
   },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/hooks.rs": {
-    "mtime": 1777723830.9819822,
-    "hash": "faf82b7fff4071cf0172583e51248576"
-  },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/jobs.rs": {
-    "mtime": 1777703082.9073436,
+    "mtime": 1777725786.8451452,
     "hash": "704d6c32719653bb6c525a03521bddfe"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/lib.rs": {
-    "mtime": 1777702009.7335668,
+    "mtime": 1777725786.853148,
     "hash": "60e0e6494e9fdbf6a6a6d021b6b610b1"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/update.rs": {
     "mtime": 1777694071.7700357,
     "hash": "d52d8eecc4629e44ab55bb3de5692992"
   },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/mod.rs": {
-    "mtime": 1777723831.059101,
-    "hash": "67366c03ea2caf5acfd80067d64b23da"
-  },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/overlay.rs": {
-    "mtime": 1777723831.0671003,
+    "mtime": 1777725786.8791542,
     "hash": "4cebe0fa1ca10d23c25cae32c1415db5"
-  },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/types.rs": {
-    "mtime": 1777699614.0547462,
-    "hash": "5f6b0e4049c44278e926f1bf7d7ebb52"
-  },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/update_state.rs": {
-    "mtime": 1777694071.749838,
-    "hash": "7f9f7074c19f3ded458ec9cee6704479"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/state/wizard.rs": {
     "mtime": 1777699614.0622518,
     "hash": "0a5d72308f4b6f2dc72a6289983742f7"
   },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/mod.rs": {
-    "mtime": 1777699614.078129,
-    "hash": "0604951ec578ed3bca3a9bda91eb6564"
-  },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/src/ui/wizard.rs": {
-    "mtime": 1777723831.1267593,
+    "mtime": 1777725786.8907669,
     "hash": "1ef07336b6649601df173baa01f8f720"
-  },
-  "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/hooks_integration.rs": {
-    "mtime": 1777723831.1722925,
-    "hash": "9051f924da1dfe193ac4b54be3f6ddc3"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/tests/wizard_integration.rs": {
     "mtime": 1777699614.095496,
     "hash": "1e4f5e406433a154fc737b15c08014f8"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/README.md": {
-    "mtime": 1777701455.85975,
+    "mtime": 1777725786.31962,
     "hash": "918c70cd51f3047151f6e15f6aee269d"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/improvements-roadmap.md": {
-    "mtime": 1777701455.8682837,
+    "mtime": 1777725786.3281279,
     "hash": "5e1bd9d8c6e0e4dd0b83573252665412"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-05-02-phase1-state-decomposition.md": {
@@ -80,55 +48,59 @@
     "hash": "c339b05108e5551fdb77d09a82196baa"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-05-02-phase3-first-run-wizard.md": {
-    "mtime": 1777695165.7781425,
+    "mtime": 1777725786.3401515,
     "hash": "71e8a644074bb1328e48b9ce752de28f"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/2026-05-02-phase4-shell-hooks.md": {
     "mtime": 1777700501.5216405,
     "hash": "8358fc30afbedc5580a58269d3156f46"
   },
+  "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/plans/ROADMAP.md": {
+    "mtime": 1777738070.2066936,
+    "hash": "243071129af989ce959af6b93473eb12"
+  },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/superpowers/specs/2026-05-02-shell-hooks-design.md": {
     "mtime": 1777700221.108031,
     "hash": "81f4942c4cacb9401ed39d281320a21b"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Configuration.md": {
-    "mtime": 1777701455.8777995,
+    "mtime": 1777725786.3491504,
     "hash": "e083f82cbad0730c226ed30c25623647"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Editor.md": {
-    "mtime": 1777701455.8858275,
+    "mtime": 1777725786.3561492,
     "hash": "7b66a9239d6b678281123e028273ddad"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/File-Management.md": {
-    "mtime": 1777701455.8933394,
+    "mtime": 1777725786.3621504,
     "hash": "7c258195f58a7d38dcd6e53308d15bc1"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/First-Run-Wizard.md": {
-    "mtime": 1777701455.9008486,
+    "mtime": 1777725786.3691547,
     "hash": "fea69cf3b6d9e89a8b96371d4660dad2"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Home.md": {
-    "mtime": 1777701455.9068484,
+    "mtime": 1777725786.3751543,
     "hash": "0128ea2524ad1c379aadfaf873154ec4"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Key-Bindings.md": {
-    "mtime": 1777701455.9143627,
+    "mtime": 1777725786.3816652,
     "hash": "a11615a01183b768d2ca473a769cf521"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Shell-Hooks.md": {
-    "mtime": 1777701455.9293976,
+    "mtime": 1777725786.394173,
     "hash": "32f50a2cd46d0f1c4f8996d6b6555d6a"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/SSH-SFTP.md": {
-    "mtime": 1777701455.9214003,
+    "mtime": 1777725786.3876643,
     "hash": "e8339a70e490acc292bf89d0875d7526"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Terminal.md": {
-    "mtime": 1777701455.935927,
+    "mtime": 1777725786.4001794,
     "hash": "f1aa6629b1f2184db0d6d9e926c77e03"
   },
   "/mnt/c/Users/Zero/Documents/coding/Zeta/docs/wiki/Themes.md": {
-    "mtime": 1777701455.943477,
+    "mtime": 1777725786.408181,
     "hash": "c1953dc6b0a3e073ab24b8d84ae1c06c"
   }
 }

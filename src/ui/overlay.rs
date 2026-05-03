@@ -824,7 +824,12 @@ pub fn render_update_prompt(
 }
 
 /// Render the context-aware `?` quick-reference cheatsheet overlay.
-pub fn render_cheatsheet(frame: &mut Frame<'_>, area: Rect, state: &crate::state::AppState, palette: ThemePalette) {
+pub fn render_cheatsheet(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::state::AppState,
+    palette: ThemePalette,
+) {
     use crate::state::FocusLayer;
 
     struct Section {
@@ -832,109 +837,149 @@ pub fn render_cheatsheet(frame: &mut Frame<'_>, area: Rect, state: &crate::state
         items: &'static [(&'static str, &'static str)],
     }
 
-    let (title, accent, sections): (&str, ratatui::style::Color, &[Section]) = match state.focus_layer() {
-        FocusLayer::Editor => (
-            " Quick Reference  ·  Editor ",
-            palette.accent_mauve,
-            &[
-                Section { title: "Editing", items: &[
-                    ("Ctrl+S", "save file"),
-                    ("Ctrl+Z", "undo"),
-                    ("Ctrl+Y", "redo"),
-                    ("Ctrl+X/C/V", "cut / copy / paste"),
-                ]},
-                Section { title: "Find & Replace", items: &[
-                    ("Ctrl+F", "find"),
-                    ("F3 / Shift+F3", "next / prev match"),
-                    ("Ctrl+H", "find & replace"),
-                ]},
-                Section { title: "View", items: &[
-                    ("F11", "toggle fullscreen"),
-                    ("Ctrl+W", "cycle preview mode"),
-                    ("Esc", "close editor"),
-                ]},
-            ],
-        ),
-        FocusLayer::Preview | FocusLayer::MarkdownPreview => (
-            " Quick Reference  ·  Preview ",
-            palette.accent_peach,
-            &[
-                Section { title: "Scrolling", items: &[
-                    ("↑ ↓", "scroll line"),
-                    ("PgUp / PgDn", "scroll page"),
-                    ("Home / End", "top / bottom"),
-                ]},
-                Section { title: "Modes", items: &[
-                    ("Ctrl+W", "cycle: text / hex / image"),
-                    ("F4", "open in editor"),
-                    ("Esc", "close preview"),
-                ]},
-            ],
-        ),
-        FocusLayer::Terminal => (
-            " Quick Reference  ·  Terminal ",
-            palette.accent_green,
-            &[
-                Section { title: "Terminal Controls", items: &[
-                    ("F2", "toggle terminal panel"),
-                    ("Ctrl+C", "interrupt running command"),
-                    ("Ctrl+D", "send EOF / exit shell"),
-                    ("Ctrl+L", "clear screen"),
-                ]},
-                Section { title: "Scrollback", items: &[
-                    ("Shift+PgUp/Dn", "scroll history"),
-                ]},
-            ],
-        ),
-        FocusLayer::GitDiffFileList | FocusLayer::GitDiffContent => (
-            " Quick Reference  ·  Git Diff ",
-            palette.accent_yellow,
-            &[
-                Section { title: "Navigation", items: &[
-                    ("↑ ↓ / j k", "move through files or diff"),
-                    ("Tab", "switch file list ↔ diff"),
-                    ("PgUp / PgDn", "page through diff"),
-                ]},
-                Section { title: "Controls", items: &[
-                    ("Ctrl+D", "exit diff view"),
-                ]},
-            ],
-        ),
-        _ => (
-            " Quick Reference  ·  File Pane ",
-            palette.accent_teal,
-            &[
-                Section { title: "Navigation", items: &[
-                    ("↑ ↓", "move cursor"),
-                    ("Enter", "open / enter directory"),
-                    ("Backspace", "go up one level"),
-                    ("Tab", "switch active pane"),
-                    ("Alt+G", "jump to path"),
-                ]},
-                Section { title: "File Operations", items: &[
-                    ("F5", "copy to other pane"),
-                    ("F6", "rename"),
-                    ("F7", "make directory"),
-                    ("F8 / Shift+F8", "trash / delete"),
-                    ("Alt+O", "open with…"),
-                ]},
-                Section { title: "Find & Filter", items: &[
-                    ("Ctrl+P", "fuzzy file finder"),
-                    ("/", "filter entries in pane"),
-                    ("Ctrl+B", "command palette"),
-                ]},
-                Section { title: "Selection", items: &[
-                    ("Space", "mark / unmark entry"),
-                    ("Ctrl+A", "mark all"),
-                    ("Ctrl+R", "bulk rename marked"),
-                ]},
-            ],
-        ),
-    };
+    let (title, accent, sections): (&str, ratatui::style::Color, &[Section]) =
+        match state.focus_layer() {
+            FocusLayer::Editor => (
+                " Quick Reference  ·  Editor ",
+                palette.accent_mauve,
+                &[
+                    Section {
+                        title: "Editing",
+                        items: &[
+                            ("Ctrl+S", "save file"),
+                            ("Ctrl+Z", "undo"),
+                            ("Ctrl+Y", "redo"),
+                            ("Ctrl+X/C/V", "cut / copy / paste"),
+                        ],
+                    },
+                    Section {
+                        title: "Find & Replace",
+                        items: &[
+                            ("Ctrl+F", "find"),
+                            ("F3 / Shift+F3", "next / prev match"),
+                            ("Ctrl+H", "find & replace"),
+                        ],
+                    },
+                    Section {
+                        title: "View",
+                        items: &[
+                            ("F11", "toggle fullscreen"),
+                            ("Ctrl+W", "cycle preview mode"),
+                            ("Esc", "close editor"),
+                        ],
+                    },
+                ],
+            ),
+            FocusLayer::Preview | FocusLayer::MarkdownPreview => (
+                " Quick Reference  ·  Preview ",
+                palette.accent_peach,
+                &[
+                    Section {
+                        title: "Scrolling",
+                        items: &[
+                            ("↑ ↓", "scroll line"),
+                            ("PgUp / PgDn", "scroll page"),
+                            ("Home / End", "top / bottom"),
+                        ],
+                    },
+                    Section {
+                        title: "Modes",
+                        items: &[
+                            ("Ctrl+W", "cycle: text / hex / image"),
+                            ("F4", "open in editor"),
+                            ("Esc", "close preview"),
+                        ],
+                    },
+                ],
+            ),
+            FocusLayer::Terminal => (
+                " Quick Reference  ·  Terminal ",
+                palette.accent_green,
+                &[
+                    Section {
+                        title: "Terminal Controls",
+                        items: &[
+                            ("F2", "toggle terminal panel"),
+                            ("Ctrl+C", "interrupt running command"),
+                            ("Ctrl+D", "send EOF / exit shell"),
+                            ("Ctrl+L", "clear screen"),
+                        ],
+                    },
+                    Section {
+                        title: "Scrollback",
+                        items: &[("Shift+PgUp/Dn", "scroll history")],
+                    },
+                ],
+            ),
+            FocusLayer::GitDiffFileList | FocusLayer::GitDiffContent => (
+                " Quick Reference  ·  Git Diff ",
+                palette.accent_yellow,
+                &[
+                    Section {
+                        title: "Navigation",
+                        items: &[
+                            ("↑ ↓ / j k", "move through files or diff"),
+                            ("Tab", "switch file list ↔ diff"),
+                            ("PgUp / PgDn", "page through diff"),
+                        ],
+                    },
+                    Section {
+                        title: "Controls",
+                        items: &[("Ctrl+D", "exit diff view")],
+                    },
+                ],
+            ),
+            _ => (
+                " Quick Reference  ·  File Pane ",
+                palette.accent_teal,
+                &[
+                    Section {
+                        title: "Navigation",
+                        items: &[
+                            ("↑ ↓", "move cursor"),
+                            ("Enter", "open / enter directory"),
+                            ("Backspace", "go up one level"),
+                            ("Tab", "switch active pane"),
+                            ("Alt+G", "jump to path"),
+                        ],
+                    },
+                    Section {
+                        title: "File Operations",
+                        items: &[
+                            ("F5", "copy to other pane"),
+                            ("F6", "rename"),
+                            ("F7", "make directory"),
+                            ("F8 / Shift+F8", "trash / delete"),
+                            ("Alt+O", "open with…"),
+                        ],
+                    },
+                    Section {
+                        title: "Find & Filter",
+                        items: &[
+                            ("Ctrl+P", "fuzzy file finder"),
+                            ("/", "filter entries in pane"),
+                            ("Ctrl+B", "command palette"),
+                        ],
+                    },
+                    Section {
+                        title: "Selection",
+                        items: &[
+                            ("Space", "mark / unmark entry"),
+                            ("Ctrl+A", "mark all"),
+                            ("Ctrl+R", "bulk rename marked"),
+                        ],
+                    },
+                ],
+            ),
+        };
 
     // Compute overlay dimensions.
     let content_width: u16 = 56;
-    let total_rows: u16 = sections.iter().map(|s| s.items.len() as u16 + 1).sum::<u16>() + 1; // +1 footer
+    let total_rows: u16 = sections
+        .iter()
+        .map(|s| s.items.len() as u16 + 1)
+        .sum::<u16>()
+        + 1; // +1 footer
     let overlay_height = total_rows + 2; // top/bottom border
     let overlay_width = content_width + 2; // left/right border
 
@@ -951,7 +996,10 @@ pub fn render_cheatsheet(frame: &mut Frame<'_>, area: Rect, state: &crate::state
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
-        .title(Span::styled(title, Style::default().fg(accent).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            title,
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(accent));
@@ -962,7 +1010,9 @@ pub fn render_cheatsheet(frame: &mut Frame<'_>, area: Rect, state: &crate::state
     for section in sections {
         lines.push(Line::from(Span::styled(
             format!("  {}", section.title),
-            Style::default().fg(palette.accent_yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(palette.accent_yellow)
+                .add_modifier(Modifier::BOLD),
         )));
         for (key, desc) in section.items {
             let key_span = Span::styled(
@@ -992,9 +1042,11 @@ pub fn render_context_menu(
     let width: u16 = 26;
     let height: u16 = items.len() as u16 + 2; // borders
 
-    // Clamp to terminal area
-    let x = pos.0.min(area.width.saturating_sub(width));
-    let y = pos.1.min(area.height.saturating_sub(height));
+    // Clamp to terminal area, accounting for area offset
+    let max_x = (area.x + area.width).saturating_sub(width);
+    let max_y = (area.y + area.height).saturating_sub(height);
+    let x = pos.0.clamp(area.x, max_x);
+    let y = pos.1.clamp(area.y, max_y);
     let popup_area = Rect {
         x,
         y,

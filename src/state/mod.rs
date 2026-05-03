@@ -3181,6 +3181,9 @@ impl AppState {
         if self.overlay.wizard_state().is_some() {
             return FocusLayer::Modal(ModalKind::FirstRunWizard);
         }
+        if self.overlay.modal_kind() == Some(ModalKind::ContextMenu) {
+            return FocusLayer::Modal(ModalKind::ContextMenu);
+        }
         if self.terminal.is_open() && self.terminal.focused {
             return FocusLayer::Terminal;
         }
@@ -6273,14 +6276,18 @@ mod tests {
     #[test]
     fn open_context_menu_sets_modal() {
         let mut state = test_state();
-        state.apply(Action::OpenContextMenu { x: 10, y: 5 }).unwrap();
+        state
+            .apply(Action::OpenContextMenu { x: 10, y: 5 })
+            .unwrap();
         assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
     }
 
     #[test]
     fn close_context_menu_clears_modal() {
         let mut state = test_state();
-        state.apply(Action::OpenContextMenu { x: 10, y: 5 }).unwrap();
+        state
+            .apply(Action::OpenContextMenu { x: 10, y: 5 })
+            .unwrap();
         state.apply(Action::CloseContextMenu).unwrap();
         assert_eq!(state.modal_kind(), None);
     }
@@ -6292,5 +6299,24 @@ mod tests {
         assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
         state.apply(Action::MoveSelectionDown).unwrap();
         assert_eq!(state.modal_kind(), None);
+    }
+
+    #[test]
+    fn focus_layer_returns_context_menu_when_open() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
+        assert_eq!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::ContextMenu),
+            "focus_layer() must return ContextMenu while menu is open for key routing to work"
+        );
+    }
+
+    #[test]
+    fn focus_layer_returns_pane_after_context_menu_closed() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
+        state.apply(Action::CloseContextMenu).unwrap();
+        assert_eq!(state.focus_layer(), FocusLayer::Pane);
     }
 }

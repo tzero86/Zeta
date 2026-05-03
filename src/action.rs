@@ -259,7 +259,10 @@ pub enum Action {
     /// Dismiss the open-with menu without opening anything.
     CloseOpenWithMenu,
     /// Open the right-click context menu anchored at the given terminal cell.
-    OpenContextMenu { x: u16, y: u16 },
+    OpenContextMenu {
+        x: u16,
+        y: u16,
+    },
     /// Move context menu selection up (skipping separators).
     ContextMenuMoveUp,
     /// Move context menu selection down (skipping separators).
@@ -761,8 +764,11 @@ impl Action {
             return Some(Self::ToggleTerminalFullscreen);
         }
 
-        // ? key opens the cheatsheet. This is an app-level feature.
-        if key_event.code == KeyCode::Char('?') && key_event.modifiers == KeyModifiers::NONE {
+        // ? key opens the cheatsheet. Allow NONE or SHIFT since ? is Shift+/ on US keyboards.
+        if key_event.code == KeyCode::Char('?')
+            && (key_event.modifiers == KeyModifiers::NONE
+                || key_event.modifiers == KeyModifiers::SHIFT)
+        {
             return Some(Self::ToggleCheatsheet);
         }
 
@@ -947,7 +953,10 @@ impl Action {
         if key_event.code == KeyCode::Char('d') && key_event.modifiers == KeyModifiers::CONTROL {
             return Some(Self::ToggleGitDiff);
         }
-        if key_event.code == KeyCode::Char('?') && key_event.modifiers == KeyModifiers::NONE {
+        if key_event.code == KeyCode::Char('?')
+            && (key_event.modifiers == KeyModifiers::NONE
+                || key_event.modifiers == KeyModifiers::SHIFT)
+        {
             return Some(Self::ToggleCheatsheet);
         }
         // Delegate remaining keys to the comprehensive fallback handler.
@@ -1051,7 +1060,9 @@ impl Action {
             KeyCode::Char('x') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::EditorCut)
             }
-            KeyCode::Char('?') if key_event.modifiers.is_empty() => {
+            KeyCode::Char('?')
+                if key_event.modifiers.is_empty() || key_event.modifiers == KeyModifiers::SHIFT =>
+            {
                 Some(Self::ToggleCheatsheet)
             }
             KeyCode::Char(ch)

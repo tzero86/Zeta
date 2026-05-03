@@ -889,12 +889,15 @@ fn route_key_event(
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::OpenWith) => Action::from_open_with_key_event(key_event),
         FocusLayer::Modal(ModalKind::ContextMenu) => {
-            use crossterm::event::KeyCode;
+            use crossterm::event::{KeyCode, KeyModifiers};
             match key_event.code {
                 KeyCode::Up | KeyCode::Char('k') => Some(Action::ContextMenuMoveUp),
                 KeyCode::Down | KeyCode::Char('j') => Some(Action::ContextMenuMoveDown),
                 KeyCode::Enter => Some(Action::ContextMenuConfirm),
                 KeyCode::Esc => Some(Action::CloseContextMenu),
+                KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    Some(Action::Quit)
+                }
                 _ => Some(Action::CloseContextMenu), // any other key closes menu
             }
         }
@@ -1068,7 +1071,7 @@ fn route_mouse_event(
             if matches!(focus, FocusLayer::Modal(ModalKind::ContextMenu)) {
                 return Some(Action::CloseContextMenu);
             }
-            
+
             // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
                 if rect_contains(cache.menu_bar, col, row) {
