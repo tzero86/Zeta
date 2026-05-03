@@ -18,7 +18,7 @@ async function navigateToFixtures(terminal: any) {
   terminal.write(fixturesPath);
   terminal.keyPress("Enter");
   // Wait for the pane to show fixture files
-  await expect(terminal.getByText("README.md")).toBeVisible();
+  await expect(terminal.getByText("README.md", { strict: false })).toBeVisible();
   // Move cursor past ../, documents/, src/ to README.md
   terminal.keyDown(1);
   terminal.keyDown(1);

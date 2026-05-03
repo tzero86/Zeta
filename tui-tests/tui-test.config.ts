@@ -10,16 +10,22 @@ const repoRoot = path.resolve(process.cwd(), "..");
 const binaryPath =
   process.env.ZETA_BIN ?? path.join(repoRoot, "target", "debug", "zeta");
 
+// Wrapper script gives each test a unique ZETA_CONFIG path so config state
+// (e.g. preview_panel_open) never leaks between test runs.
+const wrapperPath = path.join(repoRoot, "tui-tests", "zeta-wrapper.sh");
+
 export default defineConfig({
   // Terminal dimensions — wide enough for dual-pane layout
   use: {
     rows: 40,
     columns: 220,
     program: {
-      file: binaryPath,
-      // Zeta uses its CWD as the starting directory.
-      // Run `npx tui-test` from `tui-tests/fixtures/` for predictable file listings,
-      // or from any directory to test UI structure / keybindings alone.
+      file: wrapperPath,
+      // Pass the binary path as env so the wrapper can locate it regardless
+      // of where tests are run from.
+    },
+    env: {
+      ZETA_BIN: binaryPath,
     },
   },
 
