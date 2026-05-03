@@ -14,6 +14,28 @@ use crate::state::ssh::SshConnectionState;
 use crate::state::types::MenuItem;
 use crate::state::wizard::WizardState;
 
+/// A single item in a right-click context menu. Separator items have `action: None`.
+#[derive(Clone, Debug)]
+pub struct ContextMenuItem {
+    pub label: &'static str,
+    pub hint: &'static str,
+    pub action: Option<crate::action::Action>,
+}
+
+impl ContextMenuItem {
+    pub fn separator() -> Self {
+        Self {
+            label: "",
+            hint: "",
+            action: None,
+        }
+    }
+
+    pub fn is_separator(&self) -> bool {
+        self.action.is_none()
+    }
+}
+
 /// Returns the submenu `MenuId` if the given item is a flyout trigger, else `None`.
 fn flyout_trigger(item: &MenuItem) -> Option<MenuId> {
     if let Action::OpenMenu(id) = item.action {
@@ -60,6 +82,13 @@ pub enum ModalState {
         selection: usize,
         target: std::path::PathBuf,
     },
+    /// Right-click context menu anchored at the mouse position.
+    ContextMenu {
+        items: Vec<ContextMenuItem>,
+        selection: usize,
+        /// Top-left corner of the popup (terminal cell coordinates).
+        pos: (u16, u16),
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -100,6 +129,7 @@ impl OverlayState {
             Some(ModalState::SshTrustPrompt { .. }) => Some(ModalKind::SshTrustPrompt),
             Some(ModalState::FirstRunWizard(_)) => Some(ModalKind::FirstRunWizard),
             Some(ModalState::OpenWith { .. }) => Some(ModalKind::OpenWith),
+            Some(ModalState::ContextMenu { .. }) => Some(ModalKind::ContextMenu),
         }
     }
 
@@ -826,6 +856,53 @@ impl OverlayState {
             }
             Action::SettingsToggleCurrent => {
                 // Toggle logic needs full config context — handled in AppState::apply_view
+            }
+
+            // ── Context Menu ─────────────────────────────────────────────────
+            Action::ContextMenuMoveUp => {
+                if let Some(ModalState::ContextMenu {
+                    items, selection, ..
+                }) = &mut self.modal
+                {
+                    let n = items.len();
+                    if n == 0 {
+                        return Ok(vec![]);
+                    }
+                    let mut s = selection.wrapping_sub(1).min(n - 1);
+                    let mut iters = 0;
+                    while items[s].is_separator() && iters < n {
+                        s = s.wrapping_sub(1).min(n - 1);
+                        iters += 1;
+                    }
+                    if iters < n {
+                        *selection = s;
+                    }
+                }
+            }
+            Action::ContextMenuMoveDown => {
+                if let Some(ModalState::ContextMenu {
+                    items, selection, ..
+                }) = &mut self.modal
+                {
+                    let n = items.len();
+                    if n == 0 {
+                        return Ok(vec![]);
+                    }
+                    let mut s = (*selection + 1) % n;
+                    let mut iters = 0;
+                    while items[s].is_separator() && iters < n {
+                        s = (s + 1) % n;
+                        iters += 1;
+                    }
+                    if iters < n {
+                        *selection = s;
+                    }
+                }
+            }
+            Action::CloseContextMenu => {
+                if matches!(self.modal, Some(ModalState::ContextMenu { .. })) {
+                    self.modal = None;
+                }
             }
             _ => {}
         }

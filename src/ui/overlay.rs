@@ -822,3 +822,303 @@ pub fn render_update_prompt(
     let paragraph = Paragraph::new(lines).style(elevated_surface_style(palette));
     frame.render_widget(paragraph, inner);
 }
+
+/// Render the context-aware `?` quick-reference cheatsheet overlay.
+pub fn render_cheatsheet(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &crate::state::AppState,
+    palette: ThemePalette,
+) {
+    use crate::state::FocusLayer;
+
+    struct Section {
+        title: &'static str,
+        items: &'static [(&'static str, &'static str)],
+    }
+
+    let (title, accent, sections): (&str, ratatui::style::Color, &[Section]) =
+        match state.focus_layer() {
+            FocusLayer::Editor => (
+                " Quick Reference  ·  Editor ",
+                palette.accent_mauve,
+                &[
+                    Section {
+                        title: "Editing",
+                        items: &[
+                            ("Ctrl+S", "save file"),
+                            ("Ctrl+Z", "undo"),
+                            ("Ctrl+Y", "redo"),
+                            ("Ctrl+X/C/V", "cut / copy / paste"),
+                        ],
+                    },
+                    Section {
+                        title: "Find & Replace",
+                        items: &[
+                            ("Ctrl+F", "find"),
+                            ("F3 / Shift+F3", "next / prev match"),
+                            ("Ctrl+H", "find & replace"),
+                        ],
+                    },
+                    Section {
+                        title: "View",
+                        items: &[
+                            ("F11", "toggle fullscreen"),
+                            ("Ctrl+W", "cycle preview mode"),
+                            ("Esc", "close editor"),
+                        ],
+                    },
+                ],
+            ),
+            FocusLayer::Preview | FocusLayer::MarkdownPreview => (
+                " Quick Reference  ·  Preview ",
+                palette.accent_peach,
+                &[
+                    Section {
+                        title: "Scrolling",
+                        items: &[
+                            ("↑ ↓", "scroll line"),
+                            ("PgUp / PgDn", "scroll page"),
+                            ("Home / End", "top / bottom"),
+                        ],
+                    },
+                    Section {
+                        title: "Modes",
+                        items: &[
+                            ("Ctrl+W", "cycle: text / hex / image"),
+                            ("F4", "open in editor"),
+                            ("Esc", "close preview"),
+                        ],
+                    },
+                ],
+            ),
+            FocusLayer::Terminal => (
+                " Quick Reference  ·  Terminal ",
+                palette.accent_green,
+                &[
+                    Section {
+                        title: "Terminal Controls",
+                        items: &[
+                            ("F2", "toggle terminal panel"),
+                            ("Ctrl+C", "interrupt running command"),
+                            ("Ctrl+D", "send EOF / exit shell"),
+                            ("Ctrl+L", "clear screen"),
+                        ],
+                    },
+                    Section {
+                        title: "Scrollback",
+                        items: &[("Shift+PgUp/Dn", "scroll history")],
+                    },
+                ],
+            ),
+            FocusLayer::GitDiffFileList | FocusLayer::GitDiffContent => (
+                " Quick Reference  ·  Git Diff ",
+                palette.accent_yellow,
+                &[
+                    Section {
+                        title: "Navigation",
+                        items: &[
+                            ("↑ ↓ / j k", "move through files or diff"),
+                            ("Tab", "switch file list ↔ diff"),
+                            ("PgUp / PgDn", "page through diff"),
+                        ],
+                    },
+                    Section {
+                        title: "Controls",
+                        items: &[("Ctrl+D", "exit diff view")],
+                    },
+                ],
+            ),
+            _ => (
+                " Quick Reference  ·  File Pane ",
+                palette.accent_teal,
+                &[
+                    Section {
+                        title: "Navigation",
+                        items: &[
+                            ("↑ ↓", "move cursor"),
+                            ("Enter", "open / enter directory"),
+                            ("Backspace", "go up one level"),
+                            ("Tab", "switch active pane"),
+                            ("Alt+G", "jump to path"),
+                        ],
+                    },
+                    Section {
+                        title: "File Operations",
+                        items: &[
+                            ("F5", "copy to other pane"),
+                            ("F6", "rename"),
+                            ("F7", "make directory"),
+                            ("F8 / Shift+F8", "trash / delete"),
+                            ("Alt+O", "open with…"),
+                        ],
+                    },
+                    Section {
+                        title: "Find & Filter",
+                        items: &[
+                            ("Ctrl+P", "fuzzy file finder"),
+                            ("/", "filter entries in pane"),
+                            ("Ctrl+B", "command palette"),
+                        ],
+                    },
+                    Section {
+                        title: "Selection",
+                        items: &[
+                            ("Space", "mark / unmark entry"),
+                            ("Ctrl+A", "mark all"),
+                            ("Ctrl+R", "bulk rename marked"),
+                        ],
+                    },
+                    Section {
+                        title: "Context Menu",
+                        items: &[
+                            ("Right-click", "open context menu"),
+                            ("Menu / Shift+F10", "keyboard context menu"),
+                        ],
+                    },
+                ],
+            ),
+        };
+
+    // Compute overlay dimensions.
+    let content_width: u16 = 56;
+    let total_rows: u16 = sections
+        .iter()
+        .map(|s| s.items.len() as u16 + 1)
+        .sum::<u16>()
+        + 1; // +1 footer
+    let overlay_height = total_rows + 2; // top/bottom border
+    let overlay_width = content_width + 2; // left/right border
+
+    let x = area.x + area.width.saturating_sub(overlay_width) / 2;
+    let y = area.y + area.height.saturating_sub(overlay_height) / 2;
+    let popup_area = Rect {
+        x,
+        y,
+        width: overlay_width.min(area.width),
+        height: overlay_height.min(area.height),
+    };
+
+    render_modal_backdrop(frame, area, popup_area, palette);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(Span::styled(
+            title,
+            Style::default().fg(accent).add_modifier(Modifier::BOLD),
+        ))
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(accent));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let mut lines: Vec<Line<'_>> = Vec::new();
+    for section in sections {
+        lines.push(Line::from(Span::styled(
+            format!("  {}", section.title),
+            Style::default()
+                .fg(palette.accent_yellow)
+                .add_modifier(Modifier::BOLD),
+        )));
+        for (key, desc) in section.items {
+            let key_span = Span::styled(
+                format!("  {:<18}", key),
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            );
+            let desc_span = Span::styled(*desc, Style::default().fg(palette.text_subtext));
+            lines.push(Line::from(vec![key_span, desc_span]));
+        }
+    }
+    lines.push(Line::from(Span::styled(
+        "  F1 full help  ·  ? or Esc to close",
+        Style::default().fg(palette.text_muted),
+    )));
+
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+pub fn render_context_menu(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    items: &[crate::state::overlay::ContextMenuItem],
+    selection: usize,
+    pos: (u16, u16),
+    palette: ThemePalette,
+) {
+    let width: u16 = 26;
+    let height: u16 = items.len() as u16 + 2; // borders
+
+    // Clamp to terminal area, accounting for area offset.
+    // u16::MAX is a sentinel meaning "center the menu" (used for keyboard-triggered open).
+    let max_x = (area.x + area.width).saturating_sub(width);
+    let max_y = (area.y + area.height).saturating_sub(height);
+    let x = if pos.0 == u16::MAX {
+        area.x + area.width.saturating_sub(width) / 2
+    } else {
+        pos.0.clamp(area.x, max_x)
+    };
+    let y = if pos.1 == u16::MAX {
+        area.y + area.height.saturating_sub(height) / 2
+    } else {
+        pos.1.clamp(area.y, max_y)
+    };
+    let popup_area = Rect {
+        x,
+        y,
+        width: width.min(area.width),
+        height: height.min(area.height),
+    };
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(palette.accent_teal));
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let available_width = inner.width as usize;
+    let hint_width = 7usize;
+    let label_width = available_width.saturating_sub(hint_width).saturating_sub(2);
+
+    let list_items: Vec<ListItem<'_>> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            if item.is_separator() {
+                return ListItem::new(Span::styled(
+                    "─".repeat(available_width),
+                    Style::default().fg(palette.prompt_border),
+                ));
+            }
+            let selected = i == selection;
+            let (label_style, hint_style) = if selected {
+                (
+                    Style::default()
+                        .bg(palette.selection_bg)
+                        .fg(palette.selection_fg)
+                        .add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .bg(palette.selection_bg)
+                        .fg(palette.accent_teal),
+                )
+            } else {
+                (
+                    Style::default().fg(palette.text_primary),
+                    Style::default().fg(palette.text_muted),
+                )
+            };
+            let label = format!(" {:<width$}", item.label, width = label_width);
+            let hint = format!("{:>width$} ", item.hint, width = hint_width - 1);
+            ListItem::new(Line::from(vec![
+                Span::styled(label, label_style),
+                Span::styled(hint, hint_style),
+            ]))
+        })
+        .collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(selection));
+    frame.render_stateful_widget(List::new(list_items), inner, &mut list_state);
+}

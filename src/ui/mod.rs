@@ -34,9 +34,9 @@ use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
 use crate::ui::overlay::{
-    menu_popup_width, render_collision_dialog, render_destructive_confirm, render_dialog,
-    render_flyout_popup, render_menu_popup, render_open_with_popup, render_prompt,
-    render_update_prompt,
+    menu_popup_width, render_cheatsheet, render_collision_dialog, render_context_menu,
+    render_destructive_confirm, render_dialog, render_flyout_popup, render_menu_popup,
+    render_open_with_popup, render_prompt, render_update_prompt,
 };
 use crate::ui::palette::render_command_palette;
 use crate::ui::pane::{render_pane, RenderPaneArgs};
@@ -405,6 +405,19 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     if let Some((items, selection, _target)) = state.overlay.open_with() {
         render_open_with_popup(frame, areas[1], items, selection, palette);
+    }
+
+    if let Some(crate::state::overlay::ModalState::ContextMenu {
+        items,
+        selection,
+        pos,
+    }) = &state.overlay.modal
+    {
+        render_context_menu(frame, areas[1], items, *selection, *pos, palette);
+    }
+
+    if state.show_cheatsheet {
+        render_cheatsheet(frame, areas[1], state, palette);
     }
 
     render_status_bar(frame, areas[2], state, palette);

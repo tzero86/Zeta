@@ -274,6 +274,8 @@ pub struct AppState {
     pub update_state: UpdateState,
     /// Frame counter for pulsing update indicator animation (0-255, wraps around).
     pub update_pulse_frame: u8,
+    /// Whether the context-aware quick-reference cheatsheet overlay is visible.
+    pub show_cheatsheet: bool,
 }
 
 impl AppState {
@@ -433,6 +435,7 @@ impl AppState {
             show_wizard: loaded_config.source == ConfigSource::Default,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
+            show_cheatsheet: false,
         })
     }
 
@@ -442,6 +445,58 @@ impl AppState {
 
     pub fn modal_kind(&self) -> Option<crate::state::types::ModalKind> {
         self.overlay.modal_kind()
+    }
+
+    fn build_context_menu_items(&self) -> Vec<crate::state::overlay::ContextMenuItem> {
+        use crate::state::overlay::ContextMenuItem;
+
+        let is_file = self
+            .panes
+            .active_pane()
+            .selected_entry()
+            .map(|e| matches!(e.kind, crate::fs::EntryKind::File))
+            .unwrap_or(false);
+
+        let mut items = vec![ContextMenuItem {
+            label: "Open",
+            hint: "Enter",
+            action: Some(Action::EnterSelection),
+        }];
+        if is_file {
+            items.push(ContextMenuItem {
+                label: "Edit",
+                hint: "F4",
+                action: Some(Action::OpenSelectedInEditor),
+            });
+            items.push(ContextMenuItem {
+                label: "Preview",
+                hint: "F3",
+                action: Some(Action::TogglePreviewPanel),
+            });
+        }
+        items.push(ContextMenuItem::separator());
+        items.push(ContextMenuItem {
+            label: "Copy",
+            hint: "F5",
+            action: Some(Action::OpenCopyPrompt),
+        });
+        items.push(ContextMenuItem {
+            label: "Rename",
+            hint: "F6",
+            action: Some(Action::BeginInlineRename),
+        });
+        items.push(ContextMenuItem {
+            label: "Delete",
+            hint: "F8",
+            action: Some(Action::OpenDeletePrompt),
+        });
+        items.push(ContextMenuItem::separator());
+        items.push(ContextMenuItem {
+            label: "Open With…",
+            hint: "Alt+O",
+            action: Some(Action::OpenOpenWithMenu),
+        });
+        items
     }
 
     /// Apply a freshly loaded config without a full restart.
@@ -489,6 +544,62 @@ impl AppState {
     pub fn apply(&mut self, action: Action) -> Result<Vec<Command>> {
         if let Action::SwitchToWorkspace(idx) = action {
             return Ok(self.switch_to_workspace(idx));
+        }
+
+        // Cheatsheet intercepts all non-Quit actions when open.
+        if self.show_cheatsheet {
+            match &action {
+                Action::CloseCheatsheet | Action::ToggleCheatsheet => {
+                    self.show_cheatsheet = false;
+                    return Ok(vec![]);
+                }
+                Action::Quit => {} // let Quit through
+                _ => {
+                    self.show_cheatsheet = false;
+                    return Ok(vec![]);
+                }
+            }
+        }
+
+        // Context menu intercepts ↑↓ Enter Esc when open.
+        if matches!(
+            self.overlay.modal_kind(),
+            Some(crate::state::types::ModalKind::ContextMenu)
+        ) {
+            match &action {
+                Action::ContextMenuMoveUp | Action::ContextMenuMoveDown => {
+                    return self.overlay.apply(&action);
+                }
+                Action::ContextMenuConfirm => {
+                    // extract inner action, close modal, re-apply inner action
+                    let inner = if let Some(crate::state::overlay::ModalState::ContextMenu {
+                        items,
+                        selection,
+                        ..
+                    }) = &self.overlay.modal
+                    {
+                        items.get(*selection).and_then(|i| i.action.clone())
+                    } else {
+                        None
+                    };
+                    self.overlay.modal = None;
+                    if let Some(act) = inner {
+                        return self.apply(act);
+                    }
+                    return Ok(vec![]);
+                }
+                Action::CloseContextMenu | Action::Quit => {
+                    if matches!(&action, Action::CloseContextMenu) {
+                        self.overlay.modal = None;
+                        return Ok(vec![]);
+                    }
+                }
+                _ => {
+                    // Any other action closes the menu and is consumed
+                    self.overlay.modal = None;
+                    return Ok(vec![]);
+                }
+            }
         }
 
         let mut commands = Vec::new();
@@ -890,6 +1001,15 @@ impl AppState {
             {
                 commands.extend(self.apply_git_diff(action)?);
             }
+            Action::OpenContextMenu { x, y } => {
+                let items = self.build_context_menu_items();
+                let selection = items.iter().position(|i| !i.is_separator()).unwrap_or(0);
+                self.overlay.modal = Some(crate::state::overlay::ModalState::ContextMenu {
+                    items,
+                    selection,
+                    pos: (*x, *y),
+                });
+            }
             _ if matches!(
                 action,
                 Action::OpenOpenWithMenu
@@ -1243,6 +1363,12 @@ impl AppState {
                         }
                     }
                 }
+            }
+            Action::ToggleCheatsheet => {
+                self.show_cheatsheet = !self.show_cheatsheet;
+            }
+            Action::CloseCheatsheet => {
+                self.show_cheatsheet = false;
             }
             _ => {}
         }
@@ -3055,6 +3181,9 @@ impl AppState {
         if self.overlay.wizard_state().is_some() {
             return FocusLayer::Modal(ModalKind::FirstRunWizard);
         }
+        if self.overlay.modal_kind() == Some(ModalKind::ContextMenu) {
+            return FocusLayer::Modal(ModalKind::ContextMenu);
+        }
         if self.terminal.is_open() && self.terminal.focused {
             return FocusLayer::Terminal;
         }
@@ -4370,6 +4499,7 @@ mod tests {
             show_wizard: false,
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
+            show_cheatsheet: false,
         }
     }
 
@@ -6114,5 +6244,79 @@ mod tests {
             state.focus_layer(),
             FocusLayer::Modal(ModalKind::UpdatePrompt)
         ));
+    }
+
+    #[test]
+    fn toggle_cheatsheet_flips_flag() {
+        let mut state = test_state();
+        assert!(!state.show_cheatsheet);
+        state.apply(Action::ToggleCheatsheet).unwrap();
+        assert!(state.show_cheatsheet);
+        state.apply(Action::ToggleCheatsheet).unwrap();
+        assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn cheatsheet_closed_by_close_action() {
+        let mut state = test_state();
+        state.show_cheatsheet = true;
+        state.apply(Action::CloseCheatsheet).unwrap();
+        assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn cheatsheet_intercepts_actions_when_open() {
+        let mut state = test_state();
+        state.show_cheatsheet = true;
+        // Any non-quit action should close cheatsheet and be consumed
+        state.apply(Action::MoveSelectionDown).unwrap();
+        assert!(!state.show_cheatsheet);
+    }
+
+    #[test]
+    fn open_context_menu_sets_modal() {
+        let mut state = test_state();
+        state
+            .apply(Action::OpenContextMenu { x: 10, y: 5 })
+            .unwrap();
+        assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
+    }
+
+    #[test]
+    fn close_context_menu_clears_modal() {
+        let mut state = test_state();
+        state
+            .apply(Action::OpenContextMenu { x: 10, y: 5 })
+            .unwrap();
+        state.apply(Action::CloseContextMenu).unwrap();
+        assert_eq!(state.modal_kind(), None);
+    }
+
+    #[test]
+    fn context_menu_intercepts_unrelated_action() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 0, y: 0 }).unwrap();
+        assert_eq!(state.modal_kind(), Some(ModalKind::ContextMenu));
+        state.apply(Action::MoveSelectionDown).unwrap();
+        assert_eq!(state.modal_kind(), None);
+    }
+
+    #[test]
+    fn focus_layer_returns_context_menu_when_open() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
+        assert_eq!(
+            state.focus_layer(),
+            FocusLayer::Modal(ModalKind::ContextMenu),
+            "focus_layer() must return ContextMenu while menu is open for key routing to work"
+        );
+    }
+
+    #[test]
+    fn focus_layer_returns_pane_after_context_menu_closed() {
+        let mut state = test_state();
+        state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
+        state.apply(Action::CloseContextMenu).unwrap();
+        assert_eq!(state.focus_layer(), FocusLayer::Pane);
     }
 }

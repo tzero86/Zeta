@@ -1,55 +1,32 @@
-# Zeta
+# ⚡ Zeta
 
-```
- ____  ________  ____             __
-|    \|        \|    \           |  \
-| $$$$ \$$$$$$$$ \$$$$  ______  _| $$_     ______
-| $$      /  $$   | $$ /      \|   $$ \   |      \
-| $$     /  $$    | $$ |  $$$$$$\\$$$$$$    \$$$$$$\
-| $$    /  $$     | $$ | $$    $$ | $$ __  /      $$
-| $$_  /  $$___  _| $$ | $$$$$$$$ | $$|  \|  $$$$$$$
-| $$ \|  $$    \|   $$ \$$     \  \$$  $$ \$$    $$
- \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
-```
+Dual-pane terminal file manager for developers. SSH, embedded terminal, git diff, archive browsing — all in one fast Rust binary.
 
-A keyboard-first terminal file manager and embedded editor for developers —
-Norton Commander workflow, modern TUI, written in Rust.
+![Version](https://img.shields.io/github/v/release/tzero86/Zeta?label=version)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows-blue)
+![License](https://img.shields.io/github/license/tzero86/Zeta)
 
----
-
-## Download
-
-Precompiled binaries for Linux and Windows are attached to every [GitHub Release](https://github.com/tzero86/Zeta/releases/latest).
-
-| Platform | File |
-|---|---|
-| Linux x86\_64 | `zeta-linux-x86_64.tar.gz` |
-| Windows x86\_64 | `zeta-windows-x86_64.zip` |
-
-SHA-256 checksums are included alongside each binary.
-
-### Build from source
-
-Requires [rustup](https://rustup.rs) (stable toolchain) and git.
+<!-- TODO: record ~30s demo and commit as assets/demo.gif (nav → Ctrl+P → F2 terminal → Ctrl+D git diff → ? cheatsheet) -->
+<!-- ![Zeta demo](assets/demo.gif) -->
 
 ```bash
+# Download a prebuilt binary from Releases (Linux / Windows)
+# https://github.com/tzero86/Zeta/releases/latest
+
+# Or build from source (requires Rust stable):
 cargo install --git https://github.com/tzero86/Zeta
 ```
 
-#### Native build dependencies
-
-Some crates link against system libraries. Install these before running `cargo install` if you hit linker errors:
-
-| Platform | Install |
-|---|---|
-| Debian / Ubuntu | `sudo apt install build-essential pkg-config libssl-dev libbz2-dev liblzma-dev` |
-| Fedora / RHEL | `sudo dnf install gcc pkg-config openssl-devel bzip2-devel xz-devel` |
-| Windows | [Visual Studio Build Tools](https://aka.ms/vs/17/release/vs_BuildTools.exe) — "Desktop development with C++" workload |
-
-`ssh2` requires OpenSSL; `bzip2` and `xz2` require their respective compression libraries. The `conpty` crate (Windows terminal) requires Windows 10 version 1809 or later.
----
-
 ## Features
+
+| | |
+|---|---|
+| 📁 **Dual pane** — copy, move, diff between panes side-by-side | ⌨️ **Embedded terminal** — `F2` opens your real shell in-app |
+| 🔀 **Git diff viewer** — `Ctrl+D` unified diff with file list | 🌐 **SSH / SFTP** — browse remote servers like local directories |
+| 📦 **Archive browsing** — navigate `.zip` / `.tar.gz` inline | ✏️ **Editor + preview** — text, markdown, images, hex dump |
+
+<details>
+<summary>Full feature list</summary>
 
 ### File management
 - Dual-pane browser with side-by-side and stacked layouts
@@ -229,6 +206,8 @@ ssh-keyscan -H example.com 2>/dev/null | ssh-keygen -lf - -E MD5
 - Zeta is the default theme; Fjord, Sandbar, Oxide, Matrix, Norton, Dracula, Neon, and Monochrome remain available
 - Unicode icons by default, ASCII fallback, custom icon font mode
 
+</details>
+
 ---
 
 ## Key bindings (defaults)
@@ -386,6 +365,23 @@ See [`docs/superpowers/plans/ROADMAP.md`](docs/superpowers/plans/ROADMAP.md) for
 
 Core features — dual-pane navigation, embedded editor, integrated terminal, SSH/SFTP, diff mode, four workspaces, command palette, and markdown preview — are all shipped as of v0.3.x.
 ---
+
+<details>
+<summary>Logo</summary>
+
+```
+ ____  ________  ____             __
+|    \|        \|    \           |  \
+| $$$$ \$$$$$$$$ \$$$$  ______  _| $$_     ______
+| $$      /  $$   | $$ /      \|   $$ \   |      \
+| $$     /  $$    | $$ |  $$$$$$\\$$$$$$    \$$$$$$\
+| $$    /  $$     | $$ | $$    $$ | $$ __  /      $$
+| $$_  /  $$___  _| $$ | $$$$$$$$ | $$|  \|  $$$$$$$
+| $$ \|  $$    \|   $$ \$$     \  \$$  $$ \$$    $$
+ \$$$$ \$$$$$$$$ \$$$$  \$$$$$$$   \$$$$   \$$$$$$$
+```
+
+</details>
 
 ## License
 

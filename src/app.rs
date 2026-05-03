@@ -888,6 +888,19 @@ fn route_key_event(
         }
         FocusLayer::Modal(ModalKind::Bookmarks) => Action::from_bookmarks_key_event(key_event),
         FocusLayer::Modal(ModalKind::OpenWith) => Action::from_open_with_key_event(key_event),
+        FocusLayer::Modal(ModalKind::ContextMenu) => {
+            use crossterm::event::{KeyCode, KeyModifiers};
+            match key_event.code {
+                KeyCode::Up | KeyCode::Char('k') => Some(Action::ContextMenuMoveUp),
+                KeyCode::Down | KeyCode::Char('j') => Some(Action::ContextMenuMoveDown),
+                KeyCode::Enter => Some(Action::ContextMenuConfirm),
+                KeyCode::Esc => Some(Action::CloseContextMenu),
+                KeyCode::Char('q') if key_event.modifiers == KeyModifiers::CONTROL => {
+                    Some(Action::Quit)
+                }
+                _ => Some(Action::CloseContextMenu), // any other key closes menu
+            }
+        }
         FocusLayer::Modal(ModalKind::FileFinder) => Action::from_file_finder_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshConnect) => Action::from_ssh_connect_key_event(key_event),
         FocusLayer::Modal(ModalKind::SshTrustPrompt) => Action::from_ssh_trust_key_event(key_event),
@@ -1040,9 +1053,25 @@ fn route_mouse_event(
         }
 
         // -------------------------------------------------------------------
+        // Right click
+        // -------------------------------------------------------------------
+        MouseEventKind::Down(MouseButton::Right) => {
+            // Only open context menu when pane has focus (not in modals/editor/terminal)
+            if matches!(focus, FocusLayer::Pane) {
+                return Some(Action::OpenContextMenu { x: col, y: row });
+            }
+            None
+        }
+
+        // -------------------------------------------------------------------
         // Left click
         // -------------------------------------------------------------------
         MouseEventKind::Down(MouseButton::Left) => {
+            // Context menu open: any left click closes it
+            if matches!(focus, FocusLayer::Modal(ModalKind::ContextMenu)) {
+                return Some(Action::CloseContextMenu);
+            }
+
             // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
                 if rect_contains(cache.menu_bar, col, row) {
@@ -1689,5 +1718,37 @@ mod tests {
             false,
         );
         assert_eq!(action, Some(Action::EditorOpenSearch));
+    }
+
+    #[test]
+    fn route_mouse_right_click_in_pane_opens_context_menu() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Right),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, Some(Action::OpenContextMenu { x: 10, y: 5 }));
+    }
+
+    #[test]
+    fn route_mouse_right_click_in_modal_does_nothing() {
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Right),
+                column: 10,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Editor,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, None);
     }
 }
