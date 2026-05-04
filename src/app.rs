@@ -41,6 +41,8 @@ pub struct App {
     config_path: std::path::PathBuf,
     /// Last second value displayed in the clock; used to trigger a redraw each second.
     last_clock_second: u8,
+    /// Tracks the last time any user interaction (key/mouse/resize) occurred.
+    last_interaction: std::time::Instant,
 }
 
 impl App {
@@ -66,6 +68,7 @@ impl App {
             last_pane_click: None,
             config_path,
             last_clock_second: 255, // force redraw on first tick
+            last_interaction: std::time::Instant::now(),
         };
 
         for command in app.state.initial_commands() {
@@ -101,6 +104,16 @@ impl App {
                 self.process_next_event()?;
 
                 if self.state.needs_redraw() {
+                    // Screensaver animation frame tick
+                    if self.state.screensaver.active {
+                        let now = std::time::Instant::now();
+                        let delta = (now - self.state.screensaver.last_frame).as_secs_f64();
+                        if delta >= 1.0 / 12.0 {
+                            let size = terminal.terminal.size()?;
+                            self.state.screensaver.tick(size.width, size.height, delta);
+                            self.state.screensaver.last_frame = now;
+                        }
+                    }
                     let mut cache = LayoutCache::default();
                     terminal.draw(|frame| {
                         cache = ui::render(frame, &mut self.state);
@@ -247,6 +260,18 @@ impl App {
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
             }
+            // Screensaver idle detection
+            if !self.state.screensaver.active
+                && self.state.screensaver.enabled
+                && self.state.screensaver.timeout_secs > 0
+            {
+                if self.last_interaction.elapsed()
+                    > std::time::Duration::from_secs(self.state.screensaver.timeout_secs)
+                {
+                    self.state.screensaver.active = true;
+                    self.state.set_needs_redraw();
+                }
+            }
             // Trigger a redraw whenever the wall-clock second advances so the status
             // bar clock stays live even when the user isn't pressing keys.
             let current_second = (std::time::SystemTime::now()
@@ -276,6 +301,8 @@ impl App {
             }
             _ => {}
         }
+
+        self.last_interaction = std::time::Instant::now();
 
         Ok(())
     }
