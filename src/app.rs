@@ -264,13 +264,11 @@ impl App {
             if !self.state.screensaver.active
                 && self.state.screensaver.enabled
                 && self.state.screensaver.timeout_secs > 0
-            {
-                if self.last_interaction.elapsed()
+                && self.last_interaction.elapsed()
                     > std::time::Duration::from_secs(self.state.screensaver.timeout_secs)
-                {
-                    self.state.screensaver.active = true;
-                    self.state.set_needs_redraw();
-                }
+            {
+                self.state.screensaver.active = true;
+                self.state.set_needs_redraw();
             }
             // Trigger a redraw whenever the wall-clock second advances so the status
             // bar clock stays live even when the user isn't pressing keys.
