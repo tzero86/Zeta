@@ -328,11 +328,10 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
          # Open an embedded terminal pane on startup.\n\
          terminal_open_by_default = {terminal_open_by_default}\n\
          \n\
-         # Screensaver timeout in seconds.\n\
-         # When Zeta is idle for this long, a weather-themed ASCII screensaver activates.\n\
-         # Set to 0 to disable timer-based activation (manual trigger via command palette still works).\n\
-         # screensaver_timeout_secs = {screensaver_timeout_secs}\n\
-         # screensaver_enabled = true\n\
+          # Enable weather-themed ASCII screensaver after idle timeout.\n\
+          screensaver_enabled = {screensaver_enabled}\n\
+          # Screensaver idle timeout in seconds (0 disables timer-based activation).\n\
+          screensaver_timeout_secs = {screensaver_timeout_secs}\n\
          \n\
          # Bookmark paths shown in the sidebar. Add full paths, one per line.\n\
          bookmarks = []\n\
@@ -384,6 +383,7 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         preview_panel_open = config.preview_panel_open,
         preview_on_selection = config.preview_on_selection,
         terminal_open_by_default = config.terminal_open_by_default,
+        screensaver_enabled = config.screensaver_enabled,
         screensaver_timeout_secs = default_screensaver_timeout(),
         check_updates_on_startup = config.check_updates_on_startup,
         theme_preset = esc(&config.theme.preset),
