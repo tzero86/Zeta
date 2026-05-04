@@ -1236,6 +1236,27 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!("   This may take a few minutes.");
     println!();
 
+    // On Windows, the current exe file is locked by our running process.
+    // cargo install builds a new binary in a temp dir and then tries to move it
+    // to replace the original — that move fails with "Access is denied" (os error 5)
+    // because Windows won't replace a file that belongs to a running process.
+    //
+    // Renaming the current exe is allowed even while it is running (the OS holds a
+    // handle to the inode, not the path), so we park the old binary under a .bak
+    // name to free the destination slot, run cargo install, then clean up.
+    #[cfg(windows)]
+    let (original_exe, backup_path) = {
+        let exe = std::env::current_exe().context("could not resolve current executable path")?;
+        let bak = exe.with_extension("exe.bak");
+        match std::fs::rename(&exe, &bak) {
+            Ok(()) => (exe, Some(bak)),
+            Err(e) => {
+                eprintln!("⚠️  Could not rename current exe before update ({e}). Proceeding anyway — install may fail.");
+                (exe, None)
+            }
+        }
+    };
+
     let mut cargo_args = vec!["install", "--git", "https://github.com/tzero86/Zeta"];
     // Pin to the exact release tag when available so we install a reproducible build.
     if let Some(tag) = target_tag {
@@ -1259,12 +1280,33 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
         })?;
 
     if status.success() {
+        // Best-effort: remove the parked backup. This may fail if the OS still
+        // holds the file open; it will be cleaned up on next launch instead.
+        #[cfg(windows)]
+        if let Some(bak) = &backup_path {
+            let _ = std::fs::remove_file(bak);
+        }
+
         println!();
         println!("✅ Update installed successfully!");
         println!("   Relaunching Zeta...");
         println!();
+
+        // Relaunch from the freshly-installed binary, not from the backup path.
+        #[cfg(windows)]
+        relaunch_self_from(&original_exe)?;
+        #[cfg(not(windows))]
         relaunch_self()?;
     } else {
+        // Restore the backup so the user still has a working binary.
+        #[cfg(windows)]
+        if let Some(bak) = &backup_path {
+            if let Err(e) = std::fs::rename(bak, &original_exe) {
+                eprintln!("⚠️  Could not restore backup exe: {e}");
+                eprintln!("    Your backup is at: {}", bak.display());
+            }
+        }
+
         eprintln!();
         eprintln!(
             "❌ Update failed (cargo install exited with {:?})",
@@ -1301,6 +1343,31 @@ fn relaunch_self() -> Result<()> {
             .args(std::env::args().skip(1))
             .spawn()?;
         Ok(())
+    }
+}
+
+/// Windows-only: relaunch from an explicit path rather than `current_exe()`.
+/// Used after a self-update where the old binary has been renamed to a .bak,
+/// so `current_exe()` would point at the backup, not the freshly installed one.
+#[cfg(windows)]
+fn relaunch_self_from(exe: &std::path::Path) -> Result<()> {
+    std::process::Command::new(exe)
+        .args(std::env::args().skip(1))
+        .spawn()
+        .context("failed to relaunch Zeta after update")?;
+    Ok(())
+}
+
+/// Remove any leftover `*.exe.bak` files left by a previous interrupted update.
+/// Called at startup; failures are silently ignored so a stale backup never
+/// prevents the app from launching.
+#[cfg(windows)]
+pub fn cleanup_update_backup() {
+    if let Ok(exe) = std::env::current_exe() {
+        let bak = exe.with_extension("exe.bak");
+        if bak.exists() {
+            let _ = std::fs::remove_file(&bak);
+        }
     }
 }
 
