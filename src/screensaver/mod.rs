@@ -1,4 +1,4 @@
-use ratatui::{buffer::Buffer, layout::Rect, style::Color, widgets::Widget};
+use ratatui::{buffer::Buffer, layout::Rect, style::Color};
 use std::time::Instant;
 
 const LAYER_BG_CHARS: &[char] = &['.', '·', ' '];
@@ -229,10 +229,6 @@ pub fn wrap_particle(p: &mut Particle, width: u16, height: u16) {
     }
 }
 
-pub fn apply_wind(p: &mut Particle, wind_speed: f64, _gust: bool) {
-    p.vx += wind_speed * 0.02;
-}
-
 // ── Tiny inline LCG for zero dependency random numbers ──
 
 struct SimpleRng(u64);
@@ -259,31 +255,14 @@ impl SimpleRng {
     }
 
     fn u8(&mut self, lo: u8, hi: u8) -> u8 {
-        let range = hi.saturating_sub(lo) + 1;
-        lo + (self.f64() * range as f64) as u8
+        let range = hi.saturating_sub(lo).saturating_add(1) as u16;
+        let offset = (self.f64() * range as f64) as u16;
+        (lo as u16 + offset).min(255) as u8
     }
 }
 
 fn rand_interval(rng: &mut SimpleRng, min: f64, max: f64) -> f64 {
     rng.f64() * (max - min) + min
-}
-
-pub struct ScreensaverWidget;
-
-impl Default for ScreensaverWidget {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ScreensaverWidget {
-    pub fn new() -> Self {
-        Self
-    }
-}
-
-impl Widget for ScreensaverWidget {
-    fn render(self, _area: Rect, _buf: &mut Buffer) {}
 }
 
 pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
@@ -460,22 +439,6 @@ mod tests {
     }
 
     #[test]
-    fn wind_affects_particle_velocity() {
-        let mut p = Particle {
-            x: 10.0,
-            y: 10.0,
-            vx: 0.0,
-            vy: 0.5,
-            ch: '.',
-            layer: 1,
-            brightness: 100,
-        };
-        apply_wind(&mut p, 1.5, false);
-        assert!(p.vx > 0.0);
-        assert!(p.vx < 2.0);
-    }
-
-    #[test]
     fn screensaver_starts_inactive() {
         let ss = ScreensaverState::new(300, true);
         assert!(!ss.active);
@@ -484,10 +447,22 @@ mod tests {
     }
 
     #[test]
-    fn tick_runs_without_panicking() {
+    fn wind_affects_midground_particles() {
         let mut ss = ScreensaverState::new(300, true);
-        ss.tick(80, 24, 0.083);
-        assert!(ss.frame_counter == 1);
+        for p in &mut ss.particles {
+            if p.layer == 1 {
+                p.vx = 0.0;
+            }
+        }
+        // Multiple ticks simulate ~2.5 seconds of real time to accumulate wind
+        for _ in 0..30 {
+            ss.tick(80, 24, 0.083);
+        }
+        let got_wind = ss.particles.iter().any(|p| p.layer == 1 && p.vx > 0.001);
+        assert!(
+            got_wind,
+            "midground particles should gain vx from wind after multiple ticks"
+        );
     }
 
     #[test]
@@ -496,6 +471,13 @@ mod tests {
         let area = Rect::new(0, 0, 30, 10);
         let mut buf = Buffer::empty(area);
         render_screensaver(&ss, area, &mut buf);
+        // Logo "[Z]eta█" (9 bytes, 7 chars) centered at cx=15
+        // start_x = 15 - (9/2) = 15 - 4 = 11
+        // Position 11=[, 12=Z, 13=], 14=e, 15=t, 16=a, 17=█
+        let cell = buf.cell((12, 5)).unwrap();
+        assert_eq!(cell.symbol(), "Z");
+        let cell = buf.cell((11, 5)).unwrap();
+        assert_eq!(cell.symbol(), "[");
     }
 
     #[test]
