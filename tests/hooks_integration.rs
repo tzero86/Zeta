@@ -100,6 +100,12 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
         elapsed_ms: 0,
     });
 
+    // After a DirectoryScanned, selection is at index 0 which is the ".." parent entry.
+    // Move down once to select "readme.md".
+    state
+        .apply(Action::MoveSelectionDown)
+        .expect("MoveSelectionDown should succeed");
+
     // Positive case: file selected → on_open hook fires.
     let cmds = state
         .apply(Action::OpenSelectedInEditor)
@@ -130,6 +136,11 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
         entries: vec![dir_entry],
         elapsed_ms: 0,
     });
+
+    // Move to select "subdir" (index 0 is "..", index 1 is "subdir").
+    state
+        .apply(Action::MoveSelectionDown)
+        .expect("MoveSelectionDown should succeed");
 
     let dir_cmds = state
         .apply(Action::OpenSelectedInEditor)

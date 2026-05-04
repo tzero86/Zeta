@@ -172,7 +172,13 @@ impl App {
 
         // Post-exit logic: if update scheduled, run cargo install and relaunch.
         if self.state.update_state.install_on_exit {
-            run_update_and_restart()?;
+            let target_tag = self
+                .state
+                .update_state
+                .available_release
+                .as_ref()
+                .map(|r| r.tag_name.clone());
+            run_update_and_restart(target_tag.as_deref())?;
         }
 
         Ok(())
@@ -1224,14 +1230,21 @@ fn route_menu_bar_click(
     None
 }
 
-fn run_update_and_restart() -> Result<()> {
+fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!();
     println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
     println!("   This may take a few minutes.");
     println!();
 
+    let mut cargo_args = vec!["install", "--git", "https://github.com/tzero86/Zeta"];
+    // Pin to the exact release tag when available so we install a reproducible build.
+    if let Some(tag) = target_tag {
+        cargo_args.extend_from_slice(&["--tag", tag]);
+    }
+    cargo_args.push("--locked");
+
     let status = std::process::Command::new("cargo")
-        .args(["install", "--git", "https://github.com/tzero86/Zeta"])
+        .args(&cargo_args)
         .status()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -1257,7 +1270,9 @@ fn run_update_and_restart() -> Result<()> {
             "❌ Update failed (cargo install exited with {:?})",
             status.code()
         );
-        eprintln!("   You can manually run: cargo install --git https://github.com/tzero86/Zeta");
+        eprintln!(
+            "   You can manually run: cargo install --git https://github.com/tzero86/Zeta --locked"
+        );
         eprintln!();
         return Err(anyhow::anyhow!(
             "cargo install failed with exit code {:?}",
@@ -1492,7 +1507,10 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                column: 49,
+                // Pane tabs: " File "(6)+" Navigate "(10)+" View "(6)+" Help "(6)=28
+                // cursor = bar_x(0) + 8 + 28 + 1(spacer) = 37
+                // pill ws_idx 1: start=41 (37+4)
+                column: 41,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },
@@ -1508,7 +1526,8 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                column: 57,
+                // pill ws_idx 3: start=49 (37+4+4+4)
+                column: 49,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },

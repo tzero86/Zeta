@@ -391,59 +391,8 @@ impl PaneState {
 
     #[cfg(test)]
     pub fn sorted_entries(&self) -> Vec<&EntryInfo> {
-        let mut entries: Vec<&EntryInfo> = self.entries.iter().collect();
-        match self.sort_mode {
-            SortMode::Name => {
-                entries.sort_by(|a, b| {
-                    dir_first(a, b).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                });
-            }
-            SortMode::NameDesc => {
-                entries.sort_by(|a, b| {
-                    dir_first(a, b).then_with(|| b.name.to_lowercase().cmp(&a.name.to_lowercase()))
-                });
-            }
-            SortMode::Size => {
-                entries.sort_by(|a, b| {
-                    dir_first(a, b)
-                        .then_with(|| a.size_bytes.unwrap_or(0).cmp(&b.size_bytes.unwrap_or(0)))
-                });
-            }
-            SortMode::SizeDesc => {
-                entries.sort_by(|a, b| {
-                    dir_first(a, b)
-                        .then_with(|| b.size_bytes.unwrap_or(0).cmp(&a.size_bytes.unwrap_or(0)))
-                });
-            }
-            SortMode::Modified => {
-                entries.sort_by(|a, b| dir_first(a, b).then_with(|| a.modified.cmp(&b.modified)));
-            }
-            SortMode::ModifiedDesc => {
-                entries.sort_by(|a, b| dir_first(a, b).then_with(|| b.modified.cmp(&a.modified)));
-            }
-            SortMode::Extension => {
-                entries.sort_by(|a, b| {
-                    dir_first(a, b).then_with(|| {
-                        let ext_a = a
-                            .path
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        let ext_b = b
-                            .path
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")
-                            .to_lowercase();
-                        ext_a
-                            .cmp(&ext_b)
-                            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                    })
-                });
-            }
-        }
-        entries
+        // Delegates to the shared cache so sort logic is not duplicated.
+        self.filtered_entries()
     }
 
     pub fn filtered_entries(&self) -> Vec<&EntryInfo> {
@@ -566,14 +515,17 @@ impl PaneState {
             .into_iter()
             .partition(|&i| self.entries[i].name == "..");
 
+        // Pre-compute lowercase names once to avoid repeated per-comparison allocations.
+        let lower_names: Vec<String> = self.entries.iter().map(|e| e.name.to_lowercase()).collect();
+
         rest_indices.sort_by(|&left_idx, &right_idx| {
             let left = &self.entries[left_idx];
             let right = &self.entries[right_idx];
             match self.sort_mode {
                 SortMode::Name => dir_first(left, right)
-                    .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase())),
+                    .then_with(|| lower_names[left_idx].cmp(&lower_names[right_idx])),
                 SortMode::NameDesc => dir_first(left, right)
-                    .then_with(|| right.name.to_lowercase().cmp(&left.name.to_lowercase())),
+                    .then_with(|| lower_names[right_idx].cmp(&lower_names[left_idx])),
                 SortMode::Size => dir_first(left, right).then_with(|| {
                     left.size_bytes
                         .unwrap_or(0)
@@ -606,7 +558,7 @@ impl PaneState {
                         .to_lowercase();
                     ext_a
                         .cmp(&ext_b)
-                        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+                        .then_with(|| lower_names[left_idx].cmp(&lower_names[right_idx]))
                 }),
             }
         });
