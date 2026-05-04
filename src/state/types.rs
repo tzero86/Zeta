@@ -47,6 +47,8 @@ pub enum FocusLayer {
     GitDiffFileList,
     /// The git diff viewer diff content pane has focus.
     GitDiffContent,
+    /// Screensaver is active — any key/mouse dismisses it.
+    Screensaver,
     /// A modal overlay is open; only modal-specific keys are processed.
     Modal(ModalKind),
 }

@@ -943,6 +943,7 @@ fn route_key_event(
             }
             Action::from_pane_key_event(key_event, keymap)
         }
+        FocusLayer::Screensaver => Some(Action::DismissScreensaver),
     }
 }
 

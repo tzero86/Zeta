@@ -202,6 +202,10 @@ pub enum Action {
     ToggleCheatsheet,
     /// Close the cheatsheet overlay if open (used by Esc handler).
     CloseCheatsheet,
+    /// Activate the screensaver (manual trigger from palette).
+    ActivateScreensaver,
+    /// Dismiss the screensaver on any key/mouse input.
+    DismissScreensaver,
     /// Mouse click on a pane entry row.
     PaneClick {
         left_pane: bool,
