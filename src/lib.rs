@@ -22,4 +22,6 @@ pub mod ui;
 pub mod update;
 pub mod utils;
 
+#[cfg(windows)]
+pub use app::cleanup_update_backup;
 pub use app::App;
