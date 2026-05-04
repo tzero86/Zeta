@@ -1,4 +1,5 @@
 use ratatui::{buffer::Buffer, layout::Rect, style::Color};
+use std::fmt;
 use std::time::Instant;
 
 const LAYER_BG_CHARS: &[char] = &['.', '·', ' '];
@@ -57,6 +58,18 @@ pub struct ScreensaverState {
     logo_pulse: f64,
     frame_counter: u64,
     rng: SimpleRng,
+}
+
+impl fmt::Debug for ScreensaverState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ScreensaverState")
+            .field("active", &self.active)
+            .field("enabled", &self.enabled)
+            .field("timeout_secs", &self.timeout_secs)
+            .field("last_interaction", &self.last_interaction)
+            .field("frame_counter", &self.frame_counter)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ScreensaverState {

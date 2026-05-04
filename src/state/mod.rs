@@ -40,6 +40,7 @@ use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
 use crate::pane::{InlineRenameState, PaneId, PaneState};
+use crate::screensaver::ScreensaverState;
 pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
@@ -276,6 +277,8 @@ pub struct AppState {
     pub update_pulse_frame: u8,
     /// Whether the context-aware quick-reference cheatsheet overlay is visible.
     pub show_cheatsheet: bool,
+    /// Weather-themed ASCII screensaver state.
+    pub screensaver: ScreensaverState,
 }
 
 impl AppState {
@@ -436,6 +439,10 @@ impl AppState {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
+            screensaver: ScreensaverState::new(
+                loaded_config.config.screensaver_timeout_secs,
+                loaded_config.config.screensaver_enabled,
+            ),
         })
     }
 
@@ -629,6 +636,15 @@ impl AppState {
                         String::from("terminal fullscreen disabled")
                     });
                 }
+            }
+            Action::ActivateScreensaver => {
+                self.screensaver.active = true;
+                self.set_needs_redraw();
+            }
+            Action::DismissScreensaver => {
+                self.screensaver.active = false;
+                self.screensaver.last_interaction = Instant::now();
+                self.set_needs_redraw();
             }
             _ => {
                 let cwd = self.panes.active_pane().cwd.clone();
@@ -3209,6 +3225,9 @@ impl AppState {
         if self.is_preview_focused() {
             return FocusLayer::Preview;
         }
+        if self.screensaver.active {
+            return FocusLayer::Screensaver;
+        }
         FocusLayer::Pane
     }
 
@@ -4051,6 +4070,7 @@ mod tests {
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
+    use crate::screensaver::ScreensaverState;
     use crate::state::DebugState;
 
     use super::{
@@ -4500,6 +4520,7 @@ mod tests {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
+            screensaver: ScreensaverState::new(300, true),
         }
     }
 
