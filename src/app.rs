@@ -966,6 +966,11 @@ fn route_mouse_event(
         return None;
     }
 
+    // Screensaver: any mouse click dismisses it.
+    if matches!(focus, FocusLayer::Screensaver) {
+        return Some(Action::DismissScreensaver);
+    }
+
     match event.kind {
         // -------------------------------------------------------------------
         // Scroll wheel
