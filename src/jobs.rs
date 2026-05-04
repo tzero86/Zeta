@@ -608,10 +608,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         Ok(mut za) => {
                                             let inner_name = inner_path.to_string_lossy();
                                             match za.by_name(&inner_name) {
-                                                Ok(mut entry) => {
+                                                Ok(entry) => {
                                                     let mut buf = Vec::new();
                                                     use std::io::Read;
-                                                    let _ = entry.read_to_end(&mut buf);
+                                                    const MEMBER_PREVIEW_LIMIT: u64 =
+                                                        5 * 1024 * 1024;
+                                                    let _ = entry
+                                                        .take(MEMBER_PREVIEW_LIMIT)
+                                                        .read_to_end(&mut buf);
                                                     load_preview_from_bytes(
                                                         &buf,
                                                         &inner_path,
@@ -642,11 +646,16 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                             let mut ar = tar::Archive::new(archive_reader);
                                             let mut found = None;
                                             if let Ok(entries) = ar.entries() {
-                                                for mut e in entries.flatten() {
+                                                for e in entries.flatten() {
                                                     if let Ok(path) = e.path() {
                                                         if path == inner_path {
                                                             let mut buf = Vec::new();
-                                                            let _ = e.read_to_end(&mut buf);
+                                                            use std::io::Read;
+                                                            const MEMBER_PREVIEW_LIMIT: u64 =
+                                                                5 * 1024 * 1024;
+                                                            let _ = e
+                                                                .take(MEMBER_PREVIEW_LIMIT)
+                                                                .read_to_end(&mut buf);
                                                             found = Some(buf);
                                                             break;
                                                         }
@@ -697,16 +706,26 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .name("zeta-editor-load".into())
             .spawn(move || {
                 for req in editor_rx {
-                    let result = match std::fs::read(&req.path) {
-                        Ok(bytes) => JobResult::EditorLoaded {
+                    let result = match std::fs::metadata(&req.path) {
+                        Ok(meta) if meta.len() > 50 * 1024 * 1024 => JobResult::EditorLoadFailed {
                             workspace_id: req.workspace_id,
                             path: req.path,
-                            contents: String::from_utf8_lossy(&bytes).into_owned(),
+                            message: format!(
+                                "file too large to edit ({} MB); limit is 50 MB",
+                                meta.len() / 1_048_576
+                            ),
                         },
-                        Err(error) => JobResult::EditorLoadFailed {
-                            workspace_id: req.workspace_id,
-                            path: req.path,
-                            message: error.to_string(),
+                        _ => match std::fs::read(&req.path) {
+                            Ok(bytes) => JobResult::EditorLoaded {
+                                workspace_id: req.workspace_id,
+                                path: req.path,
+                                contents: String::from_utf8_lossy(&bytes).into_owned(),
+                            },
+                            Err(error) => JobResult::EditorLoadFailed {
+                                workspace_id: req.workspace_id,
+                                path: req.path,
+                                message: error.to_string(),
+                            },
                         },
                     };
                     if result_tx_editor.send(result).is_err() {
@@ -1559,6 +1578,15 @@ fn load_preview_content(
     syntect_theme: &str,
     picker: &ratatui_image::picker::Picker,
 ) -> crate::preview::ViewBuffer {
+    const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024; // 8 MB
+    if let Ok(meta) = std::fs::metadata(path) {
+        if meta.len() > PREVIEW_MAX_BYTES {
+            return crate::preview::ViewBuffer::from_plain(&format!(
+                "[file too large to preview: {} MB]",
+                meta.len() / 1_048_576
+            ));
+        }
+    }
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
@@ -1845,7 +1873,7 @@ fn connect_sftp(
     trust_unknown_host: bool,
 ) -> SftpConnectOutcome {
     use crate::state::ssh::SshErrorKind;
-    use std::net::TcpStream;
+    use std::net::{TcpStream, ToSocketAddrs};
 
     let (user, host, port) = match parse_ssh_address(address) {
         Ok(v) => v,
@@ -1855,9 +1883,20 @@ fn connect_sftp(
     // Create session ID for tracking
     let session_id = format!("{}@{}:{}", user, host, port);
 
-    // Connect to SSH server
-    let tcp = match TcpStream::connect((host.as_str(), port)) {
-        Ok(t) => t,
+    // Connect to SSH server with a 15-second timeout to avoid blocking indefinitely
+    // on unreachable hosts (OS default TCP SYN timeout can be 75-120 seconds).
+    let tcp = match (host.as_str(), port)
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+        .ok_or_else(|| std::io::Error::other(format!("could not resolve {}:{}", host, port)))
+        .and_then(|addr| TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(15)))
+    {
+        Ok(t) => {
+            let _ = t.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+            let _ = t.set_write_timeout(Some(std::time::Duration::from_secs(30)));
+            t
+        }
         Err(e) => {
             return SftpConnectOutcome::Failed(SshErrorKind::ConnectionFailed(format!(
                 "Cannot reach {}:{} — {}",

@@ -73,19 +73,38 @@ fn detect_utc_offset_minutes() -> i32 {
     // WSL fallback: spawn a tiny PowerShell command to read the Windows timezone.
     #[cfg(target_os = "linux")]
     {
+        use std::time::{Duration, Instant};
+
         let is_wsl = std::env::var("WSL_DISTRO_NAME").is_ok()
             || std::path::Path::new("/proc/sys/fs/binfmt_misc/WSLInterop").exists();
         if is_wsl {
+            const TIMEOUT: Duration = Duration::from_secs(2);
             for exe in ["pwsh.exe", "powershell.exe"] {
-                if let Ok(out) = std::process::Command::new(exe)
+                let child = std::process::Command::new(exe)
                     .args([
                         "-NoProfile",
                         "-NonInteractive",
                         "-Command",
                         "[int][System.TimeZoneInfo]::Local.GetUtcOffset((Get-Date)).TotalMinutes",
                     ])
-                    .output()
-                {
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::null())
+                    .spawn();
+                let Ok(mut child) = child else { continue };
+                let deadline = Instant::now() + TIMEOUT;
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None) if Instant::now() < deadline => {
+                            std::thread::sleep(Duration::from_millis(50));
+                        }
+                        _ => {
+                            let _ = child.kill();
+                            break;
+                        }
+                    }
+                }
+                if let Ok(out) = child.wait_with_output() {
                     if let Ok(s) = std::str::from_utf8(&out.stdout) {
                         if let Ok(m) = s.trim().parse::<i32>() {
                             return m;
@@ -1654,7 +1673,6 @@ impl AppState {
                 {
                     let idx = selection.min(items.len().saturating_sub(1));
                     if let Some((name, command)) = items.into_iter().nth(idx) {
-                        let target_str = target.display().to_string();
                         if command.is_empty() {
                             match open::that(&target) {
                                 Ok(()) => {
@@ -1668,17 +1686,27 @@ impl AppState {
                                 }
                             }
                         } else {
-                            let expanded = if command.contains("{}") {
-                                command.replace("{}", &target_str)
+                            // Split command into argv to avoid shell injection.
+                            // Users who genuinely need shell features can prefix with `sh -c`.
+                            let parts: Vec<&str> = command.split_whitespace().collect();
+                            let spawn_result = if let Some((prog, args)) = parts.split_first() {
+                                let mut cmd = std::process::Command::new(prog);
+                                for arg in args {
+                                    if *arg == "{}" {
+                                        cmd.arg(&target);
+                                    } else {
+                                        cmd.arg(arg);
+                                    }
+                                }
+                                // Append target as final arg if {} was not used
+                                if !command.contains("{}") {
+                                    cmd.arg(&target);
+                                }
+                                cmd.spawn()
                             } else {
-                                format!("{command} {target_str}")
+                                Err(std::io::Error::other("empty command"))
                             };
-                            // Use shell to properly parse arguments (preserves spaces in paths)
-                            match std::process::Command::new("sh")
-                                .arg("-c")
-                                .arg(&expanded)
-                                .spawn()
-                            {
+                            match spawn_result {
                                 Ok(_) => {
                                     self.status_message = StatusMessage::info(format!(
                                         "opened {} with {name}",

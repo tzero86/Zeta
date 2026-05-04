@@ -113,6 +113,11 @@ impl UpdateChecker {
         let prerelease = json["prerelease"].as_bool().unwrap_or(false);
         let published_at = json["published_at"].as_str().unwrap_or("").to_string();
 
+        // Skip pre-release versions to avoid offering unstable builds to stable users.
+        if prerelease {
+            return Ok(None);
+        }
+
         Ok(Some(Release {
             version,
             tag_name: tag_name.to_string(),
