@@ -3050,6 +3050,14 @@ impl AppState {
                 });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
+            SettingsField::ScreensaverEnabled(v) => {
+                self.config.screensaver_enabled = v;
+                self.screensaver.enabled = v;
+            }
+            SettingsField::ScreensaverTimeout(v) => {
+                self.config.screensaver_timeout_secs = v;
+                self.screensaver.timeout_secs = v;
+            }
             SettingsField::EditorTabWidth(current) => {
                 let next = match current {
                     2 => 4,
@@ -3659,6 +3667,22 @@ impl AppState {
                 field: SettingsField::PreviewOnSelection,
             },
             SettingsEntry {
+                label: "Screensaver",
+                value: if self.config.screensaver_enabled {
+                    String::from("on")
+                } else {
+                    String::from("off")
+                },
+                hint: "Space",
+                field: SettingsField::ScreensaverEnabled(self.config.screensaver_enabled),
+            },
+            SettingsEntry {
+                label: "Screensaver timeout",
+                value: format!("{}s", self.config.screensaver_timeout_secs),
+                hint: "Space",
+                field: SettingsField::ScreensaverTimeout(self.config.screensaver_timeout_secs),
+            },
+            SettingsEntry {
                 label: "Terminal on startup",
                 value: if self.config.terminal_open_by_default {
                     String::from("yes")
@@ -3771,6 +3795,8 @@ impl AppState {
                             | SettingsField::PreviewPanel
                             | SettingsField::PreviewOnSelection
                             | SettingsField::TerminalOpenByDefault
+                            | SettingsField::ScreensaverEnabled(_)
+                            | SettingsField::ScreensaverTimeout(_)
                     )
                 })
                 .collect(),
