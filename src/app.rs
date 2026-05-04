@@ -1312,9 +1312,11 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
             "❌ Update failed (cargo install exited with {:?})",
             status.code()
         );
-        eprintln!(
-            "   You can manually run: cargo install --git https://github.com/tzero86/Zeta --locked"
-        );
+        eprintln!();
+        eprintln!("   To install manually, close Zeta completely and run:");
+        eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
+        eprintln!();
+        eprintln!("   (On Windows, Zeta must not be running when cargo installs the update.)");
         eprintln!();
         return Err(anyhow::anyhow!(
             "cargo install failed with exit code {:?}",
@@ -1325,6 +1327,7 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 fn relaunch_self() -> Result<()> {
     let current_exe = std::env::current_exe()?;
 
