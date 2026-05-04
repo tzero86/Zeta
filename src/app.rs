@@ -185,7 +185,13 @@ impl App {
 
         // Post-exit logic: if update scheduled, run cargo install and relaunch.
         if self.state.update_state.install_on_exit {
-            run_update_and_restart()?;
+            let target_tag = self
+                .state
+                .update_state
+                .available_release
+                .as_ref()
+                .map(|r| r.tag_name.clone());
+            run_update_and_restart(target_tag.as_deref())?;
         }
 
         Ok(())
@@ -1255,14 +1261,42 @@ fn route_menu_bar_click(
     None
 }
 
-fn run_update_and_restart() -> Result<()> {
+fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!();
     println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
     println!("   This may take a few minutes.");
     println!();
 
+    // On Windows, the current exe file is locked by our running process.
+    // cargo install builds a new binary in a temp dir and then tries to move it
+    // to replace the original — that move fails with "Access is denied" (os error 5)
+    // because Windows won't replace a file that belongs to a running process.
+    //
+    // Renaming the current exe is allowed even while it is running (the OS holds a
+    // handle to the inode, not the path), so we park the old binary under a .bak
+    // name to free the destination slot, run cargo install, then clean up.
+    #[cfg(windows)]
+    let (original_exe, backup_path) = {
+        let exe = std::env::current_exe().context("could not resolve current executable path")?;
+        let bak = exe.with_extension("exe.bak");
+        match std::fs::rename(&exe, &bak) {
+            Ok(()) => (exe, Some(bak)),
+            Err(e) => {
+                eprintln!("⚠️  Could not rename current exe before update ({e}). Proceeding anyway — install may fail.");
+                (exe, None)
+            }
+        }
+    };
+
+    let mut cargo_args = vec!["install", "--git", "https://github.com/tzero86/Zeta"];
+    // Pin to the exact release tag when available so we install a reproducible build.
+    if let Some(tag) = target_tag {
+        cargo_args.extend_from_slice(&["--tag", tag]);
+    }
+    cargo_args.push("--locked");
+
     let status = std::process::Command::new("cargo")
-        .args(["install", "--git", "https://github.com/tzero86/Zeta"])
+        .args(&cargo_args)
         .status()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -1277,18 +1311,43 @@ fn run_update_and_restart() -> Result<()> {
         })?;
 
     if status.success() {
+        // Best-effort: remove the parked backup. This may fail if the OS still
+        // holds the file open; it will be cleaned up on next launch instead.
+        #[cfg(windows)]
+        if let Some(bak) = &backup_path {
+            let _ = std::fs::remove_file(bak);
+        }
+
         println!();
         println!("✅ Update installed successfully!");
         println!("   Relaunching Zeta...");
         println!();
+
+        // Relaunch from the freshly-installed binary, not from the backup path.
+        #[cfg(windows)]
+        relaunch_self_from(&original_exe)?;
+        #[cfg(not(windows))]
         relaunch_self()?;
     } else {
+        // Restore the backup so the user still has a working binary.
+        #[cfg(windows)]
+        if let Some(bak) = &backup_path {
+            if let Err(e) = std::fs::rename(bak, &original_exe) {
+                eprintln!("⚠️  Could not restore backup exe: {e}");
+                eprintln!("    Your backup is at: {}", bak.display());
+            }
+        }
+
         eprintln!();
         eprintln!(
             "❌ Update failed (cargo install exited with {:?})",
             status.code()
         );
-        eprintln!("   You can manually run: cargo install --git https://github.com/tzero86/Zeta");
+        eprintln!();
+        eprintln!("   To install manually, close Zeta completely and run:");
+        eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
+        eprintln!();
+        eprintln!("   (On Windows, Zeta must not be running when cargo installs the update.)");
         eprintln!();
         return Err(anyhow::anyhow!(
             "cargo install failed with exit code {:?}",
@@ -1299,6 +1358,7 @@ fn run_update_and_restart() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(windows))]
 fn relaunch_self() -> Result<()> {
     let current_exe = std::env::current_exe()?;
 
@@ -1317,6 +1377,31 @@ fn relaunch_self() -> Result<()> {
             .args(std::env::args().skip(1))
             .spawn()?;
         Ok(())
+    }
+}
+
+/// Windows-only: relaunch from an explicit path rather than `current_exe()`.
+/// Used after a self-update where the old binary has been renamed to a .bak,
+/// so `current_exe()` would point at the backup, not the freshly installed one.
+#[cfg(windows)]
+fn relaunch_self_from(exe: &std::path::Path) -> Result<()> {
+    std::process::Command::new(exe)
+        .args(std::env::args().skip(1))
+        .spawn()
+        .context("failed to relaunch Zeta after update")?;
+    Ok(())
+}
+
+/// Remove any leftover `*.exe.bak` files left by a previous interrupted update.
+/// Called at startup; failures are silently ignored so a stale backup never
+/// prevents the app from launching.
+#[cfg(windows)]
+pub fn cleanup_update_backup() {
+    if let Ok(exe) = std::env::current_exe() {
+        let bak = exe.with_extension("exe.bak");
+        if bak.exists() {
+            let _ = std::fs::remove_file(&bak);
+        }
     }
 }
 
@@ -1523,7 +1608,10 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                column: 49,
+                // Pane tabs: " File "(6)+" Navigate "(10)+" View "(6)+" Help "(6)=28
+                // cursor = bar_x(0) + 8 + 28 + 1(spacer) = 37
+                // pill ws_idx 1: start=41 (37+4)
+                column: 41,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },
@@ -1539,7 +1627,8 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                column: 57,
+                // pill ws_idx 3: start=49 (37+4+4+4)
+                column: 49,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },

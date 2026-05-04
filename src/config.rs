@@ -436,9 +436,44 @@ pub struct RuntimeKeymap {
 
 impl Default for RuntimeKeymap {
     fn default() -> Self {
-        KeymapConfig::default()
-            .compile()
-            .expect("default keymap should always compile")
+        KeymapConfig::default().compile().unwrap_or_else(|e| {
+            // The default KeymapConfig values are hard-coded well-formed strings, so this branch
+            // should be unreachable in practice.  If somehow they fail (e.g. future refactor),
+            // fall back to a minimal safe keymap rather than panicking.
+            eprintln!("Warning: default keymap failed to compile ({e}), using built-in fallback");
+            RuntimeKeymap {
+                quit: KeyBinding {
+                    code: KeyCode::Char('q'),
+                    modifiers: KeyModifiers::NONE,
+                },
+                switch_pane: KeyBinding {
+                    code: KeyCode::Tab,
+                    modifiers: KeyModifiers::NONE,
+                },
+                refresh: KeyBinding {
+                    code: KeyCode::Char('r'),
+                    modifiers: KeyModifiers::NONE,
+                },
+                workspace: [
+                    KeyBinding {
+                        code: KeyCode::Char('1'),
+                        modifiers: KeyModifiers::ALT,
+                    },
+                    KeyBinding {
+                        code: KeyCode::Char('2'),
+                        modifiers: KeyModifiers::ALT,
+                    },
+                    KeyBinding {
+                        code: KeyCode::Char('3'),
+                        modifiers: KeyModifiers::ALT,
+                    },
+                    KeyBinding {
+                        code: KeyCode::Char('4'),
+                        modifiers: KeyModifiers::ALT,
+                    },
+                ],
+            }
+        })
     }
 }
 
