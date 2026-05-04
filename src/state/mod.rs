@@ -3079,12 +3079,30 @@ impl AppState {
                 let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::ScreensaverEnabled(v) => {
-                self.config.screensaver_enabled = v;
-                self.screensaver.enabled = v;
+                let next = !v;
+                self.config.screensaver_enabled = next;
+                self.screensaver.enabled = next;
+                self.set_status(if next {
+                    String::from("screensaver enabled")
+                } else {
+                    String::from("screensaver disabled")
+                });
+                let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::ScreensaverTimeout(v) => {
-                self.config.screensaver_timeout_secs = v;
-                self.screensaver.timeout_secs = v;
+                let next = match v {
+                    0 => 30,
+                    30 => 60,
+                    60 => 120,
+                    120 => 300,
+                    300 => 600,
+                    600 => 1800,
+                    _ => 0,
+                };
+                self.config.screensaver_timeout_secs = next;
+                self.screensaver.timeout_secs = next;
+                self.set_status(format!("screensaver timeout set to {next}s"));
+                let _ = self.config.save(Path::new(&self.config_path));
             }
             SettingsField::EditorTabWidth(current) => {
                 let next = match current {
