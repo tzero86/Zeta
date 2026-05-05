@@ -23,6 +23,8 @@ pub struct TextAreaAdapter {
     #[allow(dead_code)]
     search_matches: Vec<(usize, usize)>,
     md_preview_cache: Option<MdPreviewCache>,
+    pub(crate) viewport_row_top: usize,
+    viewport_height: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -47,6 +49,8 @@ impl TextAreaAdapter {
             edit_version: 0,
             search_matches: Vec::new(),
             md_preview_cache: None,
+            viewport_row_top: 0,
+            viewport_height: 0,
         }
     }
 
@@ -81,6 +85,24 @@ impl TextAreaAdapter {
     /// Current cursor position as (row, col).
     pub fn cursor(&self) -> (usize, usize) {
         self.inner.cursor()
+    }
+
+    /// First visible logical line after the last render.
+    pub fn viewport_row_top(&self) -> usize {
+        self.viewport_row_top
+    }
+
+    fn next_scroll_top(prev_top: usize, cursor_row: usize, height: usize) -> usize {
+        if height == 0 {
+            return prev_top;
+        }
+        if cursor_row < prev_top {
+            cursor_row
+        } else if cursor_row >= prev_top + height {
+            cursor_row + 1 - height
+        } else {
+            prev_top
+        }
     }
 
     /// Total line count.
@@ -714,11 +736,12 @@ impl TextAreaAdapter {
         frame: &mut ratatui::Frame,
         area: ratatui::layout::Rect,
         is_focused: bool,
+        line_number_color: ratatui::style::Color,
     ) {
         use ratatui::style::{Color, Modifier, Style};
 
         self.inner
-            .set_line_number_style(Style::default().fg(Color::DarkGray));
+            .set_line_number_style(Style::default().fg(line_number_color));
 
         if is_focused {
             self.inner.set_cursor_style(
@@ -738,6 +761,11 @@ impl TextAreaAdapter {
             .set_selection_style(Style::default().bg(Color::Blue).fg(Color::White));
 
         frame.render_widget(&self.inner, area);
+
+        self.viewport_height = area.height as usize;
+        let cursor_row = self.inner.cursor().0;
+        self.viewport_row_top =
+            Self::next_scroll_top(self.viewport_row_top, cursor_row, self.viewport_height);
     }
 
     /// Forwards a crossterm mouse event to the tui-textarea input handler.

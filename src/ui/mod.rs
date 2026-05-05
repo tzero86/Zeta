@@ -213,9 +213,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                         area: editor_area,
                         is_focused: editor_focused,
                         show_search_bar: show_search,
+                        line_number_color: palette.text_muted,
                     },
                 );
-                editor_visible_start = editor.cursor().0;
+                editor_visible_start = editor.viewport_row_top();
                 editor_scroll_col = editor.scroll_col;
 
                 if let Some(md_area) = md_area_opt {

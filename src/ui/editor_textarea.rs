@@ -12,6 +12,7 @@ pub struct RenderTextareaEditorArgs<'a> {
     pub area: Rect,
     pub is_focused: bool,
     pub show_search_bar: bool,
+    pub line_number_color: ratatui::style::Color,
 }
 
 pub fn render_textarea_editor(frame: &mut Frame, args: RenderTextareaEditorArgs) {
@@ -31,7 +32,8 @@ pub fn render_textarea_editor(frame: &mut Frame, args: RenderTextareaEditorArgs)
         area
     };
 
-    args.editor.render(frame, editor_area, args.is_focused);
+    args.editor
+        .render(frame, editor_area, args.is_focused, args.line_number_color);
 }
 
 fn render_search_bar(frame: &mut Frame, editor: &TextAreaAdapter, area: Rect) {

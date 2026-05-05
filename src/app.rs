@@ -43,6 +43,8 @@ pub struct App {
     last_clock_second: u8,
     /// Tracks the last time any user interaction (key/mouse/resize) occurred.
     last_interaction: std::time::Instant,
+    /// Tracks a pending Ctrl+Q press for double-press confirmation.
+    pending_quit: Option<std::time::Instant>,
 }
 
 impl App {
@@ -69,6 +71,7 @@ impl App {
             config_path,
             last_clock_second: 255, // force redraw on first tick
             last_interaction: std::time::Instant::now(),
+            pending_quit: None,
         };
 
         for command in app.state.initial_commands() {
@@ -337,6 +340,20 @@ impl App {
                     is_preview_open,
                     is_settings_rebinding,
                 ) {
+                    // Require a second Ctrl+Q within 1.5 s to actually quit.
+                    if action == Action::Quit {
+                        let now = std::time::Instant::now();
+                        if let Some(last) = self.pending_quit {
+                            if now.duration_since(last).as_millis() < 1500 {
+                                self.dispatch(Action::Quit)?;
+                                return Ok(());
+                            }
+                        }
+                        self.pending_quit = Some(now);
+                        self.state.set_status("Press Ctrl+Q again to quit");
+                        return Ok(());
+                    }
+                    self.pending_quit = None;
                     self.dispatch(action)?;
                 }
             }
@@ -506,9 +523,9 @@ impl App {
         let gutter_width = digits + 2;
 
         // Convert screen col/row to viewport-relative coords.
-        // Editor content starts 1 col inside the border + gutter.
-        let content_start_col = editor_rect.x + 1 + gutter_width;
-        let content_start_row = editor_rect.y + 1;
+        // Editor content starts at left edge + gutter (no border).
+        let content_start_col = editor_rect.x + gutter_width;
+        let content_start_row = editor_rect.y;
 
         // Clamp to the content area to avoid underflow.
         let viewport_col = col.saturating_sub(content_start_col) as usize;
