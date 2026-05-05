@@ -142,6 +142,13 @@ impl App {
                         }
                     }
                     self.state.mark_drawn(); // clears needs_redraw
+                    // Keep the screensaver animating at its target cadence: ensure
+                    // another redraw is scheduled immediately so the next loop
+                    // iteration picks up the next animation frame without waiting
+                    // for a coarse clock-tick or user input.
+                    if self.state.screensaver.active {
+                        self.state.set_needs_redraw();
+                    }
                 }
             }
 

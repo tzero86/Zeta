@@ -384,7 +384,7 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         preview_on_selection = config.preview_on_selection,
         terminal_open_by_default = config.terminal_open_by_default,
         screensaver_enabled = config.screensaver_enabled,
-        screensaver_timeout_secs = default_screensaver_timeout(),
+        screensaver_timeout_secs = config.screensaver_timeout_secs,
         check_updates_on_startup = config.check_updates_on_startup,
         theme_preset = esc(&config.theme.preset),
         status_bar_label = esc(&config.theme.status_bar_label),

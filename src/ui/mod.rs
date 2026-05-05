@@ -217,7 +217,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                     },
                 );
                 editor_visible_start = editor.viewport_row_top();
-                editor_scroll_col = editor.scroll_col;
+                editor_scroll_col = editor.viewport_col_left();
 
                 if let Some(md_area) = md_area_opt {
                     let source = editor.contents();

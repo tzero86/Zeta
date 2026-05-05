@@ -25,6 +25,8 @@ pub struct TextAreaAdapter {
     md_preview_cache: Option<MdPreviewCache>,
     pub(crate) viewport_row_top: usize,
     viewport_height: usize,
+    viewport_col_left: usize,
+    viewport_content_width: usize,
 }
 
 #[derive(Clone, Debug)]
@@ -51,6 +53,8 @@ impl TextAreaAdapter {
             md_preview_cache: None,
             viewport_row_top: 0,
             viewport_height: 0,
+            viewport_col_left: 0,
+            viewport_content_width: 0,
         }
     }
 
@@ -92,6 +96,12 @@ impl TextAreaAdapter {
         self.viewport_row_top
     }
 
+    /// Returns the leftmost visible char-column after the last render.
+    /// Used by `handle_editor_click` to convert screen columns to buffer columns.
+    pub fn viewport_col_left(&self) -> usize {
+        self.viewport_col_left
+    }
+
     fn next_scroll_top(prev_top: usize, cursor_row: usize, height: usize) -> usize {
         if height == 0 {
             return prev_top;
@@ -102,6 +112,20 @@ impl TextAreaAdapter {
             cursor_row + 1 - height
         } else {
             prev_top
+        }
+    }
+
+    /// Mirrors tui-textarea-2's horizontal scroll logic.
+    fn next_scroll_left(prev_left: usize, cursor_col: usize, width: usize) -> usize {
+        if width == 0 {
+            return prev_left;
+        }
+        if cursor_col < prev_left {
+            cursor_col
+        } else if cursor_col >= prev_left + width {
+            cursor_col + 1 - width
+        } else {
+            prev_left
         }
     }
 
@@ -762,10 +786,21 @@ impl TextAreaAdapter {
 
         frame.render_widget(&self.inner, area);
 
+        // Track vertical viewport for click-to-position mapping.
         self.viewport_height = area.height as usize;
         let cursor_row = self.inner.cursor().0;
         self.viewport_row_top =
             Self::next_scroll_top(self.viewport_row_top, cursor_row, self.viewport_height);
+
+        // Track horizontal viewport.  Content width = area minus the gutter
+        // (num_digits(line_count) + 2 margin chars, matching tui-textarea-2's widget.rs).
+        let line_count = self.inner.lines().len().max(1);
+        let gutter_width = (line_count.ilog10() + 1 + 2) as u16;
+        self.viewport_content_width = (area.width.saturating_sub(gutter_width)) as usize;
+        let cursor_col = self.inner.cursor().1;
+        self.viewport_col_left =
+            Self::next_scroll_left(self.viewport_col_left, cursor_col, self.viewport_content_width);
+        self.scroll_col = self.viewport_col_left;
     }
 
     /// Forwards a crossterm mouse event to the tui-textarea input handler.
