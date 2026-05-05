@@ -120,48 +120,32 @@ impl TextAreaAdapter {
 
     /// Insert a single character at the cursor.
     pub fn insert_char(&mut self, ch: char) {
-        self.inner.input(Input {
-            key: Key::Char(ch),
-            ctrl: false,
-            alt: false,
-            shift: false,
-        });
-        self.bump();
+        if self.inner.input(Input { key: Key::Char(ch), ctrl: false, alt: false, shift: false }) {
+            self.bump();
+        }
     }
 
     /// Insert a newline at the cursor.
     pub fn insert_newline(&mut self) {
-        self.inner.input(Input {
-            key: Key::Enter,
-            ctrl: false,
-            alt: false,
-            shift: false,
-        });
-        self.bump();
+        if self.inner.input(Input { key: Key::Enter, ctrl: false, alt: false, shift: false }) {
+            self.bump();
+        }
     }
 
     // Deletion
 
     /// Delete character before cursor (backspace).
     pub fn backspace(&mut self) {
-        self.inner.input(Input {
-            key: Key::Backspace,
-            ctrl: false,
-            alt: false,
-            shift: false,
-        });
-        self.bump();
+        if self.inner.input(Input { key: Key::Backspace, ctrl: false, alt: false, shift: false }) {
+            self.bump();
+        }
     }
 
     /// Delete character at cursor (delete key).
     pub fn delete_char(&mut self) {
-        self.inner.input(Input {
-            key: Key::Delete,
-            ctrl: false,
-            alt: false,
-            shift: false,
-        });
-        self.bump();
+        if self.inner.input(Input { key: Key::Delete, ctrl: false, alt: false, shift: false }) {
+            self.bump();
+        }
     }
 
     // Cursor movement (non-mutating — do NOT call bump())
@@ -209,7 +193,9 @@ impl TextAreaAdapter {
     /// Jump to exact (row, col) — clamp to valid range if out of bounds.
     pub fn jump_to(&mut self, row: usize, col: usize) {
         let row = row.min(self.line_count().saturating_sub(1));
-        let col = col.min(self.lines().get(row).map(|l| l.len()).unwrap_or(0));
+        let col = col.min(self.lines().get(row).map(|l| l.chars().count()).unwrap_or(0));
+        let row = row.min(u16::MAX as usize);
+        let col = col.min(u16::MAX as usize);
         self.inner
             .move_cursor(CursorMove::Jump(row as u16, col as u16));
     }
@@ -468,9 +454,8 @@ mod tests {
         assert_eq!(adapter.cursor(), (0, 0));
         
         adapter.move_word_right();
-        // Cursor should move to next word boundary
-        let pos_after_first_word = adapter.cursor();
-        assert!(pos_after_first_word.1 > 0);
+        // tui-textarea WordForward lands after "hello " (col 6, including trailing space)
+        assert_eq!(adapter.cursor(), (0, 6));
         
         adapter.move_word_left();
         assert_eq!(adapter.cursor(), (0, 0));
