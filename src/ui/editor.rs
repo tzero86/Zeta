@@ -13,6 +13,7 @@ use crate::ui::styles::{
     dirty_indicator_style, panel_title_focused_style, panel_title_unfocused_style,
 };
 
+#[allow(dead_code)]
 pub struct RenderEditorArgs<'a> {
     pub editor: &'a mut EditorBuffer,
     pub render_state: &'a EditorRenderState,
@@ -27,6 +28,7 @@ pub struct RenderEditorArgs<'a> {
     pub cheap_tab_width: u8,
 }
 
+#[allow(dead_code)]
 pub fn editor_render_state(
     editor: &mut EditorBuffer,
     area: Rect,
@@ -45,6 +47,7 @@ pub fn editor_render_state(
     )
 }
 
+#[allow(dead_code)]
 pub fn editor_highlighted_render_state(
     editor: &mut EditorBuffer,
     area: Rect,
@@ -71,6 +74,7 @@ pub fn editor_highlighted_render_state(
     (visible_start, lines)
 }
 
+#[allow(dead_code)]
 pub fn render_editor(frame: &mut Frame<'_>, area: Rect, args: RenderEditorArgs<'_>) {
     let RenderEditorArgs {
         editor,

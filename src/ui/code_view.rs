@@ -9,6 +9,7 @@ use crate::config::ThemePalette;
 use crate::highlight::HighlightedLine;
 
 /// Search match ranges for a single call to `render_code_view`.
+#[allow(dead_code)]
 pub struct SearchHighlight<'a> {
     /// Per visual-row char-column ranges to highlight as search matches.
     /// The outer slice is indexed by visual row; inner vecs are `(col_start, col_end)`.
@@ -18,6 +19,7 @@ pub struct SearchHighlight<'a> {
 }
 
 /// Selection highlight data for a single call to `render_code_view`.
+#[allow(dead_code)]
 pub struct SelectionHighlight<'a> {
     /// Per visual-row optional display-char range `(col_start, col_end)` that is selected.
     pub row_ranges: &'a [Option<(usize, usize)>],
@@ -25,6 +27,7 @@ pub struct SelectionHighlight<'a> {
     pub bg: Color,
 }
 
+#[allow(dead_code)]
 pub struct CodeViewRenderArgs<'a> {
     pub lines: &'a [HighlightedLine],
     pub first_line_number: usize,
@@ -38,6 +41,7 @@ pub struct CodeViewRenderArgs<'a> {
     pub selection: Option<SelectionHighlight<'a>>,
 }
 
+#[allow(dead_code)]
 pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderArgs<'_>) {
     if area.height == 0 || area.width == 0 {
         return;
@@ -148,6 +152,7 @@ pub fn render_code_view(frame: &mut Frame<'_>, area: Rect, args: CodeViewRenderA
 ///
 /// `match_ranges` and `active_col_range` are expressed as char-column offsets within
 /// the row (not display-width offsets), because `find_matches` works in char space.
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 fn build_row_spans(
     tokens: &HighlightedLine,
@@ -249,6 +254,7 @@ fn build_row_spans(
 
 /// Return the background override for the char at `char_col`, or `None` to use
 /// the row default. Active match takes precedence over non-active match.
+#[allow(dead_code)]
 #[inline]
 fn char_highlight_bg(
     char_col: usize,
@@ -280,6 +286,7 @@ fn char_highlight_bg(
     None
 }
 
+#[allow(dead_code)]
 #[inline]
 fn styled_span(
     text: String,

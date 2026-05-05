@@ -659,55 +659,47 @@ impl TextAreaAdapter {
         });
     }
 
-    /// Render the textarea widget into the given frame area.
-    /// Manual rendering to bridge ratatui 0.29 (tui-textarea) and 0.30 (this crate).
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, _is_focused: bool) {
-        use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
-        use ratatui::style::{Style, Color, Modifier};
-        use ratatui::text::{Line, Span};
-        
-        // Get cursor position
-        let (cursor_row, cursor_col) = self.inner.cursor();
-        
-        // Get visible lines
-        let lines = self.inner.lines();
-        
-        // Calculate viewport - show lines around cursor
-        let viewport_height = area.height.saturating_sub(2) as usize; // Account for borders
-        let start_line = cursor_row.saturating_sub(viewport_height / 2);
-        let _end_line = (start_line + viewport_height).min(lines.len());
-        
-        // Build ratatui Lines for rendering
-        let mut rendered_lines = Vec::new();
-        for (idx, line_text) in lines.iter().enumerate().skip(start_line).take(viewport_height) {
-            let line_num = idx + 1;
-            let gutter = format!("{:>4} │ ", line_num);
-            
-            // Highlight cursor line
-            if idx == cursor_row {
-                let mut spans = vec![Span::styled(gutter, Style::default().fg(Color::Yellow))];
-                spans.push(Span::styled(line_text.as_str(), Style::default().add_modifier(Modifier::BOLD)));
-                rendered_lines.push(Line::from(spans));
-            } else {
-                let mut spans = vec![Span::styled(gutter, Style::default().fg(Color::DarkGray))];
-                spans.push(Span::raw(line_text.as_str()));
-                rendered_lines.push(Line::from(spans));
-            }
+    /// Render the textarea using tui-textarea's built-in widget.
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool) {
+        use ratatui::style::{Color, Modifier, Style};
+
+        self.inner.set_line_number_style(Style::default().fg(Color::DarkGray));
+
+        if is_focused {
+            self.inner.set_cursor_style(
+                Style::default()
+                    .bg(Color::White)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::REVERSED),
+            );
+            self.inner.set_cursor_line_style(Style::default().bg(Color::DarkGray));
+        } else {
+            self.inner.set_cursor_style(Style::default());
+            self.inner.set_cursor_line_style(Style::default());
         }
-        
-        // Create paragraph with line numbers
-        let title = format!(" Editor - {}:{} ", cursor_row + 1, cursor_col + 1);
-        let paragraph = Paragraph::new(rendered_lines)
-            .block(Block::default().borders(Borders::ALL).title(title))
-            .wrap(Wrap { trim: false });
-        
-        frame.render_widget(paragraph, area);
+
+        self.inner
+            .set_selection_style(Style::default().bg(Color::Blue).fg(Color::White));
+
+        frame.render_widget(&self.inner, area);
+    }
+
+    /// Returns a reference to the inner [`TextArea`] for rendering in the UI layer.
+    pub fn inner_widget_ref(&self) -> &TextArea<'static> {
+        &self.inner
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_widget_compiles() {
+        let adapter = TextAreaAdapter::new_empty();
+        // Verify inner_widget_ref() is accessible and returns the TextArea reference.
+        let _w = adapter.inner_widget_ref();
+    }
 
     #[test]
     fn test_from_text_produces_correct_line_count_and_contents() {
