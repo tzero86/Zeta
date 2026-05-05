@@ -488,7 +488,6 @@ impl App {
     /// and call the appropriate `TextAreaAdapter` method.
     /// `is_drag` = false for a new click (sets anchor + cursor), true for drag (moves cursor only).
     fn handle_editor_click(&mut self, col: u16, row: u16, is_drag: bool) -> Result<()> {
-        const GUTTER_WIDTH: u16 = 6;
         let Some(editor_rect) = self.layout_cache.editor_panel else {
             return Ok(());
         };
@@ -497,9 +496,18 @@ impl App {
             return Ok(());
         };
 
+        // Match tui-textarea-2's gutter: num_digits(line_count) + 2 margin chars
+        let line_count = editor.line_count();
+        let digits = if line_count == 0 {
+            1
+        } else {
+            (line_count.ilog10() + 1) as u16
+        };
+        let gutter_width = digits + 2;
+
         // Convert screen col/row to viewport-relative coords.
         // Editor content starts 1 col inside the border + gutter.
-        let content_start_col = editor_rect.x + 1 + GUTTER_WIDTH;
+        let content_start_col = editor_rect.x + 1 + gutter_width;
         let content_start_row = editor_rect.y + 1;
 
         // Clamp to the content area to avoid underflow.

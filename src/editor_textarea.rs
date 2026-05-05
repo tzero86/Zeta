@@ -340,32 +340,38 @@ impl TextAreaAdapter {
         deleted
     }
 
+    /// Converts a char-column index to a byte offset in `s`.
+    fn char_col_to_byte(s: &str, char_col: usize) -> usize {
+        s.char_indices()
+            .nth(char_col)
+            .map(|(b, _)| b)
+            .unwrap_or(s.len())
+    }
+
     /// Get the currently selected text. Returns empty string if nothing selected.
     pub fn selected_text(&self) -> String {
-        // Get selection range without consuming it
         if let Some(((start_row, start_col), (end_row, end_col))) = self.inner.selection_range() {
             let lines = self.inner.lines();
 
             if start_row == end_row {
-                // Single line selection
-                return lines[start_row][start_col..end_col].to_string();
+                let s = &lines[start_row];
+                let b_start = Self::char_col_to_byte(s, start_col);
+                let b_end = Self::char_col_to_byte(s, end_col);
+                return s[b_start..b_end].to_string();
             }
 
-            // Multi-line selection
             let mut result = String::new();
-            // First line: from start_col to end
-            result.push_str(&lines[start_row][start_col..]);
+            let first = &lines[start_row];
+            result.push_str(&first[Self::char_col_to_byte(first, start_col)..]);
             result.push('\n');
 
-            // Middle lines: full lines
             for line in &lines[start_row + 1..end_row] {
                 result.push_str(line);
                 result.push('\n');
             }
 
-            // Last line: from start to end_col
-            result.push_str(&lines[end_row][..end_col]);
-
+            let last = &lines[end_row];
+            result.push_str(&last[..Self::char_col_to_byte(last, end_col)]);
             result
         } else {
             String::new()
@@ -605,6 +611,24 @@ impl TextAreaAdapter {
 
     // Mouse selection methods (for app.rs click handling)
 
+    fn display_col_to_char_offset(line: &str, display_col: usize, tab_width: usize) -> usize {
+        let mut col = 0usize;
+        let mut char_offset = 0usize;
+        for ch in line.chars() {
+            let ch_width = if ch == '\t' {
+                tab_width - (col % tab_width)
+            } else {
+                1
+            };
+            if col + ch_width > display_col {
+                break;
+            }
+            col += ch_width;
+            char_offset += 1;
+        }
+        char_offset
+    }
+
     /// Move cursor to the nearest char position for the given logical line and display_col
     /// (tab-expanded column), without modifying the selection anchor.
     fn move_to_line_display_col(&mut self, line: usize, display_col: usize, tab_width: u8) {
@@ -612,18 +636,8 @@ impl TextAreaAdapter {
         let clamped_line = line.min(lines.len().saturating_sub(1));
         let line_text = &lines[clamped_line];
 
-        let tab_w = tab_width as usize;
-        let mut col = 0usize;
-        let mut char_offset = 0usize;
-
-        for ch in line_text.chars() {
-            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
-            if col + ch_width > display_col {
-                break;
-            }
-            col += ch_width;
-            char_offset += 1;
-        }
+        let char_offset =
+            Self::display_col_to_char_offset(line_text, display_col, tab_width as usize);
 
         self.jump_to(clamped_line, char_offset);
         self.inner.cancel_selection();
@@ -653,18 +667,8 @@ impl TextAreaAdapter {
         let clamped_line = line.min(lines.len().saturating_sub(1));
         let line_text = &lines[clamped_line];
 
-        let tab_w = tab_width as usize;
-        let mut col = 0usize;
-        let mut char_offset = 0usize;
-
-        for ch in line_text.chars() {
-            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
-            if col + ch_width > display_col {
-                break;
-            }
-            col += ch_width;
-            char_offset += 1;
-        }
+        let char_offset =
+            Self::display_col_to_char_offset(line_text, display_col, tab_width as usize);
 
         // If no selection is active, start one
         if self.inner.selection_range().is_none() {
@@ -757,11 +761,6 @@ impl TextAreaAdapter {
         }
         changed
     }
-
-    /// Returns a reference to the inner [`TextArea`] for rendering in the UI layer.
-    pub fn inner_widget_ref(&self) -> &TextArea<'static> {
-        &self.inner
-    }
 }
 
 #[cfg(test)]
@@ -771,8 +770,8 @@ mod tests {
     #[test]
     fn test_widget_compiles() {
         let adapter = TextAreaAdapter::new_empty();
-        // Verify inner_widget_ref() is accessible and returns the TextArea reference.
-        let _w = adapter.inner_widget_ref();
+        // Verify the inner TextArea field is accessible for rendering.
+        let _w = &adapter.inner;
     }
 
     #[test]
@@ -1187,6 +1186,18 @@ mod tests {
 
         let selected = adapter.selected_text();
         assert_eq!(selected, "");
+    }
+
+    #[test]
+    fn test_selected_text_unicode() {
+        let mut adapter = TextAreaAdapter::from_text("héllo wörld");
+        adapter.move_line_start();
+        adapter.start_selection();
+        // select "hél" (3 chars, but 'é' is 2 bytes)
+        adapter.extend_selection_right();
+        adapter.extend_selection_right();
+        adapter.extend_selection_right();
+        assert_eq!(adapter.selected_text(), "hél");
     }
 
     #[test]
