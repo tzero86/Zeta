@@ -20,7 +20,6 @@ pub struct TextAreaAdapter {
     edit_version: u64,
     #[allow(dead_code)]
     search_matches: Vec<(usize, usize)>,
-    #[allow(dead_code)]
     md_preview_cache: Option<MdPreviewCache>,
 }
 
@@ -503,6 +502,30 @@ impl TextAreaAdapter {
     /// Get the current match index (0-based).
     pub fn current_match_idx(&self) -> usize {
         self.search_match_idx
+    }
+
+    // Markdown preview cache methods (Task 7)
+
+    /// Returns a cached preview string if the cache is valid for the given parameters.
+    /// Cache is valid when: version matches current edit_version, panel_width matches, theme matches.
+    pub fn md_preview_cached(&self, panel_width: u16, theme: &str) -> Option<&str> {
+        self.md_preview_cache.as_ref().and_then(|c| {
+            if c.version == self.edit_version && c.panel_width == panel_width && c.theme == theme {
+                Some(c.rendered.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Store a newly rendered preview in the cache.
+    pub fn set_md_preview_cache(&mut self, panel_width: u16, theme: String, rendered: String) {
+        self.md_preview_cache = Some(MdPreviewCache {
+            version: self.edit_version,
+            panel_width,
+            theme,
+            rendered,
+        });
     }
 }
 
@@ -1153,5 +1176,60 @@ mod tests {
         adapter.set_search_query("é".to_string());
         // Just verify it runs without panic and finds matches
         assert!(adapter.match_count() > 0);
+    }
+
+    // Markdown preview cache tests (Task 7)
+
+    #[test]
+    fn test_md_preview_cache_miss_on_fresh_buffer() {
+        let adapter = TextAreaAdapter::from_text("# Hello");
+        let result = adapter.md_preview_cached(80, "dark");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_md_preview_cache_hit() {
+        let mut adapter = TextAreaAdapter::from_text("# Hello");
+        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        
+        let result = adapter.md_preview_cached(80, "dark");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "<h1>Hello</h1>");
+    }
+
+    #[test]
+    fn test_md_preview_cache_invalidated_after_edit() {
+        let mut adapter = TextAreaAdapter::from_text("# Hello");
+        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        
+        // Verify cache works before edit
+        assert!(adapter.md_preview_cached(80, "dark").is_some());
+        
+        // Make an edit
+        adapter.insert_char('x');
+        
+        // Cache should be cleared by bump()
+        let result = adapter.md_preview_cached(80, "dark");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_md_preview_cache_miss_on_wrong_width() {
+        let mut adapter = TextAreaAdapter::from_text("# Hello");
+        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        
+        // Query with different width
+        let result = adapter.md_preview_cached(100, "dark");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_md_preview_cache_miss_on_wrong_theme() {
+        let mut adapter = TextAreaAdapter::from_text("# Hello");
+        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        
+        // Query with different theme
+        let result = adapter.md_preview_cached(80, "light");
+        assert!(result.is_none());
     }
 }
