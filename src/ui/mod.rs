@@ -1,7 +1,6 @@
 mod bookmarks;
 mod code_view;
 mod debug;
-mod editor;
 mod editor_textarea;
 mod finder;
 pub mod git_diff;
@@ -791,15 +790,12 @@ fn render_key_hints(
 #[cfg(test)]
 mod tests {
     use crate::config::{IconMode, ThemePalette};
-    use crate::editor::EditorBuffer;
     use crate::fs::EntryKind;
     use crate::icon::icon_for_kind;
     use crate::palette::all_entries;
     use crate::preview::ViewBuffer;
-    use ratatui::layout::Rect;
     use ratatui::style::{Color, Modifier};
 
-    use super::editor::editor_render_state;
     use super::menu_bar::{top_bar_logo_spans, workspace_switcher_spans};
     use super::pane::{format_icon_slot, pane_chrome_style};
     use super::styles::{
@@ -974,19 +970,6 @@ mod tests {
         for entry in all_entries() {
             assert!(!entry.label.is_empty(), "entry label is empty: {:?}", entry);
         }
-    }
-
-    #[test]
-    fn editor_render_state_tracks_viewport() {
-        let mut editor = EditorBuffer::default();
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width: 80,
-            height: 24,
-        };
-        let rs = editor_render_state(&mut editor, area, true, 4, false);
-        assert_eq!(rs.visible_start, 0);
     }
 
     #[test]

@@ -4348,9 +4348,8 @@ mod tests {
     fn git_diff_takes_priority_over_editor_when_both_active() {
         let mut state = test_state();
         // Open an editor buffer so is_editor_focused() would return true normally
-        state.editor.buffer = Some(TextAreaAdapter::from_text("test content").with_path(
-            PathBuf::from("test.txt"),
-        ));
+        state.editor.buffer =
+            Some(TextAreaAdapter::from_text("test content").with_path(PathBuf::from("test.txt")));
         state.panes.focus = PaneFocus::Left;
         // Activate git diff mode
         state.git_diff_active = true;

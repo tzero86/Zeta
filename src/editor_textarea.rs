@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use ratatui::text::Line;
+use std::path::PathBuf;
 use tui_textarea::{CursorMove, Input, Key, TextArea};
 
 #[derive(Debug, thiserror::Error)]
@@ -126,14 +126,24 @@ impl TextAreaAdapter {
 
     /// Insert a single character at the cursor.
     pub fn insert_char(&mut self, ch: char) {
-        if self.inner.input(Input { key: Key::Char(ch), ctrl: false, alt: false, shift: false }) {
+        if self.inner.input(Input {
+            key: Key::Char(ch),
+            ctrl: false,
+            alt: false,
+            shift: false,
+        }) {
             self.bump();
         }
     }
 
     /// Insert a newline at the cursor.
     pub fn insert_newline(&mut self) {
-        if self.inner.input(Input { key: Key::Enter, ctrl: false, alt: false, shift: false }) {
+        if self.inner.input(Input {
+            key: Key::Enter,
+            ctrl: false,
+            alt: false,
+            shift: false,
+        }) {
             self.bump();
         }
     }
@@ -162,14 +172,24 @@ impl TextAreaAdapter {
 
     /// Delete character before cursor (backspace).
     pub fn backspace(&mut self) {
-        if self.inner.input(Input { key: Key::Backspace, ctrl: false, alt: false, shift: false }) {
+        if self.inner.input(Input {
+            key: Key::Backspace,
+            ctrl: false,
+            alt: false,
+            shift: false,
+        }) {
             self.bump();
         }
     }
 
     /// Delete character at cursor (delete key).
     pub fn delete_char(&mut self) {
-        if self.inner.input(Input { key: Key::Delete, ctrl: false, alt: false, shift: false }) {
+        if self.inner.input(Input {
+            key: Key::Delete,
+            ctrl: false,
+            alt: false,
+            shift: false,
+        }) {
             self.bump();
         }
     }
@@ -229,7 +249,12 @@ impl TextAreaAdapter {
     /// Jump to exact (row, col) — clamp to valid range if out of bounds.
     pub fn jump_to(&mut self, row: usize, col: usize) {
         let row = row.min(self.line_count().saturating_sub(1));
-        let col = col.min(self.lines().get(row).map(|l| l.chars().count()).unwrap_or(0));
+        let col = col.min(
+            self.lines()
+                .get(row)
+                .map(|l| l.chars().count())
+                .unwrap_or(0),
+        );
         let row = row.min(u16::MAX as usize);
         let col = col.min(u16::MAX as usize);
         self.inner
@@ -320,27 +345,27 @@ impl TextAreaAdapter {
         // Get selection range without consuming it
         if let Some(((start_row, start_col), (end_row, end_col))) = self.inner.selection_range() {
             let lines = self.inner.lines();
-            
+
             if start_row == end_row {
                 // Single line selection
                 return lines[start_row][start_col..end_col].to_string();
             }
-            
+
             // Multi-line selection
             let mut result = String::new();
             // First line: from start_col to end
             result.push_str(&lines[start_row][start_col..]);
             result.push('\n');
-            
+
             // Middle lines: full lines
             for line in &lines[start_row + 1..end_row] {
                 result.push_str(line);
                 result.push('\n');
             }
-            
+
             // Last line: from start to end_col
             result.push_str(&lines[end_row][..end_col]);
-            
+
             result
         } else {
             String::new()
@@ -387,10 +412,20 @@ impl TextAreaAdapter {
                     let mut did_insert = false;
                     for ch in text.chars() {
                         if ch == '\n' || ch == '\r' {
-                            self.inner.input(Input { key: Key::Enter, ctrl: false, alt: false, shift: false });
+                            self.inner.input(Input {
+                                key: Key::Enter,
+                                ctrl: false,
+                                alt: false,
+                                shift: false,
+                            });
                             did_insert = true;
                         } else {
-                            self.inner.input(Input { key: Key::Char(ch), ctrl: false, alt: false, shift: false });
+                            self.inner.input(Input {
+                                key: Key::Char(ch),
+                                ctrl: false,
+                                alt: false,
+                                shift: false,
+                            });
                             did_insert = true;
                         }
                     }
@@ -456,7 +491,8 @@ impl TextAreaAdapter {
         if len == 0 {
             return false;
         }
-        self.search_match_idx = if self.search_match_idx == 0 || self.search_match_idx == usize::MAX {
+        self.search_match_idx = if self.search_match_idx == 0 || self.search_match_idx == usize::MAX
+        {
             len - 1
         } else {
             self.search_match_idx - 1
@@ -471,22 +507,26 @@ impl TextAreaAdapter {
         if self.search_matches.is_empty() {
             return false;
         }
-        let idx = if self.search_match_idx == usize::MAX { 0 } else { self.search_match_idx };
+        let idx = if self.search_match_idx == usize::MAX {
+            0
+        } else {
+            self.search_match_idx
+        };
         let (row, col) = self.search_matches[idx];
         let query_len = self.search_query.chars().count();
-        
+
         // Position cursor at match start
         self.jump_to(row, col);
-        
+
         // Select the match
         self.start_selection();
         for _ in 0..query_len {
             self.extend_selection_right();
         }
-        
+
         // Delete the selection
         self.delete_selection();
-        
+
         // Insert replacement
         for ch in replacement.chars() {
             if ch == '\n' {
@@ -495,11 +535,11 @@ impl TextAreaAdapter {
                 self.insert_char(ch);
             }
         }
-        
+
         // Refresh search matches
         let query = self.search_query.clone();
         self.set_search_query(query);
-        
+
         true
     }
 
@@ -508,26 +548,26 @@ impl TextAreaAdapter {
         if self.search_matches.is_empty() {
             return 0;
         }
-        
+
         let count = self.search_matches.len();
         let query_len = self.search_query.chars().count();
 
         // Replace from last to first to preserve positions
         for i in (0..self.search_matches.len()).rev() {
             let (row, col) = self.search_matches[i];
-            
+
             // Position cursor at match start
             self.jump_to(row, col);
-            
+
             // Select the match
             self.start_selection();
             for _ in 0..query_len {
                 self.extend_selection_right();
             }
-            
+
             // Delete the selection
             self.delete_selection();
-            
+
             // Insert replacement
             for ch in replacement.chars() {
                 if ch == '\n' {
@@ -537,11 +577,11 @@ impl TextAreaAdapter {
                 }
             }
         }
-        
+
         // Refresh search matches
         let query = self.search_query.clone();
         self.set_search_query(query);
-        
+
         count
     }
 
@@ -571,11 +611,11 @@ impl TextAreaAdapter {
         let lines = self.inner.lines();
         let clamped_line = line.min(lines.len().saturating_sub(1));
         let line_text = &lines[clamped_line];
-        
+
         let tab_w = tab_width as usize;
         let mut col = 0usize;
         let mut char_offset = 0usize;
-        
+
         for ch in line_text.chars() {
             let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
             if col + ch_width > display_col {
@@ -584,7 +624,7 @@ impl TextAreaAdapter {
             col += ch_width;
             char_offset += 1;
         }
-        
+
         self.jump_to(clamped_line, char_offset);
         self.inner.cancel_selection();
     }
@@ -612,11 +652,11 @@ impl TextAreaAdapter {
         let lines = self.inner.lines();
         let clamped_line = line.min(lines.len().saturating_sub(1));
         let line_text = &lines[clamped_line];
-        
+
         let tab_w = tab_width as usize;
         let mut col = 0usize;
         let mut char_offset = 0usize;
-        
+
         for ch in line_text.chars() {
             let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
             if col + ch_width > display_col {
@@ -625,12 +665,12 @@ impl TextAreaAdapter {
             col += ch_width;
             char_offset += 1;
         }
-        
+
         // If no selection is active, start one
         if self.inner.selection_range().is_none() {
             self.inner.start_selection();
         }
-        
+
         // Move cursor to the target position
         self.jump_to(clamped_line, char_offset);
     }
@@ -650,7 +690,12 @@ impl TextAreaAdapter {
     }
 
     /// Store a newly rendered preview in the cache.
-    pub fn set_md_preview_cache(&mut self, panel_width: u16, theme: &str, rendered: Vec<Line<'static>>) {
+    pub fn set_md_preview_cache(
+        &mut self,
+        panel_width: u16,
+        theme: &str,
+        rendered: Vec<Line<'static>>,
+    ) {
         self.md_preview_cache = Some(MdPreviewCache {
             version: self.edit_version,
             panel_width,
@@ -660,10 +705,16 @@ impl TextAreaAdapter {
     }
 
     /// Render the textarea using tui-textarea's built-in widget.
-    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, is_focused: bool) {
+    pub fn render(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        area: ratatui::layout::Rect,
+        is_focused: bool,
+    ) {
         use ratatui::style::{Color, Modifier, Style};
 
-        self.inner.set_line_number_style(Style::default().fg(Color::DarkGray));
+        self.inner
+            .set_line_number_style(Style::default().fg(Color::DarkGray));
 
         if is_focused {
             self.inner.set_cursor_style(
@@ -672,7 +723,8 @@ impl TextAreaAdapter {
                     .fg(Color::Black)
                     .add_modifier(Modifier::REVERSED),
             );
-            self.inner.set_cursor_line_style(Style::default().bg(Color::DarkGray));
+            self.inner
+                .set_cursor_line_style(Style::default().bg(Color::DarkGray));
         } else {
             self.inner.set_cursor_style(Style::default());
             self.inner.set_cursor_line_style(Style::default());
@@ -682,6 +734,28 @@ impl TextAreaAdapter {
             .set_selection_style(Style::default().bg(Color::Blue).fg(Color::White));
 
         frame.render_widget(&self.inner, area);
+    }
+
+    /// Forwards a crossterm mouse event to the tui-textarea input handler.
+    /// Returns true if the event caused a content change (e.g. scroll wheel moves cursor).
+    pub fn handle_mouse_input(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        let input = tui_textarea::Input::from(event);
+        let changed = self.inner.input(input);
+        if changed {
+            self.bump();
+        }
+        changed
+    }
+
+    /// Forwards a crossterm key event to the tui-textarea input handler.
+    /// Returns true if the event caused a content change.
+    pub fn handle_key_input(&mut self, event: crossterm::event::KeyEvent) -> bool {
+        let input = tui_textarea::Input::from(event);
+        let changed = self.inner.input(input);
+        if changed {
+            self.bump();
+        }
+        changed
     }
 
     /// Returns a reference to the inner [`TextArea`] for rendering in the UI layer.
@@ -705,7 +779,7 @@ mod tests {
     fn test_from_text_produces_correct_line_count_and_contents() {
         let text = "line1\nline2\nline3";
         let adapter = TextAreaAdapter::from_text(text);
-        
+
         assert_eq!(adapter.line_count(), 3);
         assert_eq!(adapter.contents(), text);
         assert_eq!(adapter.lines(), &["line1", "line2", "line3"]);
@@ -715,7 +789,7 @@ mod tests {
     fn test_from_text_single_line() {
         let text = "single line";
         let adapter = TextAreaAdapter::from_text(text);
-        
+
         assert_eq!(adapter.line_count(), 1);
         assert_eq!(adapter.contents(), text);
     }
@@ -724,7 +798,7 @@ mod tests {
     fn test_from_text_empty() {
         let text = "";
         let adapter = TextAreaAdapter::from_text(text);
-        
+
         assert_eq!(adapter.line_count(), 1);
         assert_eq!(adapter.contents(), "");
     }
@@ -737,7 +811,7 @@ mod tests {
             "third".to_string(),
         ];
         let adapter = TextAreaAdapter::from_lines(lines.clone());
-        
+
         assert_eq!(adapter.lines(), lines.as_slice());
         assert_eq!(adapter.contents(), "first\nsecond\nthird");
         assert_eq!(adapter.line_count(), 3);
@@ -747,7 +821,7 @@ mod tests {
     fn test_from_lines_empty_vec() {
         let lines = vec![];
         let adapter = TextAreaAdapter::from_lines(lines);
-        
+
         // TextArea::new with empty vec creates one empty line
         assert_eq!(adapter.line_count(), 1);
         assert_eq!(adapter.contents(), "");
@@ -789,9 +863,9 @@ mod tests {
         let mut adapter = TextAreaAdapter::new_empty();
         assert_eq!(adapter.edit_version(), 0);
         assert!(!adapter.is_dirty());
-        
+
         adapter.bump();
-        
+
         assert_eq!(adapter.edit_version(), 1);
         assert!(adapter.is_dirty());
     }
@@ -806,9 +880,9 @@ mod tests {
             theme: "default".to_string(),
             rendered: vec![Line::from("test")],
         });
-        
+
         adapter.bump();
-        
+
         assert!(adapter.md_preview_cache.is_none());
     }
 
@@ -816,7 +890,7 @@ mod tests {
     fn test_save_returns_error_when_no_path() {
         let mut adapter = TextAreaAdapter::from_text("content");
         let result = adapter.save();
-        
+
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "no file path set");
     }
@@ -824,8 +898,7 @@ mod tests {
     #[test]
     fn test_save_clears_dirty_flag_on_success() {
         let temp_file = std::path::PathBuf::from("target/test_save_file.txt");
-        let mut adapter = TextAreaAdapter::from_text("test content")
-            .with_path(temp_file.clone());
+        let mut adapter = TextAreaAdapter::from_text("test content").with_path(temp_file.clone());
         adapter.bump();
 
         let result = adapter.save();
@@ -844,9 +917,9 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("hello");
         assert_eq!(adapter.edit_version(), 0);
         assert!(!adapter.is_dirty());
-        
+
         adapter.insert_char('x');
-        
+
         assert_eq!(adapter.contents(), "xhello");
         assert_eq!(adapter.edit_version(), 1);
         assert!(adapter.is_dirty());
@@ -856,9 +929,9 @@ mod tests {
     fn test_insert_newline_increases_line_count() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         assert_eq!(adapter.line_count(), 1);
-        
+
         adapter.insert_newline();
-        
+
         assert_eq!(adapter.line_count(), 2);
         assert_eq!(adapter.contents(), "\nhello");
         assert!(adapter.is_dirty());
@@ -868,9 +941,9 @@ mod tests {
     fn test_backspace_removes_character() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         adapter.move_right(); // Move cursor to position 1
-        
+
         adapter.backspace();
-        
+
         assert_eq!(adapter.contents(), "ello");
         assert!(adapter.is_dirty());
     }
@@ -879,9 +952,9 @@ mod tests {
     fn test_delete_char_removes_character_at_cursor() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         // Cursor at (0, 0) - start of line
-        
+
         adapter.delete_char();
-        
+
         assert_eq!(adapter.contents(), "ello");
         assert!(adapter.is_dirty());
     }
@@ -890,9 +963,9 @@ mod tests {
     fn test_move_right_changes_cursor_position() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         assert_eq!(adapter.cursor(), (0, 0));
-        
+
         adapter.move_right();
-        
+
         assert_eq!(adapter.cursor(), (0, 1));
         assert!(!adapter.is_dirty()); // Movement doesn't mark dirty
     }
@@ -903,9 +976,9 @@ mod tests {
         adapter.move_right();
         adapter.move_right();
         assert_eq!(adapter.cursor(), (0, 2));
-        
+
         adapter.move_left();
-        
+
         assert_eq!(adapter.cursor(), (0, 1));
         assert!(!adapter.is_dirty());
     }
@@ -915,13 +988,13 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("line1\nline2\nline3");
         adapter.move_down();
         assert_eq!(adapter.cursor().0, 1);
-        
+
         adapter.move_down();
         assert_eq!(adapter.cursor().0, 2);
-        
+
         adapter.move_up();
         assert_eq!(adapter.cursor().0, 1);
-        
+
         assert!(!adapter.is_dirty());
     }
 
@@ -929,14 +1002,14 @@ mod tests {
     fn test_move_word_right_and_left() {
         let mut adapter = TextAreaAdapter::from_text("hello world test");
         assert_eq!(adapter.cursor(), (0, 0));
-        
+
         adapter.move_word_right();
         // tui-textarea WordForward lands after "hello " (col 6, including trailing space)
         assert_eq!(adapter.cursor(), (0, 6));
-        
+
         adapter.move_word_left();
         assert_eq!(adapter.cursor(), (0, 0));
-        
+
         assert!(!adapter.is_dirty());
     }
 
@@ -944,12 +1017,12 @@ mod tests {
     fn test_move_line_start_and_end() {
         let mut adapter = TextAreaAdapter::from_text("hello world");
         adapter.move_line_end();
-        
+
         assert_eq!(adapter.cursor(), (0, 11)); // End of "hello world"
-        
+
         adapter.move_line_start();
         assert_eq!(adapter.cursor(), (0, 0));
-        
+
         assert!(!adapter.is_dirty());
     }
 
@@ -957,36 +1030,36 @@ mod tests {
     fn test_move_doc_start_and_end() {
         let mut adapter = TextAreaAdapter::from_text("line1\nline2\nline3");
         adapter.move_doc_end();
-        
+
         assert_eq!(adapter.cursor().0, 2); // Last line
-        
+
         adapter.move_doc_start();
         assert_eq!(adapter.cursor(), (0, 0));
-        
+
         assert!(!adapter.is_dirty());
     }
 
     #[test]
     fn test_jump_to_positions_cursor_correctly() {
         let mut adapter = TextAreaAdapter::from_text("line1\nline2\nline3");
-        
+
         adapter.jump_to(1, 3);
         assert_eq!(adapter.cursor(), (1, 3));
-        
+
         adapter.jump_to(2, 0);
         assert_eq!(adapter.cursor(), (2, 0));
-        
+
         assert!(!adapter.is_dirty());
     }
 
     #[test]
     fn test_jump_to_clamps_out_of_bounds() {
         let mut adapter = TextAreaAdapter::from_text("abc\ndef");
-        
+
         // Try to jump beyond last line
         adapter.jump_to(10, 0);
         assert_eq!(adapter.cursor().0, 1); // Should clamp to last line (row 1)
-        
+
         // Try to jump beyond line length
         adapter.jump_to(0, 100);
         assert_eq!(adapter.cursor(), (0, 3)); // Should clamp to line length
@@ -996,18 +1069,18 @@ mod tests {
     fn test_undo_redo_round_trip() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         let original_content = adapter.contents();
-        
+
         // Make a change
         adapter.insert_char('x');
         assert_eq!(adapter.contents(), "xhello");
         assert_eq!(adapter.edit_version(), 1);
-        
+
         // Undo the change
         let did_undo = adapter.undo();
         assert!(did_undo);
         assert_eq!(adapter.contents(), original_content);
         assert_eq!(adapter.edit_version(), 2); // Undo also bumps version
-        
+
         // Redo the change
         let did_redo = adapter.redo();
         assert!(did_redo);
@@ -1018,9 +1091,9 @@ mod tests {
     #[test]
     fn test_undo_returns_false_when_nothing_to_undo() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         let did_undo = adapter.undo();
-        
+
         assert!(!did_undo);
         assert_eq!(adapter.edit_version(), 0); // Version unchanged
     }
@@ -1028,9 +1101,9 @@ mod tests {
     #[test]
     fn test_redo_returns_false_when_nothing_to_redo() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         let did_redo = adapter.redo();
-        
+
         assert!(!did_redo);
         assert_eq!(adapter.edit_version(), 0); // Version unchanged
     }
@@ -1039,7 +1112,7 @@ mod tests {
     fn test_movement_does_not_call_bump() {
         let mut adapter = TextAreaAdapter::from_text("hello\nworld");
         let initial_version = adapter.edit_version();
-        
+
         // Perform various movements
         adapter.move_right();
         adapter.move_down();
@@ -1048,7 +1121,7 @@ mod tests {
         adapter.move_line_end();
         adapter.move_line_start();
         adapter.jump_to(1, 2);
-        
+
         // Version should remain unchanged
         assert_eq!(adapter.edit_version(), initial_version);
         assert!(!adapter.is_dirty());
@@ -1059,25 +1132,25 @@ mod tests {
     #[test]
     fn test_select_all_selects_content() {
         let mut adapter = TextAreaAdapter::from_text("hello\nworld");
-        
+
         adapter.select_all();
         let selected = adapter.selected_text();
-        
+
         assert_eq!(selected, "hello\nworld");
     }
 
     #[test]
     fn test_start_and_cancel_selection() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         adapter.start_selection();
         adapter.extend_selection_right();
         adapter.extend_selection_right();
-        
+
         // Should have selected "he"
         let selected = adapter.selected_text();
         assert_eq!(selected, "he");
-        
+
         adapter.cancel_selection();
         let selected_after_cancel = adapter.selected_text();
         assert_eq!(selected_after_cancel, "");
@@ -1086,10 +1159,10 @@ mod tests {
     #[test]
     fn test_delete_selection_removes_text() {
         let mut adapter = TextAreaAdapter::from_text("hello world");
-        
+
         adapter.select_all();
         let deleted = adapter.delete_selection();
-        
+
         assert!(deleted);
         assert_eq!(adapter.contents(), "");
         assert!(adapter.is_dirty());
@@ -1098,12 +1171,12 @@ mod tests {
     #[test]
     fn test_extend_selection_right() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         adapter.start_selection();
         adapter.extend_selection_right();
         adapter.extend_selection_right();
         adapter.extend_selection_right();
-        
+
         let selected = adapter.selected_text();
         assert_eq!(selected, "hel");
     }
@@ -1111,7 +1184,7 @@ mod tests {
     #[test]
     fn test_selected_text_empty_when_no_selection() {
         let adapter = TextAreaAdapter::from_text("hello");
-        
+
         let selected = adapter.selected_text();
         assert_eq!(selected, "");
     }
@@ -1119,10 +1192,10 @@ mod tests {
     #[test]
     fn test_extend_selection_down() {
         let mut adapter = TextAreaAdapter::from_text("line1\nline2\nline3");
-        
+
         adapter.start_selection();
         adapter.extend_selection_down();
-        
+
         let selected = adapter.selected_text();
         // Should select from (0,0) to (1,0)
         assert!(selected.contains("line1"));
@@ -1132,11 +1205,11 @@ mod tests {
     fn test_extend_selection_left() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         adapter.move_line_end(); // Move to end
-        
+
         adapter.start_selection();
         adapter.extend_selection_left();
         adapter.extend_selection_left();
-        
+
         let selected = adapter.selected_text();
         assert_eq!(selected, "lo");
     }
@@ -1144,9 +1217,9 @@ mod tests {
     #[test]
     fn test_delete_selection_returns_false_when_no_selection() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         let deleted = adapter.delete_selection();
-        
+
         assert!(!deleted);
     }
 
@@ -1155,20 +1228,20 @@ mod tests {
     #[test]
     fn test_copy_returns_selected_text() {
         let mut adapter = TextAreaAdapter::from_text("hello world");
-        
+
         adapter.select_all();
         let copied = adapter.copy_to_os_clipboard();
-        
+
         assert_eq!(copied, "hello world");
     }
 
     #[test]
     fn test_cut_removes_and_returns_text() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         adapter.select_all();
         let cut = adapter.cut_to_os_clipboard();
-        
+
         assert_eq!(cut, "hello");
         assert_eq!(adapter.contents(), "");
     }
@@ -1177,12 +1250,12 @@ mod tests {
     #[ignore] // May not work in all test environments
     fn test_paste_from_os_clipboard() {
         let mut adapter = TextAreaAdapter::from_text("");
-        
+
         // Try to set clipboard and paste
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             let _ = clipboard.set_text("pasted");
             let pasted = adapter.paste_from_os_clipboard();
-            
+
             if pasted {
                 assert_eq!(adapter.contents(), "pasted");
             }
@@ -1194,9 +1267,9 @@ mod tests {
     #[test]
     fn test_set_search_query_finds_matches() {
         let mut adapter = TextAreaAdapter::from_text("hello world hello");
-        
+
         adapter.set_search_query("hello".to_string());
-        
+
         assert_eq!(adapter.match_count(), 2);
         assert!(adapter.search_active);
     }
@@ -1239,12 +1312,12 @@ mod tests {
     #[test]
     fn test_replace_current_replaces_text() {
         let mut adapter = TextAreaAdapter::from_text("hello world");
-        
+
         adapter.set_search_query("hello".to_string());
         assert_eq!(adapter.match_count(), 1);
-        
+
         let replaced = adapter.replace_current("goodbye");
-        
+
         assert!(replaced);
         assert_eq!(adapter.contents(), "goodbye world");
     }
@@ -1252,12 +1325,12 @@ mod tests {
     #[test]
     fn test_replace_all_replaces_all_occurrences() {
         let mut adapter = TextAreaAdapter::from_text("foo bar foo baz foo");
-        
+
         adapter.set_search_query("foo".to_string());
         assert_eq!(adapter.match_count(), 3);
-        
+
         let count = adapter.replace_all("qux");
-        
+
         assert_eq!(count, 3);
         assert_eq!(adapter.contents(), "qux bar qux baz qux");
     }
@@ -1265,13 +1338,13 @@ mod tests {
     #[test]
     fn test_clear_search_resets_state() {
         let mut adapter = TextAreaAdapter::from_text("hello world");
-        
+
         adapter.set_search_query("hello".to_string());
         assert!(adapter.search_active);
         assert_eq!(adapter.match_count(), 1);
-        
+
         adapter.clear_search();
-        
+
         assert!(!adapter.search_active);
         assert_eq!(adapter.match_count(), 0);
         assert_eq!(adapter.search_query, "");
@@ -1280,9 +1353,9 @@ mod tests {
     #[test]
     fn test_search_next_returns_false_when_no_matches() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         adapter.set_search_query("xyz".to_string());
-        
+
         let found = adapter.search_next();
         assert!(!found);
     }
@@ -1290,9 +1363,9 @@ mod tests {
     #[test]
     fn test_replace_current_returns_false_when_no_matches() {
         let mut adapter = TextAreaAdapter::from_text("hello");
-        
+
         adapter.set_search_query("xyz".to_string());
-        
+
         let replaced = adapter.replace_current("abc");
         assert!(!replaced);
     }
@@ -1301,12 +1374,12 @@ mod tests {
     fn test_selection_does_not_mark_dirty() {
         let mut adapter = TextAreaAdapter::from_text("hello");
         let version = adapter.edit_version();
-        
+
         adapter.start_selection();
         adapter.extend_selection_right();
         adapter.cancel_selection();
         adapter.select_all();
-        
+
         // Selection operations shouldn't bump version
         assert_eq!(adapter.edit_version(), version);
         assert!(!adapter.is_dirty());
@@ -1362,7 +1435,7 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("# Hello");
         let rendered = vec![Line::from("<h1>Hello</h1>")];
         adapter.set_md_preview_cache(80, "dark", rendered.clone());
-        
+
         let result = adapter.md_preview_cached(80, "dark");
         assert!(result.is_some());
         let cached = result.unwrap();
@@ -1375,13 +1448,13 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("# Hello");
         let rendered = vec![Line::from("<h1>Hello</h1>")];
         adapter.set_md_preview_cache(80, "dark", rendered);
-        
+
         // Verify cache works before edit
         assert!(adapter.md_preview_cached(80, "dark").is_some());
-        
+
         // Make an edit
         adapter.insert_char('x');
-        
+
         // Cache should be cleared by bump()
         let result = adapter.md_preview_cached(80, "dark");
         assert!(result.is_none());
@@ -1393,7 +1466,7 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("# Hello");
         let rendered = vec![Line::from("<h1>Hello</h1>")];
         adapter.set_md_preview_cache(80, "dark", rendered);
-        
+
         // Query with different width
         let result = adapter.md_preview_cached(100, "dark");
         assert!(result.is_none());
@@ -1405,7 +1478,7 @@ mod tests {
         let mut adapter = TextAreaAdapter::from_text("# Hello");
         let rendered = vec![Line::from("<h1>Hello</h1>")];
         adapter.set_md_preview_cache(80, "dark", rendered);
-        
+
         // Query with different theme
         let result = adapter.md_preview_cached(80, "light");
         assert!(result.is_none());

@@ -485,7 +485,7 @@ impl App {
     }
 
     /// Resolve an editor mouse click or drag (screen coords) to buffer coordinates
-    /// and call the appropriate `EditorBuffer` method.
+    /// and call the appropriate `TextAreaAdapter` method.
     /// `is_drag` = false for a new click (sets anchor + cursor), true for drag (moves cursor only).
     fn handle_editor_click(&mut self, col: u16, row: u16, is_drag: bool) -> Result<()> {
         const GUTTER_WIDTH: u16 = 6;
