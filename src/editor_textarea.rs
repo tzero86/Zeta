@@ -326,14 +326,20 @@ impl TextAreaAdapter {
         if let Ok(mut clipboard) = arboard::Clipboard::new() {
             if let Ok(text) = clipboard.get_text() {
                 if !text.is_empty() {
+                    let mut did_insert = false;
                     for ch in text.chars() {
-                        if ch == '\n' {
-                            self.insert_newline();
+                        if ch == '\n' || ch == '\r' {
+                            self.inner.input(Input { key: Key::Enter, ctrl: false, alt: false, shift: false });
+                            did_insert = true;
                         } else {
-                            self.insert_char(ch);
+                            self.inner.input(Input { key: Key::Char(ch), ctrl: false, alt: false, shift: false });
+                            did_insert = true;
                         }
                     }
-                    return true;
+                    if did_insert {
+                        self.bump(); // single bump for entire paste
+                    }
+                    return did_insert;
                 }
             }
         }
@@ -343,31 +349,44 @@ impl TextAreaAdapter {
     // Search and replace methods (Task 6)
 
     /// Set the search query and find all matches. Resets match index.
-    /// Each match is (row, col) of the start of the match.
+    /// Each match is (row, col) of the start of the match (char positions, not byte offsets).
     pub fn set_search_query(&mut self, query: String) {
-        self.search_query = query.clone();
-        self.search_active = !query.is_empty();
-        self.search_match_idx = 0;
         self.search_matches.clear();
+        self.search_match_idx = usize::MAX; // wraps to 0 on first search_next
+        self.search_active = !query.is_empty();
 
         if !query.is_empty() {
-            let lines: Vec<String> = self.lines().iter().map(|s| s.to_string()).collect();
-            for (row, line) in lines.iter().enumerate() {
-                let mut col = 0;
-                while let Some(pos) = line[col..].find(&query) {
-                    self.search_matches.push((row, col + pos));
-                    col += pos + 1;
+            let query_chars: Vec<char> = query.chars().collect();
+            let qlen = query_chars.len();
+
+            for (row, line) in self.inner.lines().iter().enumerate() {
+                let line_chars: Vec<char> = line.chars().collect();
+                let llen = line_chars.len();
+                if llen < qlen {
+                    continue;
+                }
+                let mut col = 0usize;
+                while col + qlen <= llen {
+                    if line_chars[col..col + qlen] == query_chars[..] {
+                        self.search_matches.push((row, col));
+                        col += qlen; // non-overlapping: skip past this match
+                    } else {
+                        col += 1;
+                    }
                 }
             }
         }
+
+        self.search_query = query;
     }
 
     /// Move to the next search match. Wraps around. Returns false if no matches.
     pub fn search_next(&mut self) -> bool {
-        if self.search_matches.is_empty() {
+        let len = self.search_matches.len();
+        if len == 0 {
             return false;
         }
-        self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
+        self.search_match_idx = self.search_match_idx.wrapping_add(1) % len;
         let (row, col) = self.search_matches[self.search_match_idx];
         self.jump_to(row, col);
         true
@@ -375,14 +394,15 @@ impl TextAreaAdapter {
 
     /// Move to the previous search match. Wraps around. Returns false if no matches.
     pub fn search_prev(&mut self) -> bool {
-        if self.search_matches.is_empty() {
+        let len = self.search_matches.len();
+        if len == 0 {
             return false;
         }
-        if self.search_match_idx == 0 {
-            self.search_match_idx = self.search_matches.len() - 1;
+        self.search_match_idx = if self.search_match_idx == 0 || self.search_match_idx == usize::MAX {
+            len - 1
         } else {
-            self.search_match_idx -= 1;
-        }
+            self.search_match_idx - 1
+        };
         let (row, col) = self.search_matches[self.search_match_idx];
         self.jump_to(row, col);
         true
@@ -393,7 +413,8 @@ impl TextAreaAdapter {
         if self.search_matches.is_empty() {
             return false;
         }
-        let (row, col) = self.search_matches[self.search_match_idx];
+        let idx = if self.search_match_idx == usize::MAX { 0 } else { self.search_match_idx };
+        let (row, col) = self.search_matches[idx];
         let query_len = self.search_query.chars().count();
         
         // Position cursor at match start
@@ -431,11 +452,11 @@ impl TextAreaAdapter {
         }
         
         let count = self.search_matches.len();
-        
+        let query_len = self.search_query.chars().count();
+
         // Replace from last to first to preserve positions
         for i in (0..self.search_matches.len()).rev() {
             let (row, col) = self.search_matches[i];
-            let query_len = self.search_query.chars().count();
             
             // Position cursor at match start
             self.jump_to(row, col);
@@ -991,17 +1012,20 @@ mod tests {
     #[test]
     fn test_search_next_wraps_around() {
         let mut adapter = TextAreaAdapter::from_text("abc abc abc");
-        
+
         adapter.set_search_query("abc".to_string());
         assert_eq!(adapter.match_count(), 3);
+        // search_match_idx starts at usize::MAX; first next() lands at 0
+
+        adapter.search_next();
         assert_eq!(adapter.current_match_idx(), 0);
-        
+
         adapter.search_next();
         assert_eq!(adapter.current_match_idx(), 1);
-        
+
         adapter.search_next();
         assert_eq!(adapter.current_match_idx(), 2);
-        
+
         adapter.search_next(); // Should wrap to 0
         assert_eq!(adapter.current_match_idx(), 0);
     }
@@ -1009,13 +1033,13 @@ mod tests {
     #[test]
     fn test_search_prev_goes_backwards() {
         let mut adapter = TextAreaAdapter::from_text("abc abc abc");
-        
+
         adapter.set_search_query("abc".to_string());
-        assert_eq!(adapter.current_match_idx(), 0);
-        
-        adapter.search_prev(); // Should wrap to last (2)
+        // search_match_idx = usize::MAX; prev() wraps to last (2)
+
+        adapter.search_prev();
         assert_eq!(adapter.current_match_idx(), 2);
-        
+
         adapter.search_prev();
         assert_eq!(adapter.current_match_idx(), 1);
     }
@@ -1094,5 +1118,40 @@ mod tests {
         // Selection operations shouldn't bump version
         assert_eq!(adapter.edit_version(), version);
         assert!(!adapter.is_dirty());
+    }
+
+    // Unicode regression tests
+
+    #[test]
+    fn test_search_unicode_finds_matches() {
+        // "Résumé café": R(0)é(1)s(2)u(3)m(4)é(5) (6)c(7)a(8)f(9)é(10)
+        // "é" appears at char positions 1, 5, 10 → 3 matches
+        let mut adapter = TextAreaAdapter::from_text("Résumé café");
+        adapter.set_search_query("é".to_string());
+        assert_eq!(adapter.match_count(), 3);
+        assert!(adapter.search_active);
+    }
+
+    #[test]
+    fn test_search_unicode_cursor_position() {
+        // "héllo": h(0)é(1)l(2)l(3)o(4) → "l" at char positions 2 and 3
+        let mut adapter = TextAreaAdapter::from_text("héllo");
+        adapter.set_search_query("l".to_string());
+        assert_eq!(adapter.match_count(), 2);
+
+        adapter.search_next(); // first match: col 2
+        assert_eq!(adapter.cursor().1, 2);
+
+        adapter.search_next(); // second match: col 3
+        assert_eq!(adapter.cursor().1, 3);
+    }
+
+    #[test]
+    fn test_search_multibyte_query_no_panic() {
+        // Ensures a multi-byte query like "é" (2 UTF-8 bytes) doesn't panic
+        let mut adapter = TextAreaAdapter::from_text("naïve café résumé");
+        adapter.set_search_query("é".to_string());
+        // Just verify it runs without panic and finds matches
+        assert!(adapter.match_count() > 0);
     }
 }
