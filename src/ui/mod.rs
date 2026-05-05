@@ -1,7 +1,7 @@
 mod bookmarks;
 mod code_view;
 mod debug;
-mod editor;
+mod editor_textarea;
 mod finder;
 pub mod git_diff;
 pub(crate) mod highlight;
@@ -27,9 +27,10 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::pane::PaneId;
+use crate::screensaver;
 use crate::state::{AppState, MessageKind, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
-use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
+use crate::ui::editor_textarea::{render_textarea_editor, RenderTextareaEditorArgs};
 use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
@@ -60,7 +61,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         ])
         .split(frame.area());
 
-    render_menu_bar(frame, areas[0], state, palette);
+    let workspace_pill_rects = render_menu_bar(frame, areas[0], state, palette);
 
     let pane_direction = match state.pane_layout() {
         PaneLayout::SideBySide => Direction::Horizontal,
@@ -70,12 +71,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let is_preview_open = state.is_preview_panel_open();
     let has_editor = state.editor().is_some();
     let editor_fullscreen = has_editor && state.is_editor_fullscreen();
+    let preview_fullscreen = is_preview_open && state.is_preview_fullscreen();
     let show_md_preview = has_editor && state.is_markdown_preview_visible();
     let pane_navigation_mode = matches!(
         state.focus_layer(),
         crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter
     );
-    let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
+    let cheap_tools_mode = !editor_fullscreen && !preview_fullscreen && pane_navigation_mode;
     let show_tools = has_editor || is_preview_open;
 
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
@@ -101,7 +103,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         crate::ui::terminal::render_terminal(frame, t_area, &state.terminal, palette, focused);
     }
 
-    let (pane_area, tools_area_opt) = if editor_fullscreen {
+    let (pane_area, tools_area_opt) = if editor_fullscreen || preview_fullscreen {
         (Rect::default(), Some(main_content_area))
     } else if show_tools {
         let vertical = Layout::default()
@@ -121,8 +123,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut editor_panel_rect = None;
     let mut file_preview_panel_rect = None;
     let mut markdown_preview_panel_rect = None;
+    let mut editor_visible_start: usize = 0;
+    let mut editor_scroll_col: usize = 0;
 
-    if !editor_fullscreen {
+    if !editor_fullscreen && !preview_fullscreen {
         if state.git_diff_active {
             git_diff::render_git_diff_view(frame, pane_area, state);
         } else {
@@ -181,11 +185,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
             let editor_focused = state.is_editor_focused();
-            let editor_loading = state.is_editor_loading();
+            let _editor_loading = state.is_editor_loading();
             let md_focused = state.is_markdown_preview_focused();
             let md_scroll = state.markdown_preview_scroll();
-            let replace_active = state.editor.replace_active;
-            let replace_query = state.editor.replace_query.clone();
+            let _replace_active = state.editor.replace_active;
+            let _replace_query = state.editor.replace_query.clone();
             let syntect_theme = state.theme().palette.syntect_theme;
             let (editor_area, md_area_opt) = if show_md_preview {
                 let halves = Layout::default()
@@ -198,32 +202,22 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             };
             editor_panel_rect = Some(editor_area);
             markdown_preview_panel_rect = md_area_opt;
-            let ed_cfg = state.config().editor.clone();
+            let _ed_cfg = state.config().editor.clone();
 
             if let Some(editor) = state.editor_mut() {
-                let editor_view = editor_render_state(
-                    editor,
-                    editor_area,
-                    editor_focused,
-                    ed_cfg.tab_width,
-                    ed_cfg.word_wrap,
-                );
-                render_editor(
+                let show_search = editor.search_active;
+                render_textarea_editor(
                     frame,
-                    editor_area,
-                    RenderEditorArgs {
+                    RenderTextareaEditorArgs {
                         editor,
-                        render_state: &editor_view,
+                        area: editor_area,
                         is_focused: editor_focused,
-                        palette,
-                        syntect_theme,
-                        replace_active,
-                        replace_query: &replace_query,
-                        loading: editor_loading,
-                        cheap_mode: cheap_tools_mode && !editor_focused,
-                        cheap_tab_width: ed_cfg.tab_width,
+                        show_search_bar: show_search,
+                        line_number_color: palette.text_muted,
                     },
                 );
+                editor_visible_start = editor.viewport_row_top();
+                editor_scroll_col = editor.viewport_col_left();
 
                 if let Some(md_area) = md_area_opt {
                     let source = editor.contents();
@@ -344,6 +338,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             hint_bar: areas[3],
             menu_popup: menu_popup_rect,
             terminal_panel: terminal_area,
+            workspace_pill_rects,
+            editor_visible_start,
+            editor_scroll_col,
         };
     }
 
@@ -423,6 +420,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);
 
+    // Screensaver overlay (renders on top of everything)
+    if state.screensaver.active {
+        screensaver::render_screensaver(&state.screensaver, areas[1], frame.buffer_mut());
+    }
+
     // Debug panel renders last so it always floats above everything else.
     debug::render_debug_panel(frame, areas[1], state);
 
@@ -438,6 +440,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         hint_bar: areas[3],
         menu_popup: menu_popup_rect,
         terminal_panel: terminal_area,
+        workspace_pill_rects,
+        editor_visible_start,
+        editor_scroll_col,
     }
 }
 
@@ -786,15 +791,12 @@ fn render_key_hints(
 #[cfg(test)]
 mod tests {
     use crate::config::{IconMode, ThemePalette};
-    use crate::editor::EditorBuffer;
     use crate::fs::EntryKind;
     use crate::icon::icon_for_kind;
     use crate::palette::all_entries;
     use crate::preview::ViewBuffer;
-    use ratatui::layout::Rect;
     use ratatui::style::{Color, Modifier};
 
-    use super::editor::editor_render_state;
     use super::menu_bar::{top_bar_logo_spans, workspace_switcher_spans};
     use super::pane::{format_icon_slot, pane_chrome_style};
     use super::styles::{
@@ -969,19 +971,6 @@ mod tests {
         for entry in all_entries() {
             assert!(!entry.label.is_empty(), "entry label is empty: {:?}", entry);
         }
-    }
-
-    #[test]
-    fn editor_render_state_tracks_viewport() {
-        let mut editor = EditorBuffer::default();
-        let area = Rect {
-            x: 0,
-            y: 0,
-            width: 80,
-            height: 24,
-        };
-        let rs = editor_render_state(&mut editor, area, true, 4, false);
-        assert_eq!(rs.visible_start, 0);
     }
 
     #[test]

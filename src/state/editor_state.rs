@@ -1,12 +1,12 @@
 use anyhow::Result;
 
 use crate::action::{Action, Command};
-use crate::editor::EditorBuffer;
+use crate::editor_textarea::TextAreaAdapter;
 
 /// Owns the optional editor buffer and routes editor actions.
 #[derive(Clone, Debug, Default)]
 pub struct EditorState {
-    pub buffer: Option<EditorBuffer>,
+    pub buffer: Option<TextAreaAdapter>,
     pub loading: bool,
     pub replace_query: String,
     pub replace_active: bool,
@@ -27,8 +27,7 @@ impl EditorState {
         let is_md = path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("md"));
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(path);
+        let editor = TextAreaAdapter::new_empty().with_path(path);
         self.buffer = Some(editor);
         self.loading = true;
         self.replace_query.clear();
@@ -39,13 +38,12 @@ impl EditorState {
     }
 
     pub fn is_dirty(&self) -> bool {
-        self.buffer.as_ref().is_some_and(|e| e.is_dirty)
+        self.buffer.as_ref().is_some_and(|e| e.is_dirty())
     }
 
-    pub fn open(&mut self, editor: EditorBuffer) {
+    pub fn open(&mut self, editor: TextAreaAdapter) {
         let is_md = editor
-            .path
-            .as_ref()
+            .path()
             .and_then(|p| p.extension())
             .is_some_and(|e| e.eq_ignore_ascii_case("md"));
         self.loading = false;
@@ -70,8 +68,7 @@ impl EditorState {
     pub fn is_markdown_file(&self) -> bool {
         self.buffer.as_ref().is_some_and(|editor| {
             editor
-                .path
-                .as_ref()
+                .path()
                 .and_then(|p| p.extension())
                 .is_some_and(|e| e.eq_ignore_ascii_case("md"))
         })
@@ -85,7 +82,7 @@ impl EditorState {
             return;
         };
         let total_lines = editor.line_count().max(1);
-        let cursor_line = editor.cursor_line_col().0;
+        let cursor_line = editor.cursor().0;
         let scroll = cursor_line.saturating_sub(viewport_height / 3);
         let max_scroll = total_lines.saturating_sub(viewport_height.max(1));
         self.markdown_preview_scroll = scroll.min(max_scroll);
@@ -107,7 +104,11 @@ impl EditorState {
                         return Ok(commands);
                     }
                 }
-                if self.buffer.as_ref().is_some_and(|editor| !editor.is_dirty) {
+                if self
+                    .buffer
+                    .as_ref()
+                    .is_some_and(|editor| !editor.is_dirty())
+                {
                     self.close();
                 }
             }
@@ -124,7 +125,7 @@ impl EditorState {
             Action::OpenEditorReplace => {
                 if let Some(editor) = self.buffer.as_mut() {
                     if self.replace_active {
-                        editor.replace_next(&self.replace_query);
+                        editor.replace_current(&self.replace_query);
                     } else {
                         editor.search_active = true;
                         self.replace_active = true;
@@ -149,7 +150,8 @@ impl EditorState {
                     if editor.search_active {
                         editor.search_query.pop();
                         if !editor.search_query.is_empty() {
-                            editor.search_next();
+                            let query = editor.search_query.clone();
+                            editor.set_search_query(query);
                         }
                         return Ok(commands);
                     }
@@ -164,6 +166,8 @@ impl EditorState {
                     }
                     if editor.search_active {
                         editor.search_query.push(*ch);
+                        let query = editor.search_query.clone();
+                        editor.set_search_query(query);
                         editor.search_next();
                         return Ok(commands);
                     }
@@ -196,8 +200,9 @@ impl EditorState {
                 }
             }
             Action::EditorCopy => {
-                if let Some(editor) = self.buffer.as_ref() {
-                    if let Some(text) = editor.selected_text() {
+                if let Some(editor) = self.buffer.as_mut() {
+                    let text = editor.selected_text();
+                    if !text.is_empty() {
                         // Silently ignore clipboard errors.
                         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
                     }
@@ -205,7 +210,8 @@ impl EditorState {
             }
             Action::EditorCut => {
                 if let Some(editor) = self.buffer.as_mut() {
-                    if let Some(text) = editor.selected_text() {
+                    let text = editor.selected_text();
+                    if !text.is_empty() {
                         let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text));
                         editor.delete_selection();
                     }
@@ -218,22 +224,22 @@ impl EditorState {
             }
             Action::EditorExtendLeft => {
                 if let Some(e) = self.buffer.as_mut() {
-                    e.extend_left();
+                    e.extend_selection_left();
                 }
             }
             Action::EditorExtendRight => {
                 if let Some(e) = self.buffer.as_mut() {
-                    e.extend_right();
+                    e.extend_selection_right();
                 }
             }
             Action::EditorExtendUp => {
                 if let Some(e) = self.buffer.as_mut() {
-                    e.extend_up();
+                    e.extend_selection_up();
                 }
             }
             Action::EditorExtendDown => {
                 if let Some(e) = self.buffer.as_mut() {
-                    e.extend_down();
+                    e.extend_selection_down();
                 }
             }
             Action::EditorMoveLeft => {
@@ -265,7 +271,8 @@ impl EditorState {
                     if editor.search_active {
                         editor.search_query.pop();
                         if !editor.search_query.is_empty() {
-                            editor.search_next();
+                            let query = editor.search_query.clone();
+                            editor.set_search_query(query);
                         }
                     }
                 }
@@ -288,7 +295,7 @@ impl EditorState {
             }
             Action::EditorReplaceNext => {
                 if let Some(editor) = self.buffer.as_mut() {
-                    editor.replace_next(&self.replace_query);
+                    editor.replace_current(&self.replace_query);
                 }
             }
             Action::EditorReplaceAll => {
@@ -332,7 +339,7 @@ impl EditorState {
             }
             Action::SaveEditor => {
                 if let Some(editor) = &self.buffer {
-                    if editor.is_dirty {
+                    if editor.is_dirty() {
                         commands.push(Command::SaveEditor);
                     }
                 }
@@ -358,7 +365,7 @@ mod tests {
     #[test]
     fn discard_closes_buffer() {
         let mut s = EditorState::default();
-        s.buffer = Some(EditorBuffer::default());
+        s.buffer = Some(TextAreaAdapter::new_empty());
         s.apply(&Action::DiscardEditorChanges).unwrap();
         assert!(!s.is_open());
     }
@@ -366,8 +373,7 @@ mod tests {
     #[test]
     fn close_editor_when_not_dirty_removes_buffer() {
         let mut s = EditorState::default();
-        let mut buf = EditorBuffer::default();
-        buf.is_dirty = false;
+        let buf = TextAreaAdapter::new_empty();
         s.buffer = Some(buf);
         s.apply(&Action::CloseEditor).unwrap();
         assert!(!s.is_open());
@@ -376,8 +382,8 @@ mod tests {
     #[test]
     fn close_editor_when_dirty_keeps_buffer() {
         let mut s = EditorState::default();
-        let mut buf = EditorBuffer::default();
-        buf.is_dirty = true;
+        let mut buf = TextAreaAdapter::new_empty();
+        buf.insert_char('x'); // Make it dirty
         s.buffer = Some(buf);
         s.apply(&Action::CloseEditor).unwrap();
         assert!(s.is_open(), "dirty editor should not be closed silently");
@@ -386,8 +392,7 @@ mod tests {
     #[test]
     fn open_markdown_file_enables_live_preview() {
         let mut s = EditorState::default();
-        let mut buf = EditorBuffer::default();
-        buf.path = Some(std::path::PathBuf::from("note.md"));
+        let buf = TextAreaAdapter::new_empty().with_path(std::path::PathBuf::from("note.md"));
         s.open(buf);
         assert!(s.markdown_preview_visible);
         assert!(!s.markdown_preview_focused);
@@ -397,8 +402,7 @@ mod tests {
     #[test]
     fn toggle_markdown_preview_changes_visibility_for_markdown_buffers() {
         let mut s = EditorState::default();
-        let mut buf = EditorBuffer::default();
-        buf.path = Some(std::path::PathBuf::from("note.md"));
+        let buf = TextAreaAdapter::new_empty().with_path(std::path::PathBuf::from("note.md"));
         s.open(buf);
         s.apply(&Action::ToggleMarkdownPreview).unwrap();
         assert!(!s.markdown_preview_visible);
@@ -406,10 +410,7 @@ mod tests {
     #[test]
     fn undo_reverses_last_insert() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello"));
         state
             .apply(&crate::action::Action::EditorInsert('!'))
             .unwrap();
@@ -421,10 +422,7 @@ mod tests {
     #[test]
     fn redo_reapplies_undone_insert() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello"));
         state
             .apply(&crate::action::Action::EditorInsert('!'))
             .unwrap();
@@ -437,40 +435,34 @@ mod tests {
     #[test]
     fn select_all_covers_entire_buffer() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello world"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello world"));
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
-        assert_eq!(buf.selected_text().as_deref(), Some("hello world"));
+        let buf = state.buffer.as_mut().unwrap();
+        assert_eq!(buf.selected_text(), "hello world");
     }
 
     #[test]
     fn cut_removes_selected_text() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello world"),
-        ));
+        state.open(
+            TextAreaAdapter::from_text("hello world").with_path(std::path::PathBuf::from("f.txt")),
+        );
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
         state.apply(&crate::action::Action::EditorCut).unwrap();
-        let buf = state.buffer.as_ref().unwrap();
+        let buf = state.buffer.as_mut().unwrap();
         // After cut, buffer should be empty and selection cleared.
-        assert_eq!(buf.selected_text(), None);
+        assert_eq!(buf.selected_text(), "");
         assert_eq!(buf.contents(), "");
     }
     #[test]
     fn shift_right_extends_selection_from_cursor() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state
+            .open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         // Cursor starts at 0; extend right 3 chars → selects "hel".
         state
             .apply(&crate::action::Action::EditorExtendRight)
@@ -481,17 +473,15 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorExtendRight)
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
-        assert_eq!(buf.selected_text().as_deref(), Some("hel"));
+        let buf = state.buffer.as_mut().unwrap();
+        assert_eq!(buf.selected_text(), "hel");
     }
 
     #[test]
     fn shift_arrow_then_plain_arrow_clears_selection() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state
+            .open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         state
             .apply(&crate::action::Action::EditorExtendRight)
             .unwrap();
@@ -502,25 +492,23 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorMoveRight)
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
-        assert_eq!(buf.selected_text(), None);
+        let buf = state.buffer.as_mut().unwrap();
+        assert_eq!(buf.selected_text(), "");
     }
 
     #[test]
     fn typing_with_selection_replaces_selected_text() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state
+            .open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
         state
             .apply(&crate::action::Action::EditorInsert('X'))
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
+        let buf = state.buffer.as_mut().unwrap();
         assert_eq!(buf.contents(), "X");
-        assert_eq!(buf.selected_text(), None);
+        assert_eq!(buf.selected_text(), "");
     }
 }

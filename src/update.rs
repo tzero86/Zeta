@@ -85,15 +85,18 @@ impl UpdateChecker {
     pub fn check_latest_release(current_version: &str) -> Result<Option<Release>, UpdateError> {
         let url = "https://api.github.com/repos/tzero86/Zeta/releases/latest";
 
-        let resp = ureq::get(url)
-            .set("User-Agent", &format!("Zeta/{}", current_version))
-            .timeout(std::time::Duration::from_secs(5))
+        let mut resp = ureq::get(url)
+            .header("User-Agent", &format!("Zeta/{}", current_version))
+            .config()
+            .timeout_global(Some(std::time::Duration::from_secs(5)))
+            .build()
             .call()
-            .map_err(|e| UpdateError::NetworkError(e.to_string()))?;
+            .map_err(|e: ureq::Error| UpdateError::NetworkError(e.to_string()))?;
 
         let body = resp
-            .into_string()
-            .map_err(|e| UpdateError::NetworkError(e.to_string()))?;
+            .body_mut()
+            .read_to_string()
+            .map_err(|e: ureq::Error| UpdateError::NetworkError(e.to_string()))?;
 
         let json: serde_json::Value =
             serde_json::from_str(&body).map_err(|e| UpdateError::JsonError(format!("{}", e)))?;

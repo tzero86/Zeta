@@ -20,17 +20,21 @@
   <meta name="twitter:description" content="Keyboard-first, dual-pane file manager and embedded editor. Rust core, Norton Commander workflow.">
   <meta name="twitter:image"      content="https://tzero86.github.io/Zeta/app.png">
 
-  <!-- Mobile chrome -->
   <meta name="theme-color" content="#0d1117">
   <style>
     :root {
       --bg:         #0d1117;
       --surface:    #161b22;
+      --surface2:   #1c2333;
       --border:     #30363d;
+      --border2:    #21262d;
       --text:       #e6edf3;
       --muted:      #7d8590;
       --accent:     #82aaff;
       --accent2:    #c3e88d;
+      --orange:     #f78c6c;
+      --pink:       #c792ea;
+      --red:        #f07178;
       --font: 'SF Mono', 'Fira Code', 'Cascadia Code', Consolas, 'Liberation Mono', monospace;
     }
 
@@ -40,11 +44,58 @@
 
     body {
       background: var(--bg);
-      background-image: radial-gradient(rgba(130, 170, 255, 0.06) 1px, transparent 1px);
+      background-image:
+        radial-gradient(rgba(130, 170, 255, 0.04) 1px, transparent 1px);
       background-size: 28px 28px;
       color: var(--text);
       font-family: var(--font);
       line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::selection {
+      background: rgba(130, 170, 255, 0.3);
+      color: var(--text);
+    }
+
+    /* ── Top bar ── */
+    .top-bar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 28px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 1rem;
+      gap: 1rem;
+      z-index: 100;
+      font-size: 0.7rem;
+      letter-spacing: 0.05em;
+    }
+
+    .top-bar .tab {
+      color: var(--muted);
+      padding: 0 0.25rem;
+    }
+
+    .top-bar .tab.active {
+      color: var(--accent);
+      position: relative;
+    }
+
+    .top-bar .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0; right: 0;
+      height: 1px;
+      background: var(--accent);
+    }
+
+    .top-bar .title {
+      color: var(--text);
+      margin-left: auto;
     }
 
     /* ── Hero ── */
@@ -56,18 +107,16 @@
       justify-content: center;
       padding: 5rem 2rem 4rem;
       position: relative;
-      gap: 0;
     }
 
     .hero-content {
       display: flex;
       flex-direction: column;
       align-items: center;
-      max-width: 680px;
+      max-width: 720px;
       width: 100%;
       position: relative;
       z-index: 2;
-      padding-top: 2rem;
     }
 
     .hero-sublabel {
@@ -80,24 +129,22 @@
       width: 100%;
     }
 
-    h1, .hero-title {
-      font-size: clamp(2.5rem, 8vw, 4.5rem);
+    .hero-title {
+      font-size: clamp(2.8rem, 9vw, 5rem);
       font-weight: 700;
       letter-spacing: -0.02em;
       line-height: 1;
-    }
-
-    .hero-title {
       text-align: center;
       width: 100%;
     }
 
     .bracket { color: var(--muted); }
     .z       { color: var(--accent); }
+    .eta     { color: var(--text); }
 
     @keyframes blink {
       0%, 100% { opacity: 1; }
-      50%       { opacity: 0; }
+      50%      { opacity: 0; }
     }
 
     .cursor {
@@ -105,10 +152,44 @@
       animation: blink 0.8s step-end infinite;
     }
 
+    .hero-version {
+      font-size: 0.65rem;
+      color: var(--border);
+      letter-spacing: 0.15em;
+      margin-top: 0.35rem;
+    }
+
     .tagline {
       margin-top: 0.75rem;
       color: var(--muted);
       font-size: 1rem;
+      text-align: center;
+      max-width: 600px;
+      line-height: 1.7;
+    }
+
+    .trust-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.45rem;
+      margin-bottom: 1.25rem;
+      margin-top: 0.75rem;
+    }
+
+    .trust-badge {
+      font-size: 0.7rem;
+      letter-spacing: 0.07em;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 0.2rem 0.55rem;
+      background: var(--surface);
+    }
+
+    .badge-green {
+      color: var(--accent2);
+      border-color: rgba(195, 232, 141, 0.25);
+      background: rgba(195, 232, 141, 0.06);
     }
 
     .install {
@@ -121,7 +202,14 @@
       border-left: 2px solid var(--accent2);
       padding: 0.75rem 1rem;
       width: 100%;
+      max-width: 640px;
       overflow-x: auto;
+    }
+
+    .install-prompt {
+      color: var(--accent2);
+      font-size: 0.8rem;
+      flex-shrink: 0;
     }
 
     .install code {
@@ -147,15 +235,78 @@
     }
 
     .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+    .copy-btn.copied { color: var(--accent2); border-color: var(--accent2); }
 
-    /* ── Terminal chrome hero frame ── */
+    .hero-cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      justify-content: center;
+    }
+
+    .hero-cta {
+      padding: 0.6rem 1.25rem;
+      background: transparent;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      font-family: inherit;
+      font-size: 0.875rem;
+      text-decoration: none;
+      letter-spacing: 0.03em;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .hero-cta:hover {
+      background: var(--accent);
+      color: #0d1117;
+    }
+
+    .hero-cta-secondary {
+      border-color: var(--muted);
+      color: var(--muted);
+    }
+
+    .hero-cta-secondary:hover {
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .wip-note {
+      margin-top: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .wip-note a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .wip-note a:hover { color: var(--accent); }
+
+    .repo-link {
+      display: inline-block;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .repo-link:hover { color: var(--text); }
+
+    /* ── Terminal chrome ── */
     .term-frame {
       width: 100%;
-      max-width: 820px;
-      margin: 2.5rem auto 0;
+      max-width: 860px;
+      margin: 3rem auto 0;
       border: 1px solid rgba(130, 170, 255, 0.25);
       border-radius: 4px;
       overflow: hidden;
+      box-shadow: 0 0 40px rgba(130, 170, 255, 0.06);
     }
 
     .term-titlebar {
@@ -168,8 +319,7 @@
     }
 
     .term-dot {
-      width: 10px;
-      height: 10px;
+      width: 10px; height: 10px;
       border-radius: 50%;
       display: inline-block;
       flex-shrink: 0;
@@ -187,49 +337,6 @@
       height: auto;
     }
 
-    .repo-link {
-      display: inline-block;
-      margin-top: 1.25rem;
-      font-size: 0.875rem;
-      color: var(--muted);
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-
-    .repo-link:hover { color: var(--text); }
-
-    .binary-note {
-      margin-top: 0.75rem;
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    .binary-note a {
-      color: var(--muted);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      transition: color 0.15s;
-    }
-
-    .binary-note a:hover {
-      color: var(--accent);
-    }
-
-    .wip-note {
-      margin-top: 0.5rem;
-      font-size: 0.8rem;
-      color: var(--muted);
-    }
-
-    .wip-note a {
-      color: var(--muted);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      transition: color 0.15s;
-    }
-
-    .wip-note a:hover { color: var(--accent); }
-
     .scroll-hint {
       position: absolute;
       bottom: 2rem;
@@ -238,26 +345,26 @@
       z-index: 2;
       font-size: 0.75rem;
       color: var(--muted);
-      opacity: 0.5;
+      opacity: 0.4;
       letter-spacing: 0.08em;
       animation: nudge 2s ease-in-out infinite;
     }
 
     @keyframes nudge {
       0%, 100% { transform: translateX(-50%) translateY(0); }
-      50%       { transform: translateX(-50%) translateY(4px); }
+      50%      { transform: translateX(-50%) translateY(5px); }
     }
 
     /* ── Section shared ── */
-    section.features, section.workflow {
+    section {
       padding: 6rem 2rem;
       border-top: 1px solid var(--border);
     }
 
-    section.workflow { background: var(--surface); }
+    section:nth-child(even) { background: var(--surface); }
 
     .section-inner {
-      max-width: 960px;
+      max-width: 1060px;
       margin: 0 auto;
     }
 
@@ -269,10 +376,15 @@
       margin-bottom: 2.5rem;
     }
 
+    .section-label code {
+      font-family: inherit;
+      color: var(--accent2);
+    }
+
     /* ── Feature grid ── */
     .feature-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       gap: 1px;
       background: var(--border);
       border: 1px solid var(--border);
@@ -284,15 +396,12 @@
       display: flex;
       flex-direction: column;
       gap: 0.6rem;
-      transition: background 0.15s;
+      transition: background 0.15s, border-color 0.15s;
+      position: relative;
     }
 
     .feature-card:hover {
-      background: var(--surface);
-    }
-
-    .feature-card:hover .feature-icon {
-      filter: brightness(1.25);
+      background: var(--surface2);
     }
 
     .feature-card h3 {
@@ -316,16 +425,14 @@
     }
 
     .feature-icon {
-      width: 28px;
-      height: 28px;
+      width: 28px; height: 28px;
       color: var(--accent);
       margin-bottom: 0.5rem;
       flex-shrink: 0;
     }
 
     .feature-icon svg {
-      width: 100%;
-      height: 100%;
+      width: 100%; height: 100%;
       fill: none;
       stroke: currentColor;
       stroke-width: 1.6;
@@ -333,10 +440,52 @@
       stroke-linejoin: round;
     }
 
-    /* ── Workflow list ── */
-    .workflow-list {
+    .feature-tag {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-size: 0.55rem;
+      letter-spacing: 0.08em;
+      color: var(--accent2);
+      border: 1px solid rgba(195, 232, 141, 0.2);
+      padding: 0.1rem 0.4rem;
+      font-weight: 600;
+    }
+
+    /* ── Tech stack bar ── */
+    .tech-strip {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+      padding: 2.5rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .tech-item {
       display: flex;
       flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .tech-item .tech-name {
+      font-size: 0.8rem;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .tech-item .tech-desc {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.03em;
+    }
+
+    /* ── Workflow list ── */
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 0;
       border: 1px solid var(--border);
     }
@@ -344,29 +493,217 @@
     .workflow-item {
       display: flex;
       align-items: baseline;
-      gap: 1.5rem;
-      padding: 1.25rem 1.75rem;
+      gap: 1.25rem;
+      padding: 1rem 1.5rem;
       border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
       transition: background 0.15s;
     }
+
+    .workflow-item:nth-child(even) { border-right: none; }
+    .workflow-item:last-child { border-bottom: none; }
 
     .workflow-item:hover {
       background: rgba(130, 170, 255, 0.04);
     }
 
-    .workflow-item:last-child { border-bottom: none; }
-
     .workflow-key {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       color: var(--accent);
       white-space: nowrap;
       flex-shrink: 0;
-      min-width: 7rem;
+      min-width: 6.5rem;
+      font-weight: 500;
     }
 
     .workflow-desc {
-      font-size: 0.875rem;
+      font-size: 0.85rem;
       color: var(--muted);
+    }
+
+    /* ── What's New ── */
+    .whats-new-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .whats-new-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      position: relative;
+      transition: border-color 0.15s;
+    }
+
+    .whats-new-card:hover {
+      border-color: var(--accent);
+    }
+
+    .new-badge {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      font-size: 0.55rem;
+      letter-spacing: 0.1em;
+      color: var(--bg);
+      background: var(--accent2);
+      padding: 0.15rem 0.45rem;
+      font-weight: 700;
+    }
+
+    .whats-new-card .wn-icon {
+      font-size: 1.3rem;
+      line-height: 1;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+
+    .whats-new-card h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .whats-new-card p {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+
+    /* ── Prereqs ── */
+    .prereq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .prereq-card {
+      background: var(--bg);
+      padding: 1.5rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .prereq-card h4 {
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .prereq-card p {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    .prereq-card p code {
+      font-family: inherit;
+      font-size: 0.75rem;
+      color: var(--text);
+      background: var(--surface);
+      padding: 0.1rem 0.3rem;
+    }
+
+    .prereq-card .prereq-link {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-decoration: none;
+      margin-top: auto;
+      transition: color 0.15s;
+    }
+
+    .prereq-card .prereq-link:hover { color: var(--accent); }
+
+    .prereq-note {
+      margin-top: 1.25rem;
+      font-size: 0.8rem;
+      color: var(--border);
+    }
+
+    .prereq-note a {
+      color: var(--muted);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.15s;
+    }
+
+    .prereq-note a:hover { color: var(--accent); }
+
+    /* ── Origin ── */
+    .origin-inner {
+      max-width: 680px;
+      margin: 0 auto;
+    }
+
+    .origin-body {
+      border-left: 2px solid var(--accent);
+      padding-left: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .origin-body p {
+      font-size: 0.9rem;
+      color: var(--muted);
+      line-height: 1.85;
+    }
+
+    .origin-body p strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .origin-donate {
+      border-top: 1px solid var(--border);
+      padding-top: 1.25rem;
+      margin-top: 0.25rem;
+    }
+
+    .origin-donate a {
+      color: var(--accent);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: opacity 0.15s;
+    }
+
+    .origin-donate a:hover { opacity: 0.75; }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2.5rem;
+      padding: 3rem 2rem;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .stat {
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      margin-top: 0.3rem;
+      text-transform: lowercase;
     }
 
     /* ── Footer ── */
@@ -399,13 +736,11 @@
     footer .footer-link:hover { color: var(--text); }
 
     footer .made-with {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       color: var(--border);
     }
 
-    footer .issues-link {
-      font-size: 0.75rem;
-    }
+    footer .issues-link { font-size: 0.7rem; }
 
     footer .issues-link a {
       color: var(--border);
@@ -427,126 +762,32 @@
       transform: translateY(0);
     }
 
-    .feature-card:nth-child(2) { transition-delay: 0.07s; }
-    .feature-card:nth-child(3) { transition-delay: 0.14s; }
-    .feature-card:nth-child(4) { transition-delay: 0.21s; }
-    .feature-card:nth-child(5) { transition-delay: 0.28s; }
-    .feature-card:nth-child(6) { transition-delay: 0.35s; }
-    .feature-card:nth-child(7) { transition-delay: 0.42s; }
-    .feature-card:nth-child(8) { transition-delay: 0.49s; }
+    .feature-card:nth-child(2)  { transition-delay: 0.05s; }
+    .feature-card:nth-child(3)  { transition-delay: 0.10s; }
+    .feature-card:nth-child(4)  { transition-delay: 0.15s; }
+    .feature-card:nth-child(5)  { transition-delay: 0.20s; }
+    .feature-card:nth-child(6)  { transition-delay: 0.25s; }
+    .feature-card:nth-child(7)  { transition-delay: 0.30s; }
+    .feature-card:nth-child(8)  { transition-delay: 0.35s; }
+    .feature-card:nth-child(9)  { transition-delay: 0.40s; }
+    .feature-card:nth-child(10) { transition-delay: 0.45s; }
+    .feature-card:nth-child(11) { transition-delay: 0.50s; }
+    .feature-card:nth-child(12) { transition-delay: 0.55s; }
+    .feature-card:nth-child(13) { transition-delay: 0.60s; }
+    .feature-card:nth-child(14) { transition-delay: 0.65s; }
+    .feature-card:nth-child(15) { transition-delay: 0.70s; }
+    .feature-card:nth-child(16) { transition-delay: 0.75s; }
+    .feature-card:nth-child(17) { transition-delay: 0.80s; }
+    .feature-card:nth-child(18) { transition-delay: 0.85s; }
 
-    .workflow-item:nth-child(2) { transition-delay: 0.07s; }
-    .workflow-item:nth-child(3) { transition-delay: 0.14s; }
-    .workflow-item:nth-child(4) { transition-delay: 0.21s; }
-    .workflow-item:nth-child(5) { transition-delay: 0.28s; }
-    .workflow-item:nth-child(6) { transition-delay: 0.35s; }
-    .workflow-item:nth-child(7) { transition-delay: 0.42s; }
+    .whats-new-card:nth-child(2) { transition-delay: 0.10s; }
+    .whats-new-card:nth-child(3) { transition-delay: 0.20s; }
+    .whats-new-card:nth-child(4) { transition-delay: 0.30s; }
 
-    /* ── Prerequisites ── */
-    section.prereqs {
-      padding: 5rem 2rem;
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-    }
-
-    .prereq-list {
-      border: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-    }
-
-    .prereq-item {
-      display: grid;
-      grid-template-columns: 8rem 1fr auto;
-      align-items: center;
-      gap: 1.5rem;
-      padding: 1.25rem 1.75rem;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .prereq-item:last-child { border-bottom: none; }
-
-    .prereq-name {
-      font-size: 0.875rem;
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .prereq-desc {
-      font-size: 0.85rem;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-
-    .prereq-desc code {
-      font-family: inherit;
-      font-size: 0.8rem;
-      color: var(--text);
-      background: var(--bg);
-      padding: 0.1rem 0.3rem;
-    }
-
-    .prereq-link {
-      font-size: 0.8rem;
-      color: var(--muted);
-      text-decoration: none;
-      white-space: nowrap;
-      transition: color 0.15s;
-    }
-
-    .prereq-link:hover { color: var(--accent); }
-
-    .prereq-note {
-      margin-top: 1.25rem;
-      font-size: 0.8rem;
-      color: var(--border);
-    }
-
-    .prereq-item:nth-child(2) { transition-delay: 0.07s; }
-
-    @media (max-width: 600px) {
-      .prereq-item {
-        grid-template-columns: 1fr;
-        gap: 0.4rem;
-      }
-    }
-
-
-    /* ── Origin ── */
-    section.origin {
-      padding: 6rem 2rem;
-      border-top: 1px solid var(--border);
-    }
-
-    .origin-inner {
-      max-width: 640px;
-      margin: 0 auto;
-    }
-
-    .origin-body {
-      border-left: 2px solid var(--accent);
-      padding-left: 1.5rem;
-      display: flex;
-      flex-direction: column;
-      gap: 1.25rem;
-    }
-
-    .origin-body p {
-      font-size: 0.9rem;
-      color: var(--muted);
-      line-height: 1.85;
-    }
-
-    .origin-body p strong {
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    /* ── Top accent bar ── */
+    /* ── Page accent bar ── */
     .page-accent-bar {
       position: fixed;
-      top: 0;
-      left: 0;
+      top: 0; left: 0;
       width: 100%;
       height: 2px;
       background: linear-gradient(90deg, transparent 0%, #82aaff 30%, #c3e88d 70%, transparent 100%);
@@ -554,410 +795,426 @@
       pointer-events: none;
     }
 
-    /* ── What's New ── */
-    section.whats-new {
-      padding: 5rem 2rem;
-      border-top: 1px solid var(--border);
+    /* ── Responsive ── */
+    @media (max-width: 700px) {
+      .workflow-item:nth-child(even) { border-right: 1px solid var(--border); }
+      .workflow-grid { grid-template-columns: 1fr; }
+      .feature-grid { grid-template-columns: 1fr; }
+      .prereq-grid { grid-template-columns: 1fr; }
+      .tech-strip { gap: 1.25rem; }
+      .stats-bar { gap: 1.5rem; }
     }
-
-    .whats-new-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 1.25rem;
-      margin-top: 0;
-    }
-
-    .whats-new-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      padding: 1.75rem;
-      display: flex;
-      flex-direction: column;
-      gap: 0.6rem;
-      position: relative;
-      transition: border-color 0.15s;
-    }
-
-    .whats-new-card:hover {
-      border-color: var(--accent);
-    }
-
-    .new-badge {
-      position: absolute;
-      top: 1rem;
-      right: 1rem;
-      font-size: 0.6rem;
-      letter-spacing: 0.1em;
-      color: var(--bg);
-      background: var(--accent2);
-      padding: 0.15rem 0.45rem;
-      font-weight: 700;
-    }
-
-    .whats-new-card .wn-icon {
-      font-size: 1.4rem;
-      line-height: 1;
-      margin-bottom: 0.25rem;
-    }
-
-    .whats-new-card h3 {
-      font-size: 0.95rem;
-      font-weight: 600;
-      color: var(--text);
-    }
-
-    .whats-new-card p {
-      font-size: 0.85rem;
-      color: var(--muted);
-      line-height: 1.7;
-    }
-
-    /* ── Trust badges ── */
-    .trust-badges {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.45rem;
-      margin-bottom: 1.25rem;
-    }
-
-    .trust-badge {
-      font-size: 0.7rem;
-      letter-spacing: 0.07em;
-      color: var(--muted);
-      border: 1px solid var(--border);
-      padding: 0.2rem 0.55rem;
-      background: var(--surface);
-    }
-
-    /* ── Hero CTA ── */
-    .hero-cta {
-      display: block;
-      width: fit-content;
-      margin-top: 1rem;
-      margin-left: auto;
-      margin-right: auto;
-      padding: 0.6rem 1.25rem;
-      background: transparent;
-      border: 1px solid var(--accent);
-      color: var(--accent);
-      font-family: inherit;
-      font-size: 0.875rem;
-      text-decoration: none;
-      letter-spacing: 0.03em;
-      transition: background 0.15s, color 0.15s;
-    }
-
-    .hero-cta:hover {
-      background: var(--accent);
-      color: #0d1117;
-    }
-
-    /* ── Donate nudge in origin ── */
-    .origin-donate {
-      border-top: 1px solid var(--border);
-      padding-top: 1.25rem;
-      margin-top: 0.25rem;
-    }
-
-    .origin-donate a {
-      color: var(--accent);
-      text-decoration: underline;
-      text-underline-offset: 3px;
-      transition: opacity 0.15s;
-    }
-
-    .origin-donate a:hover { opacity: 0.75; }
-
-    /* ── 9th & 10th feature card delays ── */
-    .feature-card:nth-child(9)  { transition-delay: 0.56s; }
-    .feature-card:nth-child(10) { transition-delay: 0.63s; }
-    .feature-card:nth-child(11) { transition-delay: 0.70s; }
-    .feature-card:nth-child(12) { transition-delay: 0.77s; }
 
   </style>
 </head>
 <body>
 
-  <div class="page-accent-bar" aria-hidden="true"></div>
+<div class="page-accent-bar" aria-hidden="true"></div>
 
-  <!-- Hero -->
-  <section class="hero">
+<div class="top-bar">
+  <span class="tab active">zeta</span>
+  <span class="tab">config.toml</span>
+  <span class="tab">~ / projects</span>
+  <span class="title">&#x25C9; zeta v0.4.0</span>
+</div>
 
-    <p class="hero-sublabel animate">// terminal file manager</p>
-    <h1 class="hero-title"><span class="bracket">[</span><span class="z">Z</span><span class="bracket">]</span>eta<span class="cursor">&#x2588;</span></h1>
+<!-- Hero -->
+<section class="hero">
+  <p class="hero-sublabel animate">// terminal file manager</p>
+  <h1 class="hero-title"><span class="bracket">[</span><span class="z">Z</span><span class="bracket">]</span><span class="eta">eta</span><span class="cursor">&#x2588;</span></h1>
+  <p class="hero-version">Norton Commander reimagined. Rust core. Zero bloat.</p>
 
-    <div class="hero-content">
-      <div class="trust-badges">
-        <span class="trust-badge">Rust</span>
-        <span class="trust-badge">MIT License</span>
-        <span class="trust-badge">Linux &amp; Windows</span>
-        <span class="trust-badge">&lt; 10 MB binary</span>
-        <span class="trust-badge">zero-dependency runtime</span>
-      </div>
-      <p class="tagline">A keyboard-first, dual-pane file manager and embedded editor for the terminal. Rust core. Clean TUI. Norton Commander workflow, brought to the present.</p>
-      <div class="install">
-        <code>cargo install --git https://github.com/tzero86/Zeta</code>
-        <button class="copy-btn" id="copy-btn">copy</button>
-      </div>
-      <a class="hero-cta" href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">&#x2193;&nbsp; Download latest binary</a>
-      <p class="wip-note">Work in progress &#x2014; <a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">issues and feedback welcome</a> on GitHub.</p>
-      <a class="repo-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
+  <div class="hero-content">
+    <div class="trust-badges">
+      <span class="trust-badge badge-green">Rust</span>
+      <span class="trust-badge">MIT License</span>
+      <span class="trust-badge">Linux &amp; Windows</span>
+      <span class="trust-badge">&lt; 10 MB</span>
+      <span class="trust-badge">zero runtime deps</span>
+      <span class="trust-badge">~30 MB RAM idle</span>
     </div>
-
-    <div class="term-frame" role="img" aria-label="Zeta terminal file manager screenshot">
-      <div class="term-titlebar">
-        <span class="term-dot" style="background:#ff5f57"></span>
-        <span class="term-dot" style="background:#febc2e"></span>
-        <span class="term-dot" style="background:#28c840"></span>
-        <span class="term-path">zeta — ~/projects</span>
-      </div>
-      <div class="term-body">
-        <img src="app.png" alt="Zeta running in a terminal: dual-pane file browser with an embedded editor and markdown preview" loading="eager">
-      </div>
+    <p class="tagline">A dual-pane terminal file manager with an embedded editor, integrated terminal, SSH/SFTP, git awareness, archive browsing, workspaces, themes, and a command palette &mdash; all running in your terminal on a Rust core.</p>
+    <div class="install">
+      <span class="install-prompt">$</span>
+      <code>cargo install --git https://github.com/tzero86/Zeta</code>
+      <button class="copy-btn" id="copy-btn">copy</button>
     </div>
-
-    <div class="scroll-hint">scroll &#x2193;</div>
-  </section>
-
-  <!-- Features -->
-  <!-- What's New -->
-  <section class="whats-new">
-    <div class="section-inner">
-      <p class="section-label animate">// what's new</p>
-      <div class="whats-new-grid">
-
-        <div class="whats-new-card animate">
-          <span class="new-badge">NEW</span>
-          <div class="wn-icon">⟨±⟩</div>
-          <h3>Git Diff Viewer</h3>
-          <p>View all changed files and their diffs without leaving the terminal. Side-by-side coloured hunks with a line-number gutter, full keyboard navigation, and mouse scroll support.</p>
-        </div>
-
-        <div class="whats-new-card animate">
-          <span class="new-badge">NEW</span>
-          <div class="wn-icon">▤</div>
-          <h3>View → Themes Flyout</h3>
-          <p>Switch themes live from a nested flyout submenu under View — no config file editing, no restart. Navigate with arrow keys and preview themes without leaving the keyboard.</p>
-        </div>
-
-        <div class="whats-new-card animate">
-          <span class="new-badge">NEW</span>
-          <div class="wn-icon">🖥</div>
-          <h3>Norton Commander Theme</h3>
-          <p>Authentic CGA/DOS palette — dark blue panels (#0000AA), bright cyan borders (#55FFFF), yellow key hints (#FFFF55). The real thing, not a loose approximation.</p>
-        </div>
-
-      </div>
+    <div class="hero-cta-row">
+      <a class="hero-cta" href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">&#x2193;&nbsp; Download binary</a>
+      <a class="hero-cta hero-cta-secondary" href="https://github.com/tzero86/Zeta" target="_blank" rel="noopener">&#x2192;&nbsp; Source on GitHub</a>
     </div>
-  </section>
+    <p class="wip-note">Work in progress &mdash; <a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">issues and feedback welcome</a>.</p>
+  </div>
 
-  <!-- Prerequisites -->
-  <section class="prereqs">
-    <div class="section-inner">
-      <p class="section-label animate">// prerequisites</p>
-      <div class="prereq-list">
-        <div class="prereq-item animate">
-          <span class="prereq-name">rustup</span>
-          <span class="prereq-desc">Rust toolchain manager. Installs the stable compiler and cargo.</span>
-          <a class="prereq-link" href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs &#x2197;</a>
-        </div>
-        <div class="prereq-item animate">
-          <span class="prereq-name">git</span>
-          <span class="prereq-desc">Required for <code>cargo install --git</code>. Most systems already have it.</span>
-          <a class="prereq-link" href="https://git-scm.com" target="_blank" rel="noopener">git-scm.com &#x2197;</a>
-        </div>
-        <div class="prereq-item animate">
-          <span class="prereq-name">C toolchain</span>
-          <span class="prereq-desc">Required to compile native crates (<code>ssh2</code>, <code>bzip2</code>, <code>xz2</code>). Linux: <code>build-essential pkg-config libssl-dev libbz2-dev liblzma-dev</code>. Windows: Visual Studio Build Tools with &ldquo;Desktop development with C++&rdquo;.</span>
-          <a class="prereq-link" href="https://aka.ms/vs/17/release/vs_BuildTools.exe" target="_blank" rel="noopener">VS Build Tools &#x2197;</a>
-        </div>
-        <div class="prereq-item animate">
-          <span class="prereq-name">Windows 10 1809+</span>
-          <span class="prereq-desc">The embedded terminal uses the ConPTY API introduced in Windows 10 version 1809. Earlier Windows versions are not supported.</span>
-          <span class="prereq-name" style="color:var(--muted);font-weight:400;font-size:0.8rem">Windows only</span>
-        </div>
-      </div>
-      <p class="prereq-note animate">Precompiled binaries skip native build steps entirely &mdash; grab one from the <a href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">releases page</a> to avoid the C toolchain requirement.</p>
+  <div class="term-frame" role="img" aria-label="Zeta terminal file manager screenshot">
+    <div class="term-titlebar">
+      <span class="term-dot" style="background:#ff5f57"></span>
+      <span class="term-dot" style="background:#febc2e"></span>
+      <span class="term-dot" style="background:#28c840"></span>
+      <span class="term-path">zeta &mdash; ~/projects</span>
     </div>
-  </section>
+    <div class="term-body">
+      <img src="app.png" alt="Zeta running in a terminal: dual-pane file browser with embedded editor and markdown preview" loading="eager">
+    </div>
+  </div>
 
-  <section class="features">
-    <div class="section-inner">
-      <p class="section-label animate">// features</p>
-      <div class="feature-grid">
+  <div class="scroll-hint">scroll &#x2193;</div>
+</section>
 
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg></div>
-          <h3>Dual Pane</h3>
-          <p>Two independent panels side by side. Navigate, compare, and operate across directories without a second terminal window.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
-          <h3>Embedded Editor</h3>
-          <p>Syntax highlighting, incremental search, undo/redo, and text selection. Edit files without spawning an external process.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
-          <h3>Integrated Terminal</h3>
-          <p>A full PTY terminal embedded in the layout. Toggle it with F2 and keep your filesystem context without context-switching.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
-          <h3>SSH &amp; SFTP</h3>
-          <p>Browse and operate on remote filesystems over SSH. Host key verification and known-hosts persistence built in.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
-          <h3>Diff Mode</h3>
-          <p>Highlight unique and changed entries between panes at a glance. Sync to the other pane with a single keystroke.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
-          <h3>4 Workspaces</h3>
-          <p>Four isolated desktops each with independent pane state, editor, preview, and terminal. Switch with Alt+1&#x2013;4.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
-          <h3>Markdown Preview</h3>
-          <p>Live rendered preview while editing <code>.md</code> files. Headings, code blocks, lists, blockquotes &#x2014; updated on every keystroke, zero latency.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
-          <h3>Customizable</h3>
-          <p>Nine built-in themes (Zeta, Norton, Dracula, and more), configurable keymaps, icon modes, and a simple toml config file. Tune it to your workflow.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div>
-          <h3>Git Integration</h3>
-          <p>Branch name and dirty-state indicator shown in the pane header. Per-entry change markers let you see modified, added, and untracked files at a glance &mdash; without leaving the file browser.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M5 9V5a2 2 0 0 1 2-2h1"/><path d="M19 9V5a2 2 0 0 0-2-2h-1"/><rect x="5" y="9" width="14" height="12" rx="1"/><line x1="9" y1="13" x2="9" y2="17"/><line x1="12" y1="12" x2="12" y2="17"/><line x1="15" y1="14" x2="15" y2="17"/></svg></div>
-          <h3>Full Mouse Support</h3>
-          <p>Click to focus panes, scroll to navigate, and use the mouse to select entries or position the editor cursor. Keyboard-first, mouse-friendly.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/><polyline points="9 3 3 9 3 21 21 21 21 9 15 3"/></svg></div>
-          <h3>Git Diff Viewer</h3>
-          <p>Instantly view all changed files and their unified diffs without leaving the terminal. Navigate the changed-files list and scroll through colour-coded diff content side-by-side.</p>
-        </div>
-
-        <div class="feature-card animate">
-          <div class="feature-icon"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="15" y2="6"/><line x1="3" y1="18" x2="15" y2="18"/><polyline points="18 9 21 12 18 15"/></svg></div>
-          <h3>Flyout Menus</h3>
-          <p>Nested flyout submenus in the menu bar — hover or arrow-key into a submenu without losing keyboard focus. Theme switching lives under <code>View → Themes</code> with a live preview.</p>
-        </div>
-
+<!-- What's New -->
+<section class="whats-new">
+  <div class="section-inner">
+    <p class="section-label animate">// what's new</p>
+    <div class="whats-new-grid">
+      <div class="whats-new-card animate">
+        <span class="new-badge">NEW</span>
+        <div class="wn-icon">&#x2329;&#x00B1;&#x232A;</div>
+        <h3>Git Diff Viewer</h3>
+        <p>View all changed files and their diffs without leaving the terminal. Side-by-side coloured hunks with a line-number gutter, full keyboard navigation, and mouse scroll support.</p>
+      </div>
+      <div class="whats-new-card animate">
+        <span class="new-badge">NEW</span>
+        <div class="wn-icon">&#x25A4;</div>
+        <h3>View &rarr; Themes Flyout</h3>
+        <p>Switch themes live from a nested flyout submenu under View &mdash; no config file editing, no restart. Navigate with arrow keys and preview themes without leaving the keyboard.</p>
+      </div>
+      <div class="whats-new-card animate">
+        <span class="new-badge">NEW</span>
+        <div class="wn-icon">&#x1F5B4;</div>
+        <h3>Norton Commander Theme</h3>
+        <p>Authentic CGA/DOS palette &mdash; dark blue panels (#0000AA), bright cyan borders (#55FFFF), yellow key hints (#FFFF55). The real thing, not a loose approximation.</p>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Workflow -->
-  <section class="workflow">
-    <div class="section-inner">
-      <p class="section-label animate">// keyboard first</p>
-      <div class="workflow-list">
-        <div class="workflow-item animate">
-          <span class="workflow-key">Alt+1..4</span>
-          <span class="workflow-desc">Switch between workspaces instantly</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">F2</span>
-          <span class="workflow-desc">Toggle the embedded terminal panel</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">F4</span>
-          <span class="workflow-desc">Open selected file in the embedded editor</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">F5 / F6</span>
-          <span class="workflow-desc">Copy / Rename &#x2014; with progress for large trees</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">F8</span>
-          <span class="workflow-desc">Delete with confirmation dialog</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">F9 / F10</span>
-          <span class="workflow-desc">Diff mode / Quit</span>
-        </div>
-        <div class="workflow-item animate">
-          <span class="workflow-key">Shift+P</span>
-          <span class="workflow-desc">Command palette &#x2014; search every action by name</span>
-        </div>
+<!-- Tech strip -->
+<div class="tech-strip">
+  <div class="tech-item">
+    <span class="tech-name">rust</span>
+    <span class="tech-desc">core language</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">ratatui</span>
+    <span class="tech-desc">terminal UI framework</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">crossterm</span>
+    <span class="tech-desc">terminal I/O</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">ropey</span>
+    <span class="tech-desc">editor rope buffer</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">ssh2</span>
+    <span class="tech-desc">SFTP filesystem</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">syntect</span>
+    <span class="tech-desc">syntax highlighting</span>
+  </div>
+  <div class="tech-item">
+    <span class="tech-name">toml</span>
+    <span class="tech-desc">config format</span>
+  </div>
+</div>
+
+<!-- Features -->
+<section>
+  <div class="section-inner">
+    <p class="section-label animate">// features <code>zeta --help</code></p>
+    <div class="feature-grid">
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="18" rx="1"/><rect x="13" y="3" width="8" height="18" rx="1"/></svg></div>
+        <h3>Dual Pane</h3>
+        <p>Two independent panels side by side. Navigate, compare, and operate across directories without a second terminal window. Navigation history with back/forward stacks.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+        <h3>Embedded Editor</h3>
+        <p>Syntax highlighting, undo/redo, incremental search, text selection, find &amp; replace. Edit files without spawning an external process. Ropey-backed for fast editing of large files.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+        <h3>Integrated Terminal</h3>
+        <p>Full PTY terminal embedded in the layout. Toggle with F2. All keys forwarded as raw escape sequences. Fullscreen mode. Stay in your filesystem context without context-switching.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+        <h3>SSH &amp; SFTP</h3>
+        <p>Browse and operate on remote filesystems over SSH. Password, key file, and SSH agent auth. Host key verification with known-hosts persistence. Full remote file operations.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></div>
+        <h3>Markdown Preview</h3>
+        <p>Live rendered preview side-by-side while editing <code>.md</code> files. Headings, code blocks, lists, blockquotes &mdash; updated on every keystroke, zero latency.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+        <h3>4 Workspaces</h3>
+        <p>Four isolated desktops each with independent pane state, editor, preview, and terminal. Switch with Alt+1&ndash;4. Workspace state persists across sessions.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></div>
+        <h3>Diff Mode</h3>
+        <p>Highlight unique and changed entries between panes at a glance. Sync to the other pane with a single keystroke. Colour-coded: green (new), red (removed), yellow (changed).</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/></svg></div>
+        <h3>Git Integration</h3>
+        <p>Branch and dirty-state indicator in the pane header. Per-entry change markers &mdash; modified, added, untracked at a glance. Built-in diff viewer with side-by-side colour-coded hunks.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M5 9V5a2 2 0 0 1 2-2h1"/><path d="M19 9V5a2 2 0 0 0-2-2h-1"/><rect x="5" y="9" width="14" height="12" rx="1"/><line x1="9" y1="13" x2="9" y2="17"/><line x1="12" y1="12" x2="12" y2="17"/><line x1="15" y1="14" x2="15" y2="17"/></svg></div>
+        <h3>Full Mouse Support</h3>
+        <p>Click to focus panes, scroll to navigate, select entries, resize panels. Right-click for context menu. Mouse-friendly while keeping keyboard-first UX.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/><polyline points="9 3 3 9 3 21 21 21 21 9 15 3"/></svg></div>
+        <h3>Archive Browsing</h3>
+        <p>Enter ZIP, tar.gz, tar.bz2, and tar.xz archives to browse contents as a virtual filesystem. Extract single files for in-place preview. Navigate nested archives like directories.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="15" y2="6"/><line x1="3" y1="18" x2="15" y2="18"/><polyline points="18 9 21 12 18 15"/></svg></div>
+        <h3>Flyout Menu Bar</h3>
+        <p>Nested flyout submenus in the menu bar &mdash; hover or arrow-key into a submenu without losing focus. Theme switching, file ops, and navigation all accessible via Alt+letter.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><line x1="12" y1="2" x2="12" y2="22"/><path d="M17 7l-5-5-5 5"/><path d="M17 17l-5 5-5-5"/></svg></div>
+        <h3>File Operations</h3>
+        <p>Copy (F5), move (Shift+F6), rename (F6), delete (F8) with progress tracking, trash support, collision dialog, and batch operations on marked files. Resume on failure.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 4.93a10 10 0 0 0 0 14.14"/></svg></div>
+        <h3>Customizable</h3>
+        <p>10 built-in themes (Zeta, Norton, Dracula, Catppuccin, Matrix, Neon, &amp; more), keymap rebinding, 3 icon modes (Unicode, ASCII, Nerd Font), and a simple TOML config file.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/><polyline points="21 3 12 12 16 12 16 21"/></svg></div>
+        <h3>Quick Filter &amp; Finder</h3>
+        <p>Type <code>/</code> to filter entries by glob pattern. <code>Ctrl+P</code> opens a recursive fuzzy file finder that searches the entire directory tree. Instant, no indexing needed.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/><line x1="8" y1="17" x2="11" y2="17"/></svg></div>
+        <h3>Command Palette</h3>
+        <p><code>Shift+P</code> opens a fuzzy-matched command palette with 40+ actions. Navigation, file ops, editor, view, settings &mdash; every action discoverable and a keystroke away.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="1"/><rect x="2" y="14" width="20" height="8" rx="1"/><line x1="6" y1="6" x2="6" y2="6"/><line x1="6" y1="18" x2="6" y2="18"/></svg></div>
+        <h3>Self-Update</h3>
+        <p>Automatic update checks on startup (configurable). One-keystroke install on quit when a new version is available. Pins to tagged releases for reproducible builds.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22 8.5 12 15.5 2 8.5"/></svg></div>
+        <h3>Session Persistence</h3>
+        <p>Pane state, CWDs, sort modes, history, and workspace layout saved to <code>session.toml</code>. Pick up exactly where you left off. Non-fatal fallback on read errors.</p>
+      </div>
+
+      <div class="feature-card animate">
+        <div class="feature-icon"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+        <h3>File Watcher</h3>
+        <p>Filesystem events auto-refresh pane contents when directories change. Config file changes trigger live reload of settings. No manual refresh needed.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Stats -->
+<div class="stats-bar">
+  <div class="stat">
+    <div class="stat-num">~25k</div>
+    <div class="stat-label">lines of rust</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">40+</div>
+    <div class="stat-label">actions &amp; commands</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">10</div>
+    <div class="stat-label">built-in themes</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">&lt;10 MB</div>
+    <div class="stat-label">release binary</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">~30 MB</div>
+    <div class="stat-label">ram at idle</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num">519</div>
+    <div class="stat-label">passing tests</div>
+  </div>
+</div>
+
+<!-- Workflow -->
+<section>
+  <div class="section-inner">
+    <p class="section-label animate">// keyboard first</p>
+    <div class="workflow-grid">
+      <div class="workflow-item animate">
+        <span class="workflow-key">F2</span>
+        <span class="workflow-desc">Toggle embedded terminal</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">F3</span>
+        <span class="workflow-desc">Toggle preview panel</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">F4</span>
+        <span class="workflow-desc">Open file in editor</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">F5 / F6</span>
+        <span class="workflow-desc">Copy / Rename with progress</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">F8</span>
+        <span class="workflow-desc">Delete with trash &amp; confirm</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">F9 / F10</span>
+        <span class="workflow-desc">Diff mode / Quit</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">Alt+1&ndash;4</span>
+        <span class="workflow-desc">Switch workspace instantly</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">/ or Ctrl+P</span>
+        <span class="workflow-desc">Filter entries / Find files</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">Shift+P</span>
+        <span class="workflow-desc">Command palette</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">Space</span>
+        <span class="workflow-desc">Mark files for batch ops</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">Tab</span>
+        <span class="workflow-desc">Focus next pane / panel</span>
+      </div>
+      <div class="workflow-item animate">
+        <span class="workflow-key">?</span>
+        <span class="workflow-desc">Context-aware cheatsheet</span>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
-  <!-- Origin -->
-  <section class="origin">
-    <div class="origin-inner">
-      <p class="section-label animate">// why it exists</p>
-      <div class="origin-body">
-        <p class="animate">Zeta started as an excuse. Testing a new generation of AI coding tools calls for a
-          <strong>real project</strong> &#x2014; something with actual architecture decisions, non-trivial state, and things
-          that could genuinely go wrong. Toy examples tell you nothing.
-        </p>
-        <p class="animate">The idea came from memory. If you used a PC in the late 80s or early 90s,
-          you probably know <strong>Norton Commander</strong>. Two panes, function keys, everything a keystroke away.
-          That mental model never really leaves you.
-        </p>
-        <p class="animate">So the goal became building something in that spirit &#x2014; keyboard-first, fast,
-          dual-pane &#x2014; but brought forward: embedded editor, integrated terminal, SSH support,
-          multiple workspaces, all on a <strong>Rust core</strong> with a proper TUI.
-        </p>
-        <p class="animate">Zeta is what came out of that. Part experiment, part nostalgia project,
-          part something that turned out to be genuinely useful.
-        </p>
-        <p class="animate origin-donate">If Zeta saves you time or sparks something, <a href="https://www.buymeacoffee.com/tzero86" target="_blank" rel="noopener">consider buying me a coffee</a> &mdash; it keeps the project moving.</p>
+<!-- Prereqs -->
+<section>
+  <div class="section-inner">
+    <p class="section-label animate">// prerequisites</p>
+    <div class="prereq-grid">
+      <div class="prereq-card animate">
+        <h4>rustup</h4>
+        <p>Rust toolchain manager. Installs the stable compiler and cargo.</p>
+        <a class="prereq-link" href="https://rustup.rs" target="_blank" rel="noopener">rustup.rs &#x2197;</a>
+      </div>
+      <div class="prereq-card animate">
+        <h4>git</h4>
+        <p>Required for <code>cargo install --git</code>. Most systems already have it.</p>
+        <a class="prereq-link" href="https://git-scm.com" target="_blank" rel="noopener">git-scm.com &#x2197;</a>
+      </div>
+      <div class="prereq-card animate">
+        <h4>C toolchain</h4>
+        <p>Linux: <code>build-essential pkg-config libssl-dev libbz2-dev liblzma-dev</code>. Windows: VS Build Tools with "Desktop development with C++".</p>
+        <a class="prereq-link" href="https://aka.ms/vs/17/release/vs_BuildTools.exe" target="_blank" rel="noopener">VS Build Tools &#x2197;</a>
+      </div>
+      <div class="prereq-card animate">
+        <h4>Windows 10 1809+</h4>
+        <p>The embedded terminal uses the ConPTY API introduced in Windows 10 version 1809. Earlier Windows versions are not supported. <em>(Windows only)</em></p>
       </div>
     </div>
-  </section>
+    <p class="prereq-note animate">Precompiled binaries skip native build steps entirely &mdash; grab one from the <a href="https://github.com/tzero86/Zeta/releases/latest" target="_blank" rel="noopener">releases page</a> to avoid the C toolchain requirement.</p>
+  </div>
+</section>
 
-  <!-- Footer -->
-  <footer>
-    <code class="install-again">cargo install --git https://github.com/tzero86/Zeta</code>
-    <a class="footer-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
-    <p class="made-with">Made with love and a ton of curiosity &#xB7; Rust &#xB7; ratatui &#xB7; crossterm</p>
-    <p class="issues-link"><a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">&#x2192; report an issue on GitHub</a></p>
-  </footer>
+<!-- Origin -->
+<section>
+  <div class="origin-inner">
+    <p class="section-label animate">// why it exists</p>
+    <div class="origin-body">
+      <p class="animate">Zeta started as an excuse. Testing a new generation of AI coding tools calls for a
+        <strong>real project</strong> &mdash; something with actual architecture decisions, non-trivial state, and things
+        that could genuinely go wrong. Toy examples tell you nothing.
+      </p>
+      <p class="animate">The idea came from memory. If you used a PC in the late 80s or early 90s,
+        you probably know <strong>Norton Commander</strong>. Two panes, function keys, everything a keystroke away.
+        That mental model never really leaves you.
+      </p>
+      <p class="animate">So the goal became building something in that spirit &mdash; keyboard-first, fast,
+        dual-pane &mdash; but brought forward: embedded editor, integrated terminal, SSH support,
+        multiple workspaces, all on a <strong>Rust core</strong> with a proper TUI.
+      </p>
+      <p class="animate">Zeta is what came out of that. Part experiment, part nostalgia project,
+        part something that turned out to be genuinely useful.
+      </p>
+      <p class="animate origin-donate">If Zeta saves you time or sparks something, <a href="https://www.buymeacoffee.com/tzero86" target="_blank" rel="noopener">consider buying me a coffee</a> &mdash; it keeps the project moving.</p>
+    </div>
+  </div>
+</section>
 
-  <script>
-    // Copy button
-    document.getElementById('copy-btn').addEventListener('click', function () {
-      var btn = this;
-      navigator.clipboard.writeText('cargo install --git https://github.com/tzero86/Zeta').then(function () {
-        btn.textContent = 'copied';
-        setTimeout(function () { btn.textContent = 'copy'; }, 2000);
-      });
+<!-- Footer -->
+<footer>
+  <code class="install-again">cargo install --git https://github.com/tzero86/Zeta</code>
+  <a class="footer-link" href="https://github.com/tzero86/Zeta">&#x2192; github.com/tzero86/Zeta</a>
+  <p class="made-with">Made with love and a ton of curiosity &#xB7; Rust &#xB7; ratatui &#xB7; crossterm</p>
+  <p class="issues-link"><a href="https://github.com/tzero86/Zeta/issues" target="_blank" rel="noopener">&#x2192; report an issue on GitHub</a></p>
+</footer>
+
+<script>
+  // Copy button
+  document.getElementById('copy-btn').addEventListener('click', function () {
+    var btn = this;
+    navigator.clipboard.writeText('cargo install --git https://github.com/tzero86/Zeta').then(function () {
+      btn.textContent = 'copied';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = 'copy';
+        btn.classList.remove('copied');
+      }, 2000);
     });
+  });
 
-    // Scroll-triggered animations
-    var observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1 });
-
-    document.querySelectorAll('.animate').forEach(function (el) {
-      observer.observe(el);
+  // Scroll-triggered animations
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
     });
-  </script>
+  }, { threshold: 0.1 });
 
-  <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="tzero86" data-description="Support me on Buy me a coffee!" data-message="If you feel like supporting my contributions and the continued creation and update of all the tools I make, consider making a donation. It'll be a great help!! 💕" data-color="#40DCA5" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
+  document.querySelectorAll('.animate').forEach(function (el) {
+    observer.observe(el);
+  });
+</script>
+
+<script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="tzero86" data-description="Support me on Buy me a coffee!" data-message="If you feel like supporting my contributions and the continued creation and update of all the tools I make, consider making a donation. It'll be a great help!! &#x1F495;" data-color="#40DCA5" data-position="Right" data-x_margin="18" data-y_margin="18"></script>
 
 </body>
 </html>

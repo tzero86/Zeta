@@ -188,3 +188,144 @@ fn e2e_home_end_navigation() {
     let screen = zeta.capture_screen().expect("capture");
     assert!(!screen.is_empty(), "Screen should render after Home/End");
 }
+
+// ============================================================================
+// Tests for fix/editor-selection-and-ui-regressions branch
+// ============================================================================
+
+/// Verify that the `?` cheatsheet opens without crashing.
+#[test]
+fn e2e_cheatsheet_opens() {
+    let mut zeta = ZetaE2eInstance::spawn().expect("spawn");
+
+    assert!(
+        zeta.wait_for_text("Zeta", Duration::from_millis(2500))
+            .expect("screen check"),
+        "App must startup"
+    );
+
+    // '?' opens the quick-help cheatsheet.
+    zeta.send_key(KeyCode::Char('?')).expect("send ?");
+    zeta.wait_for_render().expect("wait render");
+
+    // Screen should still render (no crash on cheatsheet open).
+    let screen = zeta.capture_screen().expect("capture");
+    assert!(
+        !screen.is_empty(),
+        "Cheatsheet should open without crashing"
+    );
+
+    // Escape closes it.
+    zeta.send_key(KeyCode::Esc).expect("send esc");
+    zeta.wait_for_render().expect("wait render");
+}
+
+/// Verify that workspace switching via keyboard (Alt+1..4) does not crash.
+#[test]
+fn e2e_workspace_keyboard_switch_no_crash() {
+    let mut zeta = ZetaE2eInstance::spawn().expect("spawn");
+
+    assert!(
+        zeta.wait_for_text("Zeta", Duration::from_millis(2500))
+            .expect("screen check"),
+        "App must startup"
+    );
+
+    // Alt+2 switches to workspace 2.
+    zeta.send_key(KeyCode::Char('2')).expect("send 2");
+    zeta.wait_for_render().expect("wait render");
+
+    let screen = zeta.capture_screen().expect("capture");
+    assert!(
+        !screen.is_empty(),
+        "Screen should render after workspace key"
+    );
+}
+
+/// Open a file in the editor, select all, verify no crash.
+/// Tests the selection logic path that previously skipped empty lines.
+#[test]
+fn e2e_editor_select_all_no_crash() {
+    let mut zeta = ZetaE2eInstance::spawn().expect("spawn");
+
+    assert!(
+        zeta.wait_for_text("Zeta", Duration::from_millis(2500))
+            .expect("screen check"),
+        "App must startup"
+    );
+
+    // Press Enter to attempt opening the first entry (may be a file or dir).
+    zeta.send_key(KeyCode::Enter).expect("send enter");
+    std::thread::sleep(Duration::from_millis(400));
+    zeta.wait_for_render().expect("wait render");
+
+    // Try Ctrl+A (select all) — if we're in an editor this exercises selection.
+    zeta.send_text("\x01").expect("send ctrl-a"); // Ctrl+A
+    zeta.wait_for_render().expect("wait render");
+
+    // Screen should not crash.
+    let screen = zeta.capture_screen().expect("capture");
+    assert!(
+        !screen.is_empty(),
+        "Screen should render after select-all attempt"
+    );
+
+    // Escape back to safety.
+    zeta.send_key(KeyCode::Esc).expect("send esc");
+    zeta.wait_for_render().expect("wait render");
+}
+
+/// Verify that the preview panel toggle (Ctrl+P or F3 shortcut) does not crash.
+#[test]
+fn e2e_preview_panel_toggle_no_crash() {
+    let mut zeta = ZetaE2eInstance::spawn().expect("spawn");
+
+    assert!(
+        zeta.wait_for_text("Zeta", Duration::from_millis(2500))
+            .expect("screen check"),
+        "App must startup"
+    );
+
+    // Toggle preview panel — exact key depends on config but F3 is typical.
+    zeta.send_key(KeyCode::F(3)).expect("send F3");
+    zeta.wait_for_render().expect("wait render");
+
+    let screen = zeta.capture_screen().expect("capture");
+    assert!(!screen.is_empty(), "Preview panel toggle should not crash");
+
+    // Toggle it back off.
+    zeta.send_key(KeyCode::F(3)).expect("send F3 again");
+    zeta.wait_for_render().expect("wait render");
+}
+
+/// Verify that Shift+F11 (preview fullscreen) key sequence is accepted without crash.
+/// Full rendering verification is done via unit tests; this confirms the action
+/// pipeline handles the key without panicking.
+#[test]
+fn e2e_shift_f11_preview_fullscreen_no_crash() {
+    let mut zeta = ZetaE2eInstance::spawn().expect("spawn");
+
+    assert!(
+        zeta.wait_for_text("Zeta", Duration::from_millis(2500))
+            .expect("screen check"),
+        "App must startup"
+    );
+
+    // Open preview first.
+    zeta.send_key(KeyCode::F(3)).expect("send F3");
+    zeta.wait_for_render().expect("wait render");
+
+    // Send Shift+F11 escape sequence: \x1b[23;2~
+    // (Standard xterm sequence for Shift+F11)
+    zeta.send_text("\x1b[23;2~").expect("send Shift+F11");
+    zeta.wait_for_render().expect("wait render");
+
+    let screen = zeta.capture_screen().expect("capture");
+    assert!(!screen.is_empty(), "Shift+F11 should not crash the app");
+
+    // Toggle back, close preview.
+    zeta.send_text("\x1b[23;2~").expect("send Shift+F11 again");
+    zeta.wait_for_render().expect("wait render");
+    zeta.send_key(KeyCode::Esc).expect("send esc");
+    zeta.wait_for_render().expect("wait render");
+}

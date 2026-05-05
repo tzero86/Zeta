@@ -886,6 +886,7 @@ pub fn render_cheatsheet(
                         title: "Modes",
                         items: &[
                             ("Ctrl+W", "cycle: text / hex / image"),
+                            ("Shift+F11", "toggle fullscreen"),
                             ("F4", "open in editor"),
                             ("Esc", "close preview"),
                         ],

@@ -95,6 +95,8 @@ pub enum SettingsField {
     EditorTabWidth(u8),
     EditorWordWrap,
     TerminalOpenByDefault,
+    ScreensaverEnabled(bool),
+    ScreensaverTimeout(u64),
     /// A rebindable key mapping.  The `current` string is what is stored in
     /// `KeymapConfig` (e.g. `"alt+1"`) and is displayed to the user.
     KeymapBinding {

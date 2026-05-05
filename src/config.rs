@@ -75,6 +75,10 @@ pub struct AppConfig {
     pub bookmarks: Vec<PathBuf>,
     #[serde(default)]
     pub terminal_open_by_default: bool,
+    #[serde(default = "default_screensaver_enabled")]
+    pub screensaver_enabled: bool,
+    #[serde(default = "default_screensaver_timeout")]
+    pub screensaver_timeout_secs: u64,
     #[serde(default)]
     pub openers: Vec<OpenerConfig>,
     #[serde(default = "default_check_updates_on_startup")]
@@ -98,6 +102,8 @@ impl Default for AppConfig {
             preview_on_selection: true,
             bookmarks: Vec::new(),
             terminal_open_by_default: false,
+            screensaver_enabled: true,
+            screensaver_timeout_secs: 300,
             openers: Vec::new(),
             check_updates_on_startup: true,
             last_check_timestamp: None,
@@ -322,6 +328,11 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
          # Open an embedded terminal pane on startup.\n\
          terminal_open_by_default = {terminal_open_by_default}\n\
          \n\
+          # Enable weather-themed ASCII screensaver after idle timeout.\n\
+          screensaver_enabled = {screensaver_enabled}\n\
+          # Screensaver idle timeout in seconds (0 disables timer-based activation).\n\
+          screensaver_timeout_secs = {screensaver_timeout_secs}\n\
+         \n\
          # Bookmark paths shown in the sidebar. Add full paths, one per line.\n\
          bookmarks = []\n\
          \n\
@@ -372,6 +383,8 @@ pub fn generate_annotated_config(config: &AppConfig) -> String {
         preview_panel_open = config.preview_panel_open,
         preview_on_selection = config.preview_on_selection,
         terminal_open_by_default = config.terminal_open_by_default,
+        screensaver_enabled = config.screensaver_enabled,
+        screensaver_timeout_secs = config.screensaver_timeout_secs,
         check_updates_on_startup = config.check_updates_on_startup,
         theme_preset = esc(&config.theme.preset),
         status_bar_label = esc(&config.theme.status_bar_label),
@@ -395,6 +408,14 @@ fn default_preview_on_selection() -> bool {
 
 fn default_check_updates_on_startup() -> bool {
     true
+}
+
+fn default_screensaver_enabled() -> bool {
+    true
+}
+
+fn default_screensaver_timeout() -> u64 {
+    300
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

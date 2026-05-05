@@ -72,6 +72,7 @@ pub fn panel_title_unfocused_style(palette: ThemePalette) -> Style {
     Style::default().fg(palette.text_muted)
 }
 
+#[allow(dead_code)]
 pub fn dirty_indicator_style(palette: ThemePalette) -> Style {
     Style::default().fg(palette.accent_peach)
 }

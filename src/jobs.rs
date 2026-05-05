@@ -2928,7 +2928,7 @@ mod tests {
     #[test]
     fn archive_worker_lists_zip_and_tar() {
         use std::io::Write;
-        use zip::write::FileOptions;
+        use zip::write::SimpleFileOptions;
 
         let tmpdir = tempfile::tempdir().unwrap();
         let archive_path = tmpdir.path().join("test.zip");
@@ -2936,10 +2936,16 @@ mod tests {
         {
             let file = std::fs::File::create(&archive_path).unwrap();
             let mut zip = zip::ZipWriter::new(file);
-            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            let () = zip
+                .start_file("a.txt", SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"hello").unwrap();
-            zip.add_directory("dir/", FileOptions::default()).unwrap();
-            zip.start_file("dir/b.txt", FileOptions::default()).unwrap();
+            let () = zip
+                .add_directory("dir/", SimpleFileOptions::default())
+                .unwrap();
+            let () = zip
+                .start_file("dir/b.txt", SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"world").unwrap();
             zip.finish().unwrap();
         }
@@ -2979,7 +2985,7 @@ mod tests {
     #[test]
     fn file_op_extracts_zip_contents() {
         use std::io::Write;
-        use zip::write::FileOptions;
+        use zip::write::SimpleFileOptions;
 
         let tmpdir = tempfile::tempdir().unwrap();
         let archive_path = tmpdir.path().join("test2.zip");
@@ -2988,7 +2994,9 @@ mod tests {
         {
             let file = std::fs::File::create(&archive_path).unwrap();
             let mut zip = zip::ZipWriter::new(file);
-            zip.start_file("a.txt", FileOptions::default()).unwrap();
+            let () = zip
+                .start_file("a.txt", SimpleFileOptions::default())
+                .unwrap();
             zip.write_all(b"hello").unwrap();
             zip.finish().unwrap();
         }

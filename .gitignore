@@ -13,3 +13,4 @@ graphify-out/cache/
 tui-tests/node_modules/
 tui-tests/.tui-test/
 tui-traces/
+zeta_panic.log

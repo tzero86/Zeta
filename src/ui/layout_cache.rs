@@ -21,6 +21,14 @@ pub struct LayoutCache {
     /// Bounding box of the open menu popup (border included), or `None`.
     pub menu_popup: Option<Rect>,
     pub terminal_panel: Option<Rect>,
+    /// Exact bounding rects for each workspace pill in the menu bar (up to 4).
+    /// `None` entries mean that workspace slot is not rendered.
+    pub workspace_pill_rects: [Option<Rect>; 4],
+    /// First logical line visible in the editor viewport, from the last rendered frame.
+    /// Used to map mouse-click rows to buffer char indices.
+    pub editor_visible_start: usize,
+    /// Horizontal scroll column of the editor viewport, from the last rendered frame.
+    pub editor_scroll_col: usize,
 }
 
 /// Returns `true` if the terminal cell at (`col`, `row`) falls inside `rect`.

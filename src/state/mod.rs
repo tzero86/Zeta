@@ -34,12 +34,13 @@ use crate::config::{
     key_event_to_string, AppConfig, ConfigSource, IconMode, LoadedConfig, ResolvedTheme,
     ThemePalette, ThemePreset,
 };
-use crate::editor::EditorBuffer;
+use crate::editor_textarea::TextAreaAdapter;
 use crate::finder::FileFinderState;
 use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
 use crate::pane::{InlineRenameState, PaneId, PaneState};
+use crate::screensaver::ScreensaverState;
 pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
@@ -177,6 +178,8 @@ pub struct WorkspaceState {
     editor_fullscreen: bool,
     /// When true, the terminal panel expands to fill the full content area.
     terminal_fullscreen: bool,
+    /// When true, the file preview panel expands to fill the full content area.
+    preview_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
@@ -208,6 +211,7 @@ impl WorkspaceState {
             file_operation_status: None,
             editor_fullscreen: false,
             terminal_fullscreen: false,
+            preview_fullscreen: false,
             git: [None, None],
             pending_reveal: None,
             pending_collision: None,
@@ -295,6 +299,8 @@ pub struct AppState {
     pub update_pulse_frame: u8,
     /// Whether the context-aware quick-reference cheatsheet overlay is visible.
     pub show_cheatsheet: bool,
+    /// Weather-themed ASCII screensaver state.
+    pub screensaver: ScreensaverState,
 }
 
 impl AppState {
@@ -455,6 +461,10 @@ impl AppState {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
+            screensaver: ScreensaverState::new(
+                loaded_config.config.screensaver_timeout_secs,
+                loaded_config.config.screensaver_enabled,
+            ),
         })
     }
 
@@ -649,6 +659,15 @@ impl AppState {
                     });
                 }
             }
+            Action::ActivateScreensaver => {
+                self.screensaver.active = true;
+                self.set_needs_redraw();
+            }
+            Action::DismissScreensaver => {
+                self.screensaver.active = false;
+                self.screensaver.last_interaction = Instant::now();
+                self.set_needs_redraw();
+            }
             _ => {
                 let cwd = self.panes.active_pane().cwd.clone();
                 commands.extend(self.terminal.apply(&action, cwd)?);
@@ -770,6 +789,7 @@ impl AppState {
                 Action::SetPaneLayout(_)
                     | Action::TogglePreviewPanel
                     | Action::ToggleEditorFullscreen
+                    | Action::TogglePreviewFullscreen
                     | Action::ToggleMarkdownPreview
                     | Action::ToggleHiddenFiles
                     | Action::ShrinkLeftPane
@@ -908,6 +928,8 @@ impl AppState {
                     self.editor.markdown_preview_focused = false;
                     self.panes.focus = if self.panes.focus == PaneFocus::Preview {
                         self.set_status(String::from("preview focus returned to file pane"));
+                        // Exit fullscreen when leaving the preview panel.
+                        self.preview_fullscreen = false;
                         PaneFocus::Left
                     } else {
                         self.set_status(String::from("preview panel focused"));
@@ -916,6 +938,7 @@ impl AppState {
                 } else if self.preview.panel_open {
                     if self.panes.focus == PaneFocus::Preview {
                         self.panes.focus = PaneFocus::Left;
+                        self.preview_fullscreen = false;
                     }
                     self.set_status(String::from("preview panel has no content to focus"));
                 }
@@ -1467,6 +1490,16 @@ impl AppState {
                         String::from("editor fullscreen enabled")
                     } else {
                         String::from("editor fullscreen disabled")
+                    });
+                }
+            }
+            Action::TogglePreviewFullscreen => {
+                if self.preview.panel_open {
+                    self.preview_fullscreen = !self.preview_fullscreen;
+                    self.set_status(if self.preview_fullscreen {
+                        String::from("preview fullscreen enabled")
+                    } else {
+                        String::from("preview fullscreen disabled")
                     });
                 }
             }
@@ -2763,10 +2796,10 @@ impl AppState {
                     .editor
                     .buffer
                     .as_ref()
-                    .and_then(|current| current.path.as_ref())
+                    .and_then(|current| current.path())
                     == Some(&path);
                 if is_expected {
-                    self.open_editor(EditorBuffer::from_text(path, contents));
+                    self.open_editor(TextAreaAdapter::from_text(&contents).with_path(path));
                 }
             }
             JobResult::EditorLoadFailed {
@@ -2778,7 +2811,7 @@ impl AppState {
                     .editor
                     .buffer
                     .as_ref()
-                    .and_then(|current| current.path.as_ref())
+                    .and_then(|current| current.path())
                     == Some(&path);
                 if is_expected {
                     self.editor.close();
@@ -3062,6 +3095,32 @@ impl AppState {
                 });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
+            SettingsField::ScreensaverEnabled(v) => {
+                let next = !v;
+                self.config.screensaver_enabled = next;
+                self.screensaver.enabled = next;
+                self.set_status(if next {
+                    String::from("screensaver enabled")
+                } else {
+                    String::from("screensaver disabled")
+                });
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
+            SettingsField::ScreensaverTimeout(v) => {
+                let next = match v {
+                    0 => 30,
+                    30 => 60,
+                    60 => 120,
+                    120 => 300,
+                    300 => 600,
+                    600 => 1800,
+                    _ => 0,
+                };
+                self.config.screensaver_timeout_secs = next;
+                self.screensaver.timeout_secs = next;
+                self.set_status(format!("screensaver timeout set to {next}s"));
+                let _ = self.config.save(Path::new(&self.config_path));
+            }
             SettingsField::EditorTabWidth(current) => {
                 let next = match current {
                     2 => 4,
@@ -3131,6 +3190,10 @@ impl AppState {
         self.terminal_fullscreen
     }
 
+    pub fn is_preview_fullscreen(&self) -> bool {
+        self.preview_fullscreen
+    }
+
     /// Computes the current UI context for menu/status display.
     pub fn menu_context(&self) -> MenuContext {
         if self.terminal_fullscreen {
@@ -3167,6 +3230,11 @@ impl AppState {
     /// Derive the current input focus layer from state.
     /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > UpdatePrompt > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
+        // Screensaver must be checked first — it captures all input regardless of
+        // what other panels (editor, preview, terminal) happen to be open.
+        if self.screensaver.active {
+            return FocusLayer::Screensaver;
+        }
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
         }
@@ -3311,10 +3379,10 @@ impl AppState {
     }
 
     // Editor accessor — delegate to EditorState
-    pub fn editor(&self) -> Option<&EditorBuffer> {
+    pub fn editor(&self) -> Option<&TextAreaAdapter> {
         self.editor.buffer.as_ref()
     }
-    pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
+    pub fn editor_mut(&mut self) -> Option<&mut TextAreaAdapter> {
         self.editor.buffer.as_mut()
     }
     pub fn is_markdown_preview_visible(&self) -> bool {
@@ -3335,10 +3403,9 @@ impl AppState {
         self.set_status(format!("opening {display}..."));
     }
 
-    pub fn open_editor(&mut self, buffer: EditorBuffer) {
+    pub fn open_editor(&mut self, buffer: TextAreaAdapter) {
         let path = buffer
-            .path
-            .as_ref()
+            .path()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| String::from("<unnamed>"));
         if self.panes.focus == PaneFocus::Preview {
@@ -3356,12 +3423,12 @@ impl AppState {
             .editor
             .buffer
             .as_ref()
-            .and_then(|e| e.path.as_ref())
+            .and_then(|e| e.path())
             .map(|p| format!("saved editor buffer {}", p.display()))
             .unwrap_or_else(|| String::from("saved editor buffer"));
         self.set_status(message);
         if let Some(e) = self.editor.buffer.as_mut() {
-            e.is_dirty = false;
+            e.mark_clean();
         }
     }
 
@@ -3668,6 +3735,22 @@ impl AppState {
                 field: SettingsField::PreviewOnSelection,
             },
             SettingsEntry {
+                label: "Screensaver",
+                value: if self.config.screensaver_enabled {
+                    String::from("on")
+                } else {
+                    String::from("off")
+                },
+                hint: "Space",
+                field: SettingsField::ScreensaverEnabled(self.config.screensaver_enabled),
+            },
+            SettingsEntry {
+                label: "Screensaver timeout",
+                value: format!("{}s", self.config.screensaver_timeout_secs),
+                hint: "Space",
+                field: SettingsField::ScreensaverTimeout(self.config.screensaver_timeout_secs),
+            },
+            SettingsEntry {
                 label: "Terminal on startup",
                 value: if self.config.terminal_open_by_default {
                     String::from("yes")
@@ -3780,6 +3863,8 @@ impl AppState {
                             | SettingsField::PreviewPanel
                             | SettingsField::PreviewOnSelection
                             | SettingsField::TerminalOpenByDefault
+                            | SettingsField::ScreensaverEnabled(_)
+                            | SettingsField::ScreensaverTimeout(_)
                     )
                 })
                 .collect(),
@@ -4075,10 +4160,11 @@ mod tests {
 
     use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
-    use crate::editor::EditorBuffer;
+    use crate::editor_textarea::TextAreaAdapter;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
+    use crate::screensaver::ScreensaverState;
     use crate::state::DebugState;
 
     use super::{
@@ -4238,8 +4324,7 @@ mod tests {
     #[test]
     fn focus_layer_returns_markdown_preview_when_split_preview_is_focused() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("note.md"));
+        let editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("note.md"));
         state.open_editor(editor);
         state.apply(Action::FocusMarkdownPreview).unwrap();
         assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
@@ -4265,10 +4350,8 @@ mod tests {
     fn git_diff_takes_priority_over_editor_when_both_active() {
         let mut state = test_state();
         // Open an editor buffer so is_editor_focused() would return true normally
-        state.editor.buffer = Some(crate::editor::EditorBuffer::from_text(
-            PathBuf::from("test.txt"),
-            String::from("test content"),
-        ));
+        state.editor.buffer =
+            Some(TextAreaAdapter::from_text("test content").with_path(PathBuf::from("test.txt")));
         state.panes.focus = PaneFocus::Left;
         // Activate git diff mode
         state.git_diff_active = true;
@@ -4346,8 +4429,7 @@ mod tests {
     fn workspace_switch_preserves_independent_editor_state() {
         let mut state = test_state();
 
-        let mut ws0_editor = EditorBuffer::default();
-        ws0_editor.path = Some(PathBuf::from("alpha.txt"));
+        let ws0_editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("alpha.txt"));
         state.open_editor(ws0_editor);
         state.editor.replace_active = true;
         state.editor.replace_query = String::from("alpha");
@@ -4357,16 +4439,15 @@ mod tests {
         assert!(!state.editor.replace_active);
         assert!(state.editor.replace_query.is_empty());
 
-        let mut ws1_editor = EditorBuffer::default();
-        ws1_editor.path = Some(PathBuf::from("beta.txt"));
+        let ws1_editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("beta.txt"));
         state.open_editor(ws1_editor);
         state.editor.replace_active = true;
         state.editor.replace_query = String::from("beta");
 
         state.switch_to_workspace(0);
         assert_eq!(
-            state.editor().and_then(|editor| editor.path.as_ref()),
-            Some(&PathBuf::from("alpha.txt"))
+            state.editor().and_then(|editor| editor.path()),
+            Some(std::path::Path::new("alpha.txt"))
         );
         assert!(state.editor.replace_active);
         assert_eq!(state.editor.replace_query, "alpha");
@@ -4377,8 +4458,8 @@ mod tests {
                 .editor
                 .buffer
                 .as_ref()
-                .and_then(|editor| editor.path.as_ref()),
-            Some(&PathBuf::from("beta.txt"))
+                .and_then(|editor| editor.path()),
+            Some(std::path::Path::new("beta.txt"))
         );
         assert!(state.workspace(1).editor.replace_active);
         assert_eq!(state.workspace(1).editor.replace_query, "beta");
@@ -4528,6 +4609,7 @@ mod tests {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
+            screensaver: ScreensaverState::new(300, true),
         }
     }
 
@@ -4651,9 +4733,8 @@ mod tests {
     #[test]
     fn save_editor_enqueues_save_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
-        editor.insert(0, "hello");
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
+        editor.insert_str_at_cursor("hello");
         state.editor.buffer = Some(editor);
 
         let commands = state
@@ -4666,8 +4747,7 @@ mod tests {
     #[test]
     fn close_editor_is_guarded_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
@@ -4682,8 +4762,7 @@ mod tests {
     #[test]
     fn discard_editor_changes_closes_dirty_buffer() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
@@ -5779,7 +5858,7 @@ mod tests {
             PathBuf::from("./note.txt"),
             crate::preview::ViewBuffer::from_plain("hello"),
         ));
-        state.editor.buffer = Some(EditorBuffer::default());
+        state.editor.buffer = Some(TextAreaAdapter::new_empty());
 
         state
             .apply(Action::FocusPreviewPanel)
@@ -6346,5 +6425,77 @@ mod tests {
         state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
         state.apply(Action::CloseContextMenu).unwrap();
         assert_eq!(state.focus_layer(), FocusLayer::Pane);
+    }
+
+    // --- TogglePreviewFullscreen -------------------------------------------
+
+    #[test]
+    fn toggle_preview_fullscreen_requires_preview_open() {
+        let mut state = test_state();
+        // Preview panel is closed — toggle should be a no-op.
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "fullscreen must not activate without an open preview"
+        );
+    }
+
+    #[test]
+    fn toggle_preview_fullscreen_on_open_preview_enables_fullscreen() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        // Focus the preview so it is active.
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        assert!(!state.is_preview_fullscreen(), "starts not-fullscreen");
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            state.is_preview_fullscreen(),
+            "should be fullscreen after toggle"
+        );
+    }
+
+    #[test]
+    fn toggle_preview_fullscreen_twice_returns_to_normal() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        state.apply(Action::FocusPreviewPanel).unwrap();
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(state.is_preview_fullscreen());
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "second toggle should exit fullscreen"
+        );
+    }
+
+    #[test]
+    fn leaving_preview_focus_resets_preview_fullscreen() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(state.is_preview_fullscreen());
+
+        // Re-focusing preview (or closing) should reset fullscreen.
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "fullscreen should reset when leaving preview focus"
+        );
     }
 }

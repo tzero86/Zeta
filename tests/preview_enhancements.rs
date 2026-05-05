@@ -22,7 +22,7 @@ fn make_zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
     {
         let cursor = std::io::Cursor::new(&mut buf);
         let mut zip = zip::ZipWriter::new(cursor);
-        let opts = zip::write::FileOptions::default();
+        let opts = zip::write::SimpleFileOptions::default();
         for (name, data) in entries {
             zip.start_file(*name, opts).unwrap();
             zip.write_all(data).unwrap();
