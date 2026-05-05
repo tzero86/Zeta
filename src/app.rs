@@ -116,38 +116,47 @@ impl App {
                 self.process_next_event()?;
 
                 if self.state.needs_redraw() {
-                    // Screensaver animation frame tick
-                    if self.state.screensaver.active {
-                        let now = std::time::Instant::now();
-                        let delta = (now - self.state.screensaver.last_frame).as_secs_f64();
-                        if delta >= 1.0 / 12.0 {
-                            let size = terminal.terminal.size()?;
-                            self.state.screensaver.tick(size.width, size.height, delta);
-                            self.state.screensaver.last_frame = now;
-                        }
-                    }
-                    let mut cache = LayoutCache::default();
-                    terminal.draw(|frame| {
-                        cache = ui::render(frame, &mut self.state);
-                    })?;
-                    self.layout_cache = cache;
-                    // Propagate terminal panel size to the PTY worker when the layout changes.
-                    if let Some(t_area) = cache.terminal_panel {
-                        let inner_rows = t_area.height.saturating_sub(1);
-                        let inner_cols = t_area.width;
-                        if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
-                            for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
-                                self.execute_command_try(cmd)?;
+                    let size = terminal.terminal.size()?;
+                    // Skip rendering entirely when the terminal reports zero dimensions.
+                    // This happens on some platforms when the terminal window is minimized
+                    // (SIGWINCH with 0×0).  Writing frames into a zero-size terminal
+                    // corrupts the output buffer and can panic on dimension arithmetic.
+                    if size.width == 0 || size.height == 0 {
+                        self.state.mark_drawn();
+                        // The screensaver frame timer in process_next_event will
+                        // reschedule a redraw once valid dimensions are restored.
+                    } else {
+                        // Screensaver animation frame tick
+                        if self.state.screensaver.active {
+                            let now = std::time::Instant::now();
+                            let delta = (now - self.state.screensaver.last_frame).as_secs_f64();
+                            if delta >= 1.0 / 12.0 {
+                                self.state.screensaver.tick(size.width, size.height, delta);
+                                self.state.screensaver.last_frame = now;
                             }
                         }
-                    }
-                    self.state.mark_drawn(); // clears needs_redraw
-                    // Keep the screensaver animating at its target cadence: ensure
-                    // another redraw is scheduled immediately so the next loop
-                    // iteration picks up the next animation frame without waiting
-                    // for a coarse clock-tick or user input.
-                    if self.state.screensaver.active {
-                        self.state.set_needs_redraw();
+                        let mut cache = LayoutCache::default();
+                        terminal.draw(|frame| {
+                            cache = ui::render(frame, &mut self.state);
+                        })?;
+                        self.layout_cache = cache;
+                        // Propagate terminal panel size to the PTY worker when the layout changes.
+                        if let Some(t_area) = cache.terminal_panel {
+                            let inner_rows = t_area.height.saturating_sub(1);
+                            let inner_cols = t_area.width;
+                            if self.state.terminal.is_open() && inner_rows > 0 && inner_cols > 0 {
+                                for cmd in self.state.terminal.resize(inner_rows, inner_cols) {
+                                    self.execute_command_try(cmd)?;
+                                }
+                            }
+                        }
+                        self.state.mark_drawn(); // clears needs_redraw
+                        // Screensaver next-frame scheduling is handled by the idle-tick
+                        // check in process_next_event (capped at ~12 FPS) so we do NOT
+                        // call set_needs_redraw() here.  The old pattern of setting it
+                        // immediately caused a ~60 FPS render loop that flooded the PTY
+                        // write buffer when the terminal window was minimized, eventually
+                        // blocking the write syscall and freezing the entire event loop.
                     }
                 }
             }
@@ -293,6 +302,16 @@ impl App {
                     > std::time::Duration::from_secs(self.state.screensaver.timeout_secs)
             {
                 self.state.screensaver.active = true;
+                self.state.set_needs_redraw();
+            }
+            // Screensaver animation cadence: schedule the next frame only when the
+            // frame interval (~83 ms for 12 FPS) has actually elapsed.  This caps
+            // PTY writes at 12 FPS instead of the ~60 FPS spin that the old
+            // "set_needs_redraw after every draw" pattern produced, preventing the
+            // PTY output buffer from filling up when the terminal is minimized.
+            if self.state.screensaver.active
+                && self.state.screensaver.last_frame.elapsed().as_secs_f64() >= 1.0 / 12.0
+            {
                 self.state.set_needs_redraw();
             }
             // Trigger a redraw whenever the wall-clock second advances so the status
