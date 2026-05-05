@@ -305,9 +305,11 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
             if p.layer == 0 {
                 cell.set_fg(Color::Rgb(b / 3, b / 2, b));
             } else if p.layer == 1 {
-                cell.set_fg(Color::Rgb(b / 2, b * 2 / 3, b));
+                let b = b as u16;
+                cell.set_fg(Color::Rgb((b / 2) as u8, (b * 2 / 3) as u8, b as u8));
             } else if p.layer == 2 {
-                cell.set_fg(Color::Rgb(b * 2 / 3, b * 5 / 6, b));
+                let b = b as u16;
+                cell.set_fg(Color::Rgb((b * 2 / 3) as u8, (b * 5 / 6) as u8, b as u8));
             }
         }
     }
