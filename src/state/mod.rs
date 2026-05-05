@@ -34,7 +34,7 @@ use crate::config::{
     key_event_to_string, AppConfig, ConfigSource, IconMode, LoadedConfig, ResolvedTheme,
     ThemePalette, ThemePreset,
 };
-use crate::editor::EditorBuffer;
+use crate::editor_textarea::TextAreaAdapter;
 use crate::finder::FileFinderState;
 use crate::fs;
 use crate::fs::EntryKind;
@@ -2796,10 +2796,10 @@ impl AppState {
                     .editor
                     .buffer
                     .as_ref()
-                    .and_then(|current| current.path.as_ref())
+                    .and_then(|current| current.path())
                     == Some(&path);
                 if is_expected {
-                    self.open_editor(EditorBuffer::from_text(path, contents));
+                    self.open_editor(TextAreaAdapter::from_text(&contents).with_path(path));
                 }
             }
             JobResult::EditorLoadFailed {
@@ -2811,7 +2811,7 @@ impl AppState {
                     .editor
                     .buffer
                     .as_ref()
-                    .and_then(|current| current.path.as_ref())
+                    .and_then(|current| current.path())
                     == Some(&path);
                 if is_expected {
                     self.editor.close();
@@ -3377,10 +3377,10 @@ impl AppState {
     }
 
     // Editor accessor — delegate to EditorState
-    pub fn editor(&self) -> Option<&EditorBuffer> {
+    pub fn editor(&self) -> Option<&TextAreaAdapter> {
         self.editor.buffer.as_ref()
     }
-    pub fn editor_mut(&mut self) -> Option<&mut EditorBuffer> {
+    pub fn editor_mut(&mut self) -> Option<&mut TextAreaAdapter> {
         self.editor.buffer.as_mut()
     }
     pub fn is_markdown_preview_visible(&self) -> bool {
@@ -3401,10 +3401,9 @@ impl AppState {
         self.set_status(format!("opening {display}..."));
     }
 
-    pub fn open_editor(&mut self, buffer: EditorBuffer) {
+    pub fn open_editor(&mut self, buffer: TextAreaAdapter) {
         let path = buffer
-            .path
-            .as_ref()
+            .path()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| String::from("<unnamed>"));
         if self.panes.focus == PaneFocus::Preview {
@@ -3422,12 +3421,12 @@ impl AppState {
             .editor
             .buffer
             .as_ref()
-            .and_then(|e| e.path.as_ref())
+            .and_then(|e| e.path())
             .map(|p| format!("saved editor buffer {}", p.display()))
             .unwrap_or_else(|| String::from("saved editor buffer"));
         self.set_status(message);
         if let Some(e) = self.editor.buffer.as_mut() {
-            e.is_dirty = false;
+            e.mark_clean();
         }
     }
 
@@ -4159,7 +4158,7 @@ mod tests {
 
     use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
     use crate::config::{ResolvedTheme, ThemePalette, ThemePreset};
-    use crate::editor::EditorBuffer;
+    use crate::editor_textarea::TextAreaAdapter;
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
@@ -4323,8 +4322,7 @@ mod tests {
     #[test]
     fn focus_layer_returns_markdown_preview_when_split_preview_is_focused() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("note.md"));
+        let editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("note.md"));
         state.open_editor(editor);
         state.apply(Action::FocusMarkdownPreview).unwrap();
         assert!(matches!(state.focus_layer(), FocusLayer::MarkdownPreview));
@@ -4350,9 +4348,8 @@ mod tests {
     fn git_diff_takes_priority_over_editor_when_both_active() {
         let mut state = test_state();
         // Open an editor buffer so is_editor_focused() would return true normally
-        state.editor.buffer = Some(crate::editor::EditorBuffer::from_text(
+        state.editor.buffer = Some(TextAreaAdapter::from_text("test content").with_path(
             PathBuf::from("test.txt"),
-            String::from("test content"),
         ));
         state.panes.focus = PaneFocus::Left;
         // Activate git diff mode
@@ -4431,8 +4428,7 @@ mod tests {
     fn workspace_switch_preserves_independent_editor_state() {
         let mut state = test_state();
 
-        let mut ws0_editor = EditorBuffer::default();
-        ws0_editor.path = Some(PathBuf::from("alpha.txt"));
+        let ws0_editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("alpha.txt"));
         state.open_editor(ws0_editor);
         state.editor.replace_active = true;
         state.editor.replace_query = String::from("alpha");
@@ -4442,16 +4438,15 @@ mod tests {
         assert!(!state.editor.replace_active);
         assert!(state.editor.replace_query.is_empty());
 
-        let mut ws1_editor = EditorBuffer::default();
-        ws1_editor.path = Some(PathBuf::from("beta.txt"));
+        let ws1_editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("beta.txt"));
         state.open_editor(ws1_editor);
         state.editor.replace_active = true;
         state.editor.replace_query = String::from("beta");
 
         state.switch_to_workspace(0);
         assert_eq!(
-            state.editor().and_then(|editor| editor.path.as_ref()),
-            Some(&PathBuf::from("alpha.txt"))
+            state.editor().and_then(|editor| editor.path()),
+            Some(std::path::Path::new("alpha.txt"))
         );
         assert!(state.editor.replace_active);
         assert_eq!(state.editor.replace_query, "alpha");
@@ -4462,8 +4457,8 @@ mod tests {
                 .editor
                 .buffer
                 .as_ref()
-                .and_then(|editor| editor.path.as_ref()),
-            Some(&PathBuf::from("beta.txt"))
+                .and_then(|editor| editor.path()),
+            Some(std::path::Path::new("beta.txt"))
         );
         assert!(state.workspace(1).editor.replace_active);
         assert_eq!(state.workspace(1).editor.replace_query, "beta");
@@ -4737,9 +4732,8 @@ mod tests {
     #[test]
     fn save_editor_enqueues_save_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
-        editor.insert(0, "hello");
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
+        editor.insert_str_at_cursor("hello");
         state.editor.buffer = Some(editor);
 
         let commands = state
@@ -4752,8 +4746,7 @@ mod tests {
     #[test]
     fn close_editor_is_guarded_when_dirty() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
@@ -4768,8 +4761,7 @@ mod tests {
     #[test]
     fn discard_editor_changes_closes_dirty_buffer() {
         let mut state = test_state();
-        let mut editor = EditorBuffer::default();
-        editor.path = Some(PathBuf::from("./note.txt"));
+        let mut editor = TextAreaAdapter::new_empty().with_path(PathBuf::from("./note.txt"));
         editor.insert_char('x');
         state.editor.buffer = Some(editor);
 
@@ -5865,7 +5857,7 @@ mod tests {
             PathBuf::from("./note.txt"),
             crate::preview::ViewBuffer::from_plain("hello"),
         ));
-        state.editor.buffer = Some(EditorBuffer::default());
+        state.editor.buffer = Some(TextAreaAdapter::new_empty());
 
         state
             .apply(Action::FocusPreviewPanel)

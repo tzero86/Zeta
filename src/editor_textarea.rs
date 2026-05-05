@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use ratatui::text::Line;
 use tui_textarea::{CursorMove, Input, Key, TextArea};
 
 #[derive(Debug, thiserror::Error)]
@@ -9,6 +10,7 @@ pub enum TextAreaError {
     Io(#[from] std::io::Error),
 }
 
+#[derive(Clone, Debug)]
 pub struct TextAreaAdapter {
     path: Option<PathBuf>,
     is_dirty: bool,
@@ -23,12 +25,12 @@ pub struct TextAreaAdapter {
     md_preview_cache: Option<MdPreviewCache>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct MdPreviewCache {
     pub version: u64,
     pub panel_width: u16,
     pub theme: String,
-    pub rendered: String,
+    pub rendered: Vec<Line<'static>>,
 }
 
 impl TextAreaAdapter {
@@ -115,6 +117,11 @@ impl TextAreaAdapter {
         Ok(())
     }
 
+    /// Mark the buffer as clean (not dirty). Used after external save operations.
+    pub fn mark_clean(&mut self) {
+        self.is_dirty = false;
+    }
+
     // Character insertion
 
     /// Insert a single character at the cursor.
@@ -129,6 +136,26 @@ impl TextAreaAdapter {
         if self.inner.input(Input { key: Key::Enter, ctrl: false, alt: false, shift: false }) {
             self.bump();
         }
+    }
+
+    /// Insert a string at the cursor position. Normalizes CRLF to LF.
+    pub fn insert_str_at_cursor(&mut self, text: &str) {
+        let normalized: String = text.chars().filter(|&c| c != '\r').collect();
+        if normalized.is_empty() {
+            return;
+        }
+        for ch in normalized.chars() {
+            if ch == '\n' {
+                self.insert_newline();
+            } else {
+                self.insert_char(ch);
+            }
+        }
+    }
+
+    /// Get all lines as a Vec<String> (for test compatibility with EditorBuffer).
+    pub fn visible_lines(&self) -> Vec<String> {
+        self.inner.lines().iter().map(|s| s.to_string()).collect()
     }
 
     // Deletion
@@ -504,14 +531,86 @@ impl TextAreaAdapter {
         self.search_match_idx
     }
 
+    // Mouse selection methods (for app.rs click handling)
+
+    /// Move cursor to the nearest char position for the given logical line and display_col
+    /// (tab-expanded column), without modifying the selection anchor.
+    fn move_to_line_display_col(&mut self, line: usize, display_col: usize, tab_width: u8) {
+        let lines = self.inner.lines();
+        let clamped_line = line.min(lines.len().saturating_sub(1));
+        let line_text = &lines[clamped_line];
+        
+        let tab_w = tab_width as usize;
+        let mut col = 0usize;
+        let mut char_offset = 0usize;
+        
+        for ch in line_text.chars() {
+            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
+            if col + ch_width > display_col {
+                break;
+            }
+            col += ch_width;
+            char_offset += 1;
+        }
+        
+        self.jump_to(clamped_line, char_offset);
+        self.inner.cancel_selection();
+    }
+
+    /// Set the selection anchor to the nearest char position for the given logical line
+    /// and display_col, then move the cursor there. This begins a new drag-selection.
+    pub fn start_selection_at_line_display_col(
+        &mut self,
+        line: usize,
+        display_col: usize,
+        tab_width: u8,
+    ) {
+        self.move_to_line_display_col(line, display_col, tab_width);
+        self.inner.start_selection();
+    }
+
+    /// Extend the selection to the nearest char position for the given logical line
+    /// and display_col, keeping the existing anchor.
+    pub fn extend_selection_to_line_display_col(
+        &mut self,
+        line: usize,
+        display_col: usize,
+        tab_width: u8,
+    ) {
+        let lines = self.inner.lines();
+        let clamped_line = line.min(lines.len().saturating_sub(1));
+        let line_text = &lines[clamped_line];
+        
+        let tab_w = tab_width as usize;
+        let mut col = 0usize;
+        let mut char_offset = 0usize;
+        
+        for ch in line_text.chars() {
+            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
+            if col + ch_width > display_col {
+                break;
+            }
+            col += ch_width;
+            char_offset += 1;
+        }
+        
+        // If no selection is active, start one
+        if self.inner.selection_range().is_none() {
+            self.inner.start_selection();
+        }
+        
+        // Move cursor to the target position
+        self.jump_to(clamped_line, char_offset);
+    }
+
     // Markdown preview cache methods (Task 7)
 
     /// Returns a cached preview string if the cache is valid for the given parameters.
     /// Cache is valid when: version matches current edit_version, panel_width matches, theme matches.
-    pub fn md_preview_cached(&self, panel_width: u16, theme: &str) -> Option<&str> {
+    pub fn md_preview_cached(&self, panel_width: u16, theme: &str) -> Option<&Vec<Line<'static>>> {
         self.md_preview_cache.as_ref().and_then(|c| {
             if c.version == self.edit_version && c.panel_width == panel_width && c.theme == theme {
-                Some(c.rendered.as_str())
+                Some(&c.rendered)
             } else {
                 None
             }
@@ -519,11 +618,11 @@ impl TextAreaAdapter {
     }
 
     /// Store a newly rendered preview in the cache.
-    pub fn set_md_preview_cache(&mut self, panel_width: u16, theme: String, rendered: String) {
+    pub fn set_md_preview_cache(&mut self, panel_width: u16, theme: &str, rendered: Vec<Line<'static>>) {
         self.md_preview_cache = Some(MdPreviewCache {
             version: self.edit_version,
             panel_width,
-            theme,
+            theme: theme.to_string(),
             rendered,
         });
     }
