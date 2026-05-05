@@ -88,6 +88,15 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<()> {
+        // Panic hook: write to file so we can diagnose crashes when terminal is in raw mode.
+        let orig_hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let msg = format!("Panic: {}\n", info);
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            std::fs::write("zeta_panic.log", format!("{}\n{}", msg, backtrace)).ok();
+            orig_hook(info);
+        }));
+
         // Run TUI in inner scope so terminal is fully restored before post-exit logic.
         {
             let mut terminal = TerminalSession::enter()?;

@@ -288,9 +288,10 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
 
     for y in 0..height {
         for x in 0..width {
-            let cell = buf.cell_mut((area.x + x, area.y + y)).unwrap();
-            cell.set_char(' ');
-            cell.set_bg(Color::Rgb(9, 14, 22));
+            if let Some(cell) = buf.cell_mut((area.x + x, area.y + y)) {
+                cell.set_char(' ');
+                cell.set_bg(Color::Rgb(9, 14, 22));
+            }
         }
     }
 
@@ -298,20 +299,16 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
     for p in &state.particles {
         let px = (p.x as u16).min(width.saturating_sub(1));
         let py = (p.y as u16).min(height.saturating_sub(1));
-        let cell = buf.cell_mut((area.x + px, area.y + py)).unwrap();
-        cell.set_char(p.ch);
-        let b = p.brightness;
-        match p.layer {
-            0 => {
+        if let Some(cell) = buf.cell_mut((area.x + px, area.y + py)) {
+            cell.set_char(p.ch);
+            let b = p.brightness;
+            if p.layer == 0 {
                 cell.set_fg(Color::Rgb(b / 3, b / 2, b));
-            }
-            1 => {
+            } else if p.layer == 1 {
                 cell.set_fg(Color::Rgb(b / 2, b * 2 / 3, b));
-            }
-            2 => {
+            } else if p.layer == 2 {
                 cell.set_fg(Color::Rgb(b * 2 / 3, b * 5 / 6, b));
             }
-            _ => {}
         }
     }
 
@@ -320,17 +317,19 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
         let sx = (streak.x as u16).min(width.saturating_sub(1));
         let head = (streak.head_y as u16).min(height.saturating_sub(1));
         let ch = RAIN_CHARS[state.frame_counter as usize % RAIN_CHARS.len()];
-        let cell = buf.cell_mut((area.x + sx, area.y + head)).unwrap();
-        cell.set_char(ch);
-        cell.set_fg(Color::Rgb(30, 50, 80));
+        if let Some(cell) = buf.cell_mut((area.x + sx, area.y + head)) {
+            cell.set_char(ch);
+            cell.set_fg(Color::Rgb(30, 50, 80));
+        }
         for t in 1..=3 {
             let ty = head.saturating_sub(t);
-            let trail_cell = buf.cell_mut((area.x + sx, area.y + ty)).unwrap();
-            trail_cell.set_char(
-                RAIN_CHARS[(state.frame_counter as usize + t as usize) % RAIN_CHARS.len()],
-            );
-            let dim = 40 - t as u8 * 10;
-            trail_cell.set_fg(Color::Rgb(dim / 2, dim, dim * 2));
+            if let Some(trail_cell) = buf.cell_mut((area.x + sx, area.y + ty)) {
+                trail_cell.set_char(
+                    RAIN_CHARS[(state.frame_counter as usize + t as usize) % RAIN_CHARS.len()],
+                );
+                let dim = 40 - t as u8 * 10;
+                trail_cell.set_fg(Color::Rgb(dim / 2, dim, dim * 2));
+            }
         }
     }
 
@@ -345,7 +344,9 @@ fn render_logo_only(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
     let b = (pulse * 255.0) as u8;
     let start_x = cx.saturating_sub((logo.len() / 2) as u16);
     for (i, ch) in logo.chars().enumerate() {
-        let cell = buf.cell_mut((start_x + i as u16, cy)).unwrap();
+        let Some(cell) = buf.cell_mut((start_x + i as u16, cy)) else {
+            continue;
+        };
         cell.set_char(ch);
         match ch {
             '[' | ']' => {
@@ -379,10 +380,9 @@ fn render_logo_centered(state: &ScreensaverState, area: Rect, buf: &mut Buffer) 
         for (col, ch) in line.chars().enumerate() {
             let x = cx + col as u16;
             let y = cy + row as u16;
-            if x >= area.x + area.width || y >= area.y + area.height {
+            let Some(cell) = buf.cell_mut((x, y)) else {
                 continue;
-            }
-            let cell = buf.cell_mut((x, y)).unwrap();
+            };
             cell.set_char(ch);
             match ch {
                 '┌' | '┐' | '└' | '┘' | '─' | '│' => {
