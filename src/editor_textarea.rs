@@ -1,9 +1,17 @@
 use std::path::PathBuf;
 use tui_textarea::TextArea;
 
+#[derive(Debug, thiserror::Error)]
+pub enum TextAreaError {
+    #[error("no file path set")]
+    NoPath,
+    #[error("write failed: {0}")]
+    Io(#[from] std::io::Error),
+}
+
 pub struct TextAreaAdapter {
-    pub path: Option<PathBuf>,
-    pub is_dirty: bool,
+    path: Option<PathBuf>,
+    is_dirty: bool,
     pub search_query: String,
     pub search_active: bool,
     pub search_match_idx: usize,
@@ -95,9 +103,15 @@ impl TextAreaAdapter {
         self.edit_version
     }
 
+    /// Builder: set the file path on construction.
+    pub fn with_path(mut self, path: PathBuf) -> Self {
+        self.path = Some(path);
+        self
+    }
+
     /// Write contents() to self.path. Returns Err if path is None or write fails.
-    pub fn save(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let path = self.path.as_ref().ok_or("No file path set")?;
+    pub fn save(&mut self) -> Result<(), TextAreaError> {
+        let path = self.path.as_ref().ok_or(TextAreaError::NoPath)?;
         std::fs::write(path, self.contents())?;
         self.is_dirty = false;
         Ok(())
@@ -224,21 +238,21 @@ mod tests {
         let result = adapter.save();
         
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "No file path set");
+        assert_eq!(result.unwrap_err().to_string(), "no file path set");
     }
 
     #[test]
     fn test_save_clears_dirty_flag_on_success() {
-        let mut adapter = TextAreaAdapter::from_text("test content");
-        let temp_file = std::path::PathBuf::from("test_save_file.txt");
-        adapter.path = Some(temp_file.clone());
-        adapter.is_dirty = true;
-        
+        let temp_file = std::path::PathBuf::from("target/test_save_file.txt");
+        let mut adapter = TextAreaAdapter::from_text("test content")
+            .with_path(temp_file.clone());
+        adapter.bump();
+
         let result = adapter.save();
-        
+
         assert!(result.is_ok());
         assert!(!adapter.is_dirty());
-        
+
         // Cleanup
         let _ = std::fs::remove_file(&temp_file);
     }
