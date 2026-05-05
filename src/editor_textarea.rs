@@ -219,6 +219,270 @@ impl TextAreaAdapter {
         }
         did_redo
     }
+
+    // Selection methods (Task 4)
+
+    /// Start a selection anchor at the current cursor position.
+    pub fn start_selection(&mut self) {
+        self.inner.start_selection();
+    }
+
+    /// Cancel/clear the current selection.
+    pub fn cancel_selection(&mut self) {
+        self.inner.cancel_selection();
+    }
+
+    /// Extend selection right by one char.
+    pub fn extend_selection_right(&mut self) {
+        if self.inner.selection_range().is_none() {
+            self.inner.start_selection();
+        }
+        self.inner.move_cursor(CursorMove::Forward);
+    }
+
+    /// Extend selection left by one char.
+    pub fn extend_selection_left(&mut self) {
+        if self.inner.selection_range().is_none() {
+            self.inner.start_selection();
+        }
+        self.inner.move_cursor(CursorMove::Back);
+    }
+
+    /// Extend selection down one line.
+    pub fn extend_selection_down(&mut self) {
+        if self.inner.selection_range().is_none() {
+            self.inner.start_selection();
+        }
+        self.inner.move_cursor(CursorMove::Down);
+    }
+
+    /// Extend selection up one line.
+    pub fn extend_selection_up(&mut self) {
+        if self.inner.selection_range().is_none() {
+            self.inner.start_selection();
+        }
+        self.inner.move_cursor(CursorMove::Up);
+    }
+
+    /// Select all text in the buffer.
+    pub fn select_all(&mut self) {
+        self.inner.select_all();
+    }
+
+    /// Delete the current selection (if any). Returns true if text was deleted.
+    pub fn delete_selection(&mut self) -> bool {
+        let deleted = self.inner.cut();
+        if deleted {
+            self.bump();
+        }
+        deleted
+    }
+
+    /// Get the currently selected text. Returns empty string if nothing selected.
+    pub fn selected_text(&mut self) -> String {
+        // Check if there's an active selection
+        if self.inner.selection_range().is_some() {
+            self.inner.copy();
+            self.inner.yank_text().to_string()
+        } else {
+            String::new()
+        }
+    }
+
+    // Clipboard methods (Task 5)
+
+    /// Copy selected text to OS clipboard. Returns the copied text, or empty string.
+    pub fn copy_to_os_clipboard(&mut self) -> String {
+        let text = self.selected_text();
+        if !text.is_empty() {
+            if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                let _ = clipboard.set_text(&text);
+            }
+        }
+        text
+    }
+
+    /// Cut selected text to OS clipboard. Returns the cut text, or empty string.
+    pub fn cut_to_os_clipboard(&mut self) -> String {
+        // Use cut() which both gets the text AND deletes it
+        if self.inner.selection_range().is_some() {
+            let deleted = self.inner.cut();
+            if deleted {
+                self.bump();
+                let text = self.inner.yank_text().to_string();
+                if !text.is_empty() {
+                    if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                        let _ = clipboard.set_text(&text);
+                    }
+                }
+                return text;
+            }
+        }
+        String::new()
+    }
+
+    /// Paste text from OS clipboard at cursor. Returns true if paste succeeded.
+    pub fn paste_from_os_clipboard(&mut self) -> bool {
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if let Ok(text) = clipboard.get_text() {
+                if !text.is_empty() {
+                    for ch in text.chars() {
+                        if ch == '\n' {
+                            self.insert_newline();
+                        } else {
+                            self.insert_char(ch);
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // Search and replace methods (Task 6)
+
+    /// Set the search query and find all matches. Resets match index.
+    /// Each match is (row, col) of the start of the match.
+    pub fn set_search_query(&mut self, query: String) {
+        self.search_query = query.clone();
+        self.search_active = !query.is_empty();
+        self.search_match_idx = 0;
+        self.search_matches.clear();
+
+        if !query.is_empty() {
+            let lines: Vec<String> = self.lines().iter().map(|s| s.to_string()).collect();
+            for (row, line) in lines.iter().enumerate() {
+                let mut col = 0;
+                while let Some(pos) = line[col..].find(&query) {
+                    self.search_matches.push((row, col + pos));
+                    col += pos + 1;
+                }
+            }
+        }
+    }
+
+    /// Move to the next search match. Wraps around. Returns false if no matches.
+    pub fn search_next(&mut self) -> bool {
+        if self.search_matches.is_empty() {
+            return false;
+        }
+        self.search_match_idx = (self.search_match_idx + 1) % self.search_matches.len();
+        let (row, col) = self.search_matches[self.search_match_idx];
+        self.jump_to(row, col);
+        true
+    }
+
+    /// Move to the previous search match. Wraps around. Returns false if no matches.
+    pub fn search_prev(&mut self) -> bool {
+        if self.search_matches.is_empty() {
+            return false;
+        }
+        if self.search_match_idx == 0 {
+            self.search_match_idx = self.search_matches.len() - 1;
+        } else {
+            self.search_match_idx -= 1;
+        }
+        let (row, col) = self.search_matches[self.search_match_idx];
+        self.jump_to(row, col);
+        true
+    }
+
+    /// Replace the current match with replacement text. Returns false if no current match.
+    pub fn replace_current(&mut self, replacement: &str) -> bool {
+        if self.search_matches.is_empty() {
+            return false;
+        }
+        let (row, col) = self.search_matches[self.search_match_idx];
+        let query_len = self.search_query.chars().count();
+        
+        // Position cursor at match start
+        self.jump_to(row, col);
+        
+        // Select the match
+        self.start_selection();
+        for _ in 0..query_len {
+            self.extend_selection_right();
+        }
+        
+        // Delete the selection
+        self.delete_selection();
+        
+        // Insert replacement
+        for ch in replacement.chars() {
+            if ch == '\n' {
+                self.insert_newline();
+            } else {
+                self.insert_char(ch);
+            }
+        }
+        
+        // Refresh search matches
+        let query = self.search_query.clone();
+        self.set_search_query(query);
+        
+        true
+    }
+
+    /// Replace all matches with replacement text. Returns the count of replacements.
+    pub fn replace_all(&mut self, replacement: &str) -> usize {
+        if self.search_matches.is_empty() {
+            return 0;
+        }
+        
+        let count = self.search_matches.len();
+        
+        // Replace from last to first to preserve positions
+        for i in (0..self.search_matches.len()).rev() {
+            let (row, col) = self.search_matches[i];
+            let query_len = self.search_query.chars().count();
+            
+            // Position cursor at match start
+            self.jump_to(row, col);
+            
+            // Select the match
+            self.start_selection();
+            for _ in 0..query_len {
+                self.extend_selection_right();
+            }
+            
+            // Delete the selection
+            self.delete_selection();
+            
+            // Insert replacement
+            for ch in replacement.chars() {
+                if ch == '\n' {
+                    self.insert_newline();
+                } else {
+                    self.insert_char(ch);
+                }
+            }
+        }
+        
+        // Refresh search matches
+        let query = self.search_query.clone();
+        self.set_search_query(query);
+        
+        count
+    }
+
+    /// Clear the search state.
+    pub fn clear_search(&mut self) {
+        self.search_active = false;
+        self.search_query = String::new();
+        self.search_matches.clear();
+        self.search_match_idx = 0;
+    }
+
+    /// Get the total number of search matches.
+    pub fn match_count(&self) -> usize {
+        self.search_matches.len()
+    }
+
+    /// Get the current match index (0-based).
+    pub fn current_match_idx(&self) -> usize {
+        self.search_match_idx
+    }
 }
 
 #[cfg(test)]
@@ -574,6 +838,261 @@ mod tests {
         
         // Version should remain unchanged
         assert_eq!(adapter.edit_version(), initial_version);
+        assert!(!adapter.is_dirty());
+    }
+
+    // Task 4: Selection tests
+
+    #[test]
+    fn test_select_all_selects_content() {
+        let mut adapter = TextAreaAdapter::from_text("hello\nworld");
+        
+        adapter.select_all();
+        let selected = adapter.selected_text();
+        
+        assert_eq!(selected, "hello\nworld");
+    }
+
+    #[test]
+    fn test_start_and_cancel_selection() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        adapter.start_selection();
+        adapter.extend_selection_right();
+        adapter.extend_selection_right();
+        
+        // Should have selected "he"
+        let selected = adapter.selected_text();
+        assert_eq!(selected, "he");
+        
+        adapter.cancel_selection();
+        let selected_after_cancel = adapter.selected_text();
+        assert_eq!(selected_after_cancel, "");
+    }
+
+    #[test]
+    fn test_delete_selection_removes_text() {
+        let mut adapter = TextAreaAdapter::from_text("hello world");
+        
+        adapter.select_all();
+        let deleted = adapter.delete_selection();
+        
+        assert!(deleted);
+        assert_eq!(adapter.contents(), "");
+        assert!(adapter.is_dirty());
+    }
+
+    #[test]
+    fn test_extend_selection_right() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        adapter.start_selection();
+        adapter.extend_selection_right();
+        adapter.extend_selection_right();
+        adapter.extend_selection_right();
+        
+        let selected = adapter.selected_text();
+        assert_eq!(selected, "hel");
+    }
+
+    #[test]
+    fn test_selected_text_empty_when_no_selection() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        let selected = adapter.selected_text();
+        assert_eq!(selected, "");
+    }
+
+    #[test]
+    fn test_extend_selection_down() {
+        let mut adapter = TextAreaAdapter::from_text("line1\nline2\nline3");
+        
+        adapter.start_selection();
+        adapter.extend_selection_down();
+        
+        let selected = adapter.selected_text();
+        // Should select from (0,0) to (1,0)
+        assert!(selected.contains("line1"));
+    }
+
+    #[test]
+    fn test_extend_selection_left() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        adapter.move_line_end(); // Move to end
+        
+        adapter.start_selection();
+        adapter.extend_selection_left();
+        adapter.extend_selection_left();
+        
+        let selected = adapter.selected_text();
+        assert_eq!(selected, "lo");
+    }
+
+    #[test]
+    fn test_delete_selection_returns_false_when_no_selection() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        let deleted = adapter.delete_selection();
+        
+        assert!(!deleted);
+    }
+
+    // Task 5: Clipboard tests
+
+    #[test]
+    fn test_copy_returns_selected_text() {
+        let mut adapter = TextAreaAdapter::from_text("hello world");
+        
+        adapter.select_all();
+        let copied = adapter.copy_to_os_clipboard();
+        
+        assert_eq!(copied, "hello world");
+    }
+
+    #[test]
+    fn test_cut_removes_and_returns_text() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        adapter.select_all();
+        let cut = adapter.cut_to_os_clipboard();
+        
+        assert_eq!(cut, "hello");
+        assert_eq!(adapter.contents(), "");
+    }
+
+    #[test]
+    #[ignore] // May not work in all test environments
+    fn test_paste_from_os_clipboard() {
+        let mut adapter = TextAreaAdapter::from_text("");
+        
+        // Try to set clipboard and paste
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            let _ = clipboard.set_text("pasted");
+            let pasted = adapter.paste_from_os_clipboard();
+            
+            if pasted {
+                assert_eq!(adapter.contents(), "pasted");
+            }
+        }
+    }
+
+    // Task 6: Search and replace tests
+
+    #[test]
+    fn test_set_search_query_finds_matches() {
+        let mut adapter = TextAreaAdapter::from_text("hello world hello");
+        
+        adapter.set_search_query("hello".to_string());
+        
+        assert_eq!(adapter.match_count(), 2);
+        assert!(adapter.search_active);
+    }
+
+    #[test]
+    fn test_search_next_wraps_around() {
+        let mut adapter = TextAreaAdapter::from_text("abc abc abc");
+        
+        adapter.set_search_query("abc".to_string());
+        assert_eq!(adapter.match_count(), 3);
+        assert_eq!(adapter.current_match_idx(), 0);
+        
+        adapter.search_next();
+        assert_eq!(adapter.current_match_idx(), 1);
+        
+        adapter.search_next();
+        assert_eq!(adapter.current_match_idx(), 2);
+        
+        adapter.search_next(); // Should wrap to 0
+        assert_eq!(adapter.current_match_idx(), 0);
+    }
+
+    #[test]
+    fn test_search_prev_goes_backwards() {
+        let mut adapter = TextAreaAdapter::from_text("abc abc abc");
+        
+        adapter.set_search_query("abc".to_string());
+        assert_eq!(adapter.current_match_idx(), 0);
+        
+        adapter.search_prev(); // Should wrap to last (2)
+        assert_eq!(adapter.current_match_idx(), 2);
+        
+        adapter.search_prev();
+        assert_eq!(adapter.current_match_idx(), 1);
+    }
+
+    #[test]
+    fn test_replace_current_replaces_text() {
+        let mut adapter = TextAreaAdapter::from_text("hello world");
+        
+        adapter.set_search_query("hello".to_string());
+        assert_eq!(adapter.match_count(), 1);
+        
+        let replaced = adapter.replace_current("goodbye");
+        
+        assert!(replaced);
+        assert_eq!(adapter.contents(), "goodbye world");
+    }
+
+    #[test]
+    fn test_replace_all_replaces_all_occurrences() {
+        let mut adapter = TextAreaAdapter::from_text("foo bar foo baz foo");
+        
+        adapter.set_search_query("foo".to_string());
+        assert_eq!(adapter.match_count(), 3);
+        
+        let count = adapter.replace_all("qux");
+        
+        assert_eq!(count, 3);
+        assert_eq!(adapter.contents(), "qux bar qux baz qux");
+    }
+
+    #[test]
+    fn test_clear_search_resets_state() {
+        let mut adapter = TextAreaAdapter::from_text("hello world");
+        
+        adapter.set_search_query("hello".to_string());
+        assert!(adapter.search_active);
+        assert_eq!(adapter.match_count(), 1);
+        
+        adapter.clear_search();
+        
+        assert!(!adapter.search_active);
+        assert_eq!(adapter.match_count(), 0);
+        assert_eq!(adapter.search_query, "");
+    }
+
+    #[test]
+    fn test_search_next_returns_false_when_no_matches() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        adapter.set_search_query("xyz".to_string());
+        
+        let found = adapter.search_next();
+        assert!(!found);
+    }
+
+    #[test]
+    fn test_replace_current_returns_false_when_no_matches() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        
+        adapter.set_search_query("xyz".to_string());
+        
+        let replaced = adapter.replace_current("abc");
+        assert!(!replaced);
+    }
+
+    #[test]
+    fn test_selection_does_not_mark_dirty() {
+        let mut adapter = TextAreaAdapter::from_text("hello");
+        let version = adapter.edit_version();
+        
+        adapter.start_selection();
+        adapter.extend_selection_right();
+        adapter.cancel_selection();
+        adapter.select_all();
+        
+        // Selection operations shouldn't bump version
+        assert_eq!(adapter.edit_version(), version);
         assert!(!adapter.is_dirty());
     }
 }
