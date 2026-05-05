@@ -56,7 +56,7 @@ vt100 = "0.15"
 # image features above; halfblocks/sixel/kitty work without them.
 ratatui-image = { version = "10", default-features = false, features = ["crossterm"] }
 ureq = { version = "2.9", default-features = false, features = ["tls"] }
-tui-textarea = "0.7"
+tui-textarea-2 = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 conpty = "0.7"
