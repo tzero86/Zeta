@@ -442,10 +442,7 @@ mod tests {
     #[test]
     fn cut_removes_selected_text() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello world"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello world").with_path(std::path::PathBuf::from("f.txt")));
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
@@ -458,10 +455,7 @@ mod tests {
     #[test]
     fn shift_right_extends_selection_from_cursor() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         // Cursor starts at 0; extend right 3 chars → selects "hel".
         state
             .apply(&crate::action::Action::EditorExtendRight)
@@ -479,10 +473,7 @@ mod tests {
     #[test]
     fn shift_arrow_then_plain_arrow_clears_selection() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         state
             .apply(&crate::action::Action::EditorExtendRight)
             .unwrap();
@@ -500,10 +491,7 @@ mod tests {
     #[test]
     fn typing_with_selection_replaces_selected_text() {
         let mut state = EditorState::default();
-        state.open(EditorBuffer::from_text(
-            std::path::PathBuf::from("f.txt"),
-            String::from("hello"),
-        ));
+        state.open(TextAreaAdapter::from_text("hello").with_path(std::path::PathBuf::from("f.txt")));
         state
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
