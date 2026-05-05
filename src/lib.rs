@@ -3,6 +3,7 @@ pub mod app;
 pub mod config;
 pub mod diff;
 pub mod editor;
+pub mod editor_textarea;
 pub mod event;
 pub mod finder;
 pub mod fs;
