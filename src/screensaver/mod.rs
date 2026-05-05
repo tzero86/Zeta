@@ -793,54 +793,29 @@ fn render_fade_text(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
     }
 }
 
-fn render_logo_only(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
-    let cx = area.x + area.width / 2;
-    let cy = area.y + area.height / 2;
-    let logo = "[Z]eta\u{2588}";
-    let pulse = ((state.logo_pulse * std::f64::consts::TAU * 0.25).sin() * 0.5 + 0.5) * 0.75 + 0.25;
-    let b = (pulse * 255.0) as u8;
-    let start_x = cx.saturating_sub((logo.len() / 2) as u16);
-    for (i, ch) in logo.chars().enumerate() {
-        let Some(cell) = buf.cell_mut((start_x + i as u16, cy)) else {
-            continue;
-        };
-        cell.set_char(ch);
-        if ch == '[' || ch == ']' {
-            cell.set_fg(Color::Rgb(b / 3, b / 3, b / 3));
-        } else if ch == 'Z' {
-            cell.set_fg(Color::Rgb(130, 170, 255));
-        } else {
-            cell.set_fg(Color::Rgb(
-                (b as u16 * 4 / 5) as u8,
-                b,
-                (b as u16 * 4 / 5) as u8,
-            ));
-        }
-    }
-}
-
-fn render_logo_enhanced(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
-    let lines = [
-        "  ╭──────────────────╮  ",
-        "  │  ▐▀▀▀▀▀▀▀▀▀▀▀▀▀▌  │  ",
-        "  │  ▐   ▐██▌▐██▌  ▌  │  ",
-        "  │  ▐    ██  ██   ▌  │  ",
-        "  │  ▐   ▐██▌ ██   ▌  │  ",
-        "  │  ▐    ██  ██   ▌  │  ",
-        "  │  ▐   ▐██▌▐██▌  ▌  │  ",
-        "  │  ▐▄▄▄▄▄▄▄▄▄▄▄▄▄▌  │  ",
-        "  │      [Z]eta        │  ",
-        "  ╰──────────────────╯  ",
-    ];
-    let line_width = lines[0].len() as u16;
-    let logo_height = lines.len() as u16;
-    let cx = area.x + (area.width.saturating_sub(line_width)) / 2;
-    let cy = area.y + area.height / 3 - logo_height / 2;
-
+/// Render the minimal `[Z]` logo centered in `area`.
+///
+/// Used for both the small-terminal fallback and the full screensaver.
+/// The layout is:
+///   ┌─────────┐
+///   │   [Z]   │
+///   └─────────┘
+/// with pulsing colors on the Z and dim brackets/border.
+fn render_logo(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
     let pulse = ((state.logo_pulse * std::f64::consts::TAU * 0.25).sin() * 0.5 + 0.5) * 0.75 + 0.25;
     let b8 = (pulse * 255.0) as u8;
 
-    for (row, line) in lines.iter().enumerate() {
+    // Three-line logo: border top, content, border bottom.
+    let border_top    = "┌─────────┐";
+    let content       = "│   [Z]   │";
+    let border_bottom = "└─────────┘";
+    let logo_width = border_top.chars().count() as u16;
+
+    let cx = area.x + area.width.saturating_sub(logo_width) / 2;
+    // Vertical center, slightly above middle to leave room for the fade-text hint.
+    let cy = area.y + area.height.saturating_sub(3) / 2;
+
+    for (row, line) in [border_top, content, border_bottom].iter().enumerate() {
         for (col, ch) in line.chars().enumerate() {
             let x = cx + col as u16;
             let y = cy + row as u16;
@@ -848,25 +823,16 @@ fn render_logo_enhanced(state: &ScreensaverState, area: Rect, buf: &mut Buffer) 
                 continue;
             };
             match ch {
-                '╭' | '╮' | '╰' | '╯' | '─' | '│' | '╞' | '╡' => {
+                '┌' | '┐' | '└' | '┘' | '─' | '│' => {
                     cell.set_char(ch);
-                    let r = (80.0 * pulse) as u8;
-                    let g = (140.0 * pulse) as u8;
-                    let b = (220.0 * pulse) as u8;
+                    let r = (b8 as u16 * 40 / 255) as u8;
+                    let g = (b8 as u16 * 80 / 255) as u8;
+                    let b = (b8 as u16 * 160 / 255) as u8;
                     cell.set_fg(Color::Rgb(r, g, b));
-                    cell.set_bg(Color::Rgb(12, 14, 18));
-                }
-                '▐' | '▌' | '▀' | '▄' | '█' => {
-                    cell.set_char(' ');
-                    let r = (40.0 * pulse) as u8;
-                    let g = (80.0 * pulse) as u8;
-                    let b = (180.0 * pulse).min(200.0) as u8;
-                    cell.set_bg(Color::Rgb(r, g, b));
                 }
                 '[' | ']' => {
                     cell.set_char(ch);
-                    cell.set_fg(Color::Rgb(b8 / 3, b8 / 2, b8 / 2));
-                    cell.set_bg(Color::Rgb(12, 14, 18));
+                    cell.set_fg(Color::Rgb(b8 / 4, b8 / 3, b8 / 2));
                 }
                 'Z' => {
                     cell.set_char(ch);
@@ -875,24 +841,22 @@ fn render_logo_enhanced(state: &ScreensaverState, area: Rect, buf: &mut Buffer) 
                         (170.0 * pulse) as u8,
                         (220.0 * pulse).min(255.0) as u8,
                     ));
-                    cell.set_bg(Color::Rgb(12, 14, 18));
                 }
                 ' ' => {
-                    cell.set_bg(Color::Rgb(12, 14, 18));
+                    cell.set_char(' ');
                 }
-                _ => {
-                    cell.set_char(ch);
-                    let b = b8 as u16;
-                    cell.set_fg(Color::Rgb(
-                        (b * 4 / 5).min(200) as u8,
-                        b8.min(230),
-                        (b * 4 / 5).min(200) as u8,
-                    ));
-                    cell.set_bg(Color::Rgb(12, 14, 18));
-                }
+                _ => {}
             }
         }
     }
+}
+
+fn render_logo_only(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
+    render_logo(state, area, buf);
+}
+
+fn render_logo_enhanced(state: &ScreensaverState, area: Rect, buf: &mut Buffer) {
+    render_logo(state, area, buf);
 }
 
 #[cfg(test)]
@@ -961,9 +925,12 @@ mod tests {
         let area = Rect::new(0, 0, 30, 10);
         let mut buf = Buffer::empty(area);
         render_screensaver(&ss, area, &mut buf);
-        let cell = buf.cell((12, 5)).unwrap();
+        // New logo: "┌─────────┐" / "│   [Z]   │" / "└─────────┘" (11 wide)
+        // cx = (30 - 11) / 2 = 9,  cy = (10 - 3) / 2 = 3
+        // content row at cy+1 = 4; '[' at col 4 → x=13, 'Z' at col 5 → x=14
+        let cell = buf.cell((14, 4)).unwrap();
         assert_eq!(cell.symbol(), "Z");
-        let cell = buf.cell((11, 5)).unwrap();
+        let cell = buf.cell((13, 4)).unwrap();
         assert_eq!(cell.symbol(), "[");
     }
 

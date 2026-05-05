@@ -3230,6 +3230,11 @@ impl AppState {
     /// Derive the current input focus layer from state.
     /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > UpdatePrompt > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
+        // Screensaver must be checked first — it captures all input regardless of
+        // what other panels (editor, preview, terminal) happen to be open.
+        if self.screensaver.active {
+            return FocusLayer::Screensaver;
+        }
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
         }
@@ -3299,9 +3304,6 @@ impl AppState {
         }
         if self.is_preview_focused() {
             return FocusLayer::Preview;
-        }
-        if self.screensaver.active {
-            return FocusLayer::Screensaver;
         }
         FocusLayer::Pane
     }
