@@ -447,9 +447,9 @@ mod tests {
             .apply(&crate::action::Action::EditorSelectAll)
             .unwrap();
         state.apply(&crate::action::Action::EditorCut).unwrap();
-        let buf = state.buffer.as_ref().unwrap();
+        let buf = state.buffer.as_mut().unwrap();
         // After cut, buffer should be empty and selection cleared.
-        assert_eq!(buf.selected_text(), None);
+        assert_eq!(buf.selected_text(), "");
         assert_eq!(buf.contents(), "");
     }
     #[test]
@@ -466,8 +466,8 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorExtendRight)
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
-        assert_eq!(buf.selected_text().as_deref(), Some("hel"));
+        let buf = state.buffer.as_mut().unwrap();
+        assert_eq!(buf.selected_text(), "hel");
     }
 
     #[test]
@@ -484,8 +484,8 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorMoveRight)
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
-        assert_eq!(buf.selected_text(), None);
+        let buf = state.buffer.as_mut().unwrap();
+        assert_eq!(buf.selected_text(), "");
     }
 
     #[test]
@@ -498,8 +498,8 @@ mod tests {
         state
             .apply(&crate::action::Action::EditorInsert('X'))
             .unwrap();
-        let buf = state.buffer.as_ref().unwrap();
+        let buf = state.buffer.as_mut().unwrap();
         assert_eq!(buf.contents(), "X");
-        assert_eq!(buf.selected_text(), None);
+        assert_eq!(buf.selected_text(), "");
     }
 }

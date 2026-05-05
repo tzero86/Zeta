@@ -177,42 +177,52 @@ impl TextAreaAdapter {
     // Cursor movement (non-mutating — do NOT call bump())
 
     pub fn move_right(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Forward);
     }
 
     pub fn move_left(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Back);
     }
 
     pub fn move_up(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Up);
     }
 
     pub fn move_down(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Down);
     }
 
     pub fn move_word_right(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::WordForward);
     }
 
     pub fn move_word_left(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::WordBack);
     }
 
     pub fn move_line_start(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Head);
     }
 
     pub fn move_line_end(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::End);
     }
 
     pub fn move_doc_start(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Top);
     }
 
     pub fn move_doc_end(&mut self) {
+        self.inner.cancel_selection();
         self.inner.move_cursor(CursorMove::Bottom);
     }
 
@@ -300,16 +310,38 @@ impl TextAreaAdapter {
         let deleted = self.inner.cut();
         if deleted {
             self.bump();
+            self.inner.cancel_selection(); // Clear selection after cut
         }
         deleted
     }
 
     /// Get the currently selected text. Returns empty string if nothing selected.
-    pub fn selected_text(&mut self) -> String {
-        // Check if there's an active selection
-        if self.inner.selection_range().is_some() {
-            self.inner.copy();
-            self.inner.yank_text().to_string()
+    pub fn selected_text(&self) -> String {
+        // Get selection range without consuming it
+        if let Some(((start_row, start_col), (end_row, end_col))) = self.inner.selection_range() {
+            let lines = self.inner.lines();
+            
+            if start_row == end_row {
+                // Single line selection
+                return lines[start_row][start_col..end_col].to_string();
+            }
+            
+            // Multi-line selection
+            let mut result = String::new();
+            // First line: from start_col to end
+            result.push_str(&lines[start_row][start_col..]);
+            result.push('\n');
+            
+            // Middle lines: full lines
+            for line in &lines[start_row + 1..end_row] {
+                result.push_str(line);
+                result.push('\n');
+            }
+            
+            // Last line: from start to end_col
+            result.push_str(&lines[end_row][..end_col]);
+            
+            result
         } else {
             String::new()
         }
@@ -626,6 +658,51 @@ impl TextAreaAdapter {
             rendered,
         });
     }
+
+    /// Render the textarea widget into the given frame area.
+    /// Manual rendering to bridge ratatui 0.29 (tui-textarea) and 0.30 (this crate).
+    pub fn render(&mut self, frame: &mut ratatui::Frame, area: ratatui::layout::Rect, _is_focused: bool) {
+        use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
+        use ratatui::style::{Style, Color, Modifier};
+        use ratatui::text::{Line, Span};
+        
+        // Get cursor position
+        let (cursor_row, cursor_col) = self.inner.cursor();
+        
+        // Get visible lines
+        let lines = self.inner.lines();
+        
+        // Calculate viewport - show lines around cursor
+        let viewport_height = area.height.saturating_sub(2) as usize; // Account for borders
+        let start_line = cursor_row.saturating_sub(viewport_height / 2);
+        let _end_line = (start_line + viewport_height).min(lines.len());
+        
+        // Build ratatui Lines for rendering
+        let mut rendered_lines = Vec::new();
+        for (idx, line_text) in lines.iter().enumerate().skip(start_line).take(viewport_height) {
+            let line_num = idx + 1;
+            let gutter = format!("{:>4} │ ", line_num);
+            
+            // Highlight cursor line
+            if idx == cursor_row {
+                let mut spans = vec![Span::styled(gutter, Style::default().fg(Color::Yellow))];
+                spans.push(Span::styled(line_text.as_str(), Style::default().add_modifier(Modifier::BOLD)));
+                rendered_lines.push(Line::from(spans));
+            } else {
+                let mut spans = vec![Span::styled(gutter, Style::default().fg(Color::DarkGray))];
+                spans.push(Span::raw(line_text.as_str()));
+                rendered_lines.push(Line::from(spans));
+            }
+        }
+        
+        // Create paragraph with line numbers
+        let title = format!(" Editor - {}:{} ", cursor_row + 1, cursor_col + 1);
+        let paragraph = Paragraph::new(rendered_lines)
+            .block(Block::default().borders(Borders::ALL).title(title))
+            .wrap(Wrap { trim: false });
+        
+        frame.render_widget(paragraph, area);
+    }
 }
 
 #[cfg(test)]
@@ -729,12 +806,13 @@ mod tests {
 
     #[test]
     fn test_bump_clears_md_preview_cache() {
+        use ratatui::text::Line;
         let mut adapter = TextAreaAdapter::new_empty();
         adapter.md_preview_cache = Some(MdPreviewCache {
             version: 0,
             panel_width: 80,
             theme: "default".to_string(),
-            rendered: "test".to_string(),
+            rendered: vec![Line::from("test")],
         });
         
         adapter.bump();
@@ -1040,7 +1118,7 @@ mod tests {
 
     #[test]
     fn test_selected_text_empty_when_no_selection() {
-        let mut adapter = TextAreaAdapter::from_text("hello");
+        let adapter = TextAreaAdapter::from_text("hello");
         
         let selected = adapter.selected_text();
         assert_eq!(selected, "");
@@ -1288,18 +1366,23 @@ mod tests {
 
     #[test]
     fn test_md_preview_cache_hit() {
+        use ratatui::text::Line;
         let mut adapter = TextAreaAdapter::from_text("# Hello");
-        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        let rendered = vec![Line::from("<h1>Hello</h1>")];
+        adapter.set_md_preview_cache(80, "dark", rendered.clone());
         
         let result = adapter.md_preview_cached(80, "dark");
         assert!(result.is_some());
-        assert_eq!(result.unwrap(), "<h1>Hello</h1>");
+        let cached = result.unwrap();
+        assert_eq!(cached.len(), 1);
     }
 
     #[test]
     fn test_md_preview_cache_invalidated_after_edit() {
+        use ratatui::text::Line;
         let mut adapter = TextAreaAdapter::from_text("# Hello");
-        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        let rendered = vec![Line::from("<h1>Hello</h1>")];
+        adapter.set_md_preview_cache(80, "dark", rendered);
         
         // Verify cache works before edit
         assert!(adapter.md_preview_cached(80, "dark").is_some());
@@ -1314,8 +1397,10 @@ mod tests {
 
     #[test]
     fn test_md_preview_cache_miss_on_wrong_width() {
+        use ratatui::text::Line;
         let mut adapter = TextAreaAdapter::from_text("# Hello");
-        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        let rendered = vec![Line::from("<h1>Hello</h1>")];
+        adapter.set_md_preview_cache(80, "dark", rendered);
         
         // Query with different width
         let result = adapter.md_preview_cached(100, "dark");
@@ -1324,8 +1409,10 @@ mod tests {
 
     #[test]
     fn test_md_preview_cache_miss_on_wrong_theme() {
+        use ratatui::text::Line;
         let mut adapter = TextAreaAdapter::from_text("# Hello");
-        adapter.set_md_preview_cache(80, "dark".to_string(), "<h1>Hello</h1>".to_string());
+        let rendered = vec![Line::from("<h1>Hello</h1>")];
+        adapter.set_md_preview_cache(80, "dark", rendered);
         
         // Query with different theme
         let result = adapter.md_preview_cached(80, "light");

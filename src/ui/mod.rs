@@ -2,6 +2,7 @@ mod bookmarks;
 mod code_view;
 mod debug;
 mod editor;
+mod editor_textarea;
 mod finder;
 pub mod git_diff;
 pub(crate) mod highlight;
@@ -30,7 +31,7 @@ use crate::pane::PaneId;
 use crate::screensaver;
 use crate::state::{AppState, MessageKind, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
-use crate::ui::editor::{editor_render_state, render_editor, RenderEditorArgs};
+use crate::ui::editor_textarea::{render_textarea_editor, RenderTextareaEditorArgs};
 use crate::ui::finder::render_file_finder;
 use crate::ui::markdown::{parse_markdown_lines_with_palette, render_md_with_lines};
 use crate::ui::menu_bar::render_menu_bar;
@@ -185,11 +186,11 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     if let Some(tools_area) = tools_area_opt {
         if has_editor {
             let editor_focused = state.is_editor_focused();
-            let editor_loading = state.is_editor_loading();
+            let _editor_loading = state.is_editor_loading();
             let md_focused = state.is_markdown_preview_focused();
             let md_scroll = state.markdown_preview_scroll();
-            let replace_active = state.editor.replace_active;
-            let replace_query = state.editor.replace_query.clone();
+            let _replace_active = state.editor.replace_active;
+            let _replace_query = state.editor.replace_query.clone();
             let syntect_theme = state.theme().palette.syntect_theme;
             let (editor_area, md_area_opt) = if show_md_preview {
                 let halves = Layout::default()
@@ -202,34 +203,21 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             };
             editor_panel_rect = Some(editor_area);
             markdown_preview_panel_rect = md_area_opt;
-            let ed_cfg = state.config().editor.clone();
+            let _ed_cfg = state.config().editor.clone();
 
             if let Some(editor) = state.editor_mut() {
-                let editor_view = editor_render_state(
-                    editor,
-                    editor_area,
-                    editor_focused,
-                    ed_cfg.tab_width,
-                    ed_cfg.word_wrap,
-                );
-                editor_visible_start = editor_view.visible_start;
-                editor_scroll_col = editor_view.scroll_col;
-                render_editor(
+                let show_search = editor.search_active;
+                render_textarea_editor(
                     frame,
-                    editor_area,
-                    RenderEditorArgs {
+                    RenderTextareaEditorArgs {
                         editor,
-                        render_state: &editor_view,
+                        area: editor_area,
                         is_focused: editor_focused,
-                        palette,
-                        syntect_theme,
-                        replace_active,
-                        replace_query: &replace_query,
-                        loading: editor_loading,
-                        cheap_mode: cheap_tools_mode && !editor_focused,
-                        cheap_tab_width: ed_cfg.tab_width,
+                        show_search_bar: show_search,
                     },
                 );
+                editor_visible_start = editor.cursor().0;
+                editor_scroll_col = editor.scroll_col;
 
                 if let Some(md_area) = md_area_opt {
                     let source = editor.contents();
