@@ -681,8 +681,8 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
                 } else {
                     cell.set_char('·');
                 }
-                let b = *br;
-                cell.set_fg(Color::Rgb(b, b * 2 / 3, b / 4));
+                let b = *br as u16;
+                cell.set_fg(Color::Rgb(b as u8, (b * 2 / 3) as u8, (b / 4) as u8));
                 cell.set_bg(Color::Reset);
             }
         }
@@ -695,8 +695,8 @@ pub fn render_screensaver(state: &ScreensaverState, area: Rect, buf: &mut Buffer
             let py = (*my as u16).min(height.saturating_sub(1));
             if let Some(cell) = buf.cell_mut((area.x + px, area.y + py)) {
                 cell.set_char(METEOR_CHARS[i % METEOR_CHARS.len()]);
-                let b = *br;
-                cell.set_fg(Color::Rgb(b, b, b * 2 / 3));
+                let b = *br as u16;
+                cell.set_fg(Color::Rgb(b as u8, b as u8, (b * 2 / 3) as u8));
                 cell.set_bg(Color::Reset);
             }
         }
