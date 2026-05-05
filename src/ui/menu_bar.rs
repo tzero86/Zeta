@@ -8,7 +8,13 @@ use crate::action::MenuId;
 use crate::config::ThemePalette;
 use crate::state::{menu_tabs, AppState, MenuContext};
 
-pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, palette: ThemePalette) {
+/// Render the menu bar and return the bounding rect of each workspace pill (up to 4).
+pub fn render_menu_bar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    state: &AppState,
+    palette: ThemePalette,
+) -> [Option<Rect>; 4] {
     let ctx = state.menu_context();
     let bar_is_active = state.active_menu().is_none();
     let top_bar_bg = if bar_is_active {
@@ -99,6 +105,37 @@ pub fn render_menu_bar(frame: &mut Frame<'_>, area: Rect, state: &AppState, pale
         Paragraph::new(Line::from(ws_spans)).style(base_style),
         parts[1],
     );
+
+    // Compute the exact bounding rect for each workspace pill so that the mouse
+    // router can determine which workspace a click targets.  The layout of parts[1]
+    // mirrors workspace_switcher_spans: leading " ", then for each workspace the
+    // label span followed by a " " spacer.
+    let active_idx = state.active_workspace_index();
+    let ws_count = state.workspace_count();
+    let ws_x = parts[1].x;
+    let ws_y = parts[1].y;
+    let mut pill_rects: [Option<Rect>; 4] = [None; 4];
+    let mut x_cursor = ws_x + 1; // skip leading " "
+    for (idx, pill_rect) in pill_rects.iter_mut().enumerate().take(ws_count.min(4)) {
+        let label = if idx == active_idx {
+            if let Some(ref hint) = cwd_hint {
+                format!(" {}:{} ", idx + 1, hint)
+            } else {
+                format!(" {} ", idx + 1)
+            }
+        } else {
+            format!(" {} ", idx + 1)
+        };
+        let pill_width = label.chars().count() as u16;
+        *pill_rect = Some(Rect {
+            x: x_cursor,
+            y: ws_y,
+            width: pill_width,
+            height: 1,
+        });
+        x_cursor += pill_width + 1; // label + trailing " "
+    }
+    pill_rects
 }
 
 /// Returns a short badge indicating the current context (editor filename, TERM, etc.).

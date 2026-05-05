@@ -61,7 +61,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         ])
         .split(frame.area());
 
-    render_menu_bar(frame, areas[0], state, palette);
+    let workspace_pill_rects = render_menu_bar(frame, areas[0], state, palette);
 
     let pane_direction = match state.pane_layout() {
         PaneLayout::SideBySide => Direction::Horizontal,
@@ -71,12 +71,13 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let is_preview_open = state.is_preview_panel_open();
     let has_editor = state.editor().is_some();
     let editor_fullscreen = has_editor && state.is_editor_fullscreen();
+    let preview_fullscreen = is_preview_open && state.is_preview_fullscreen();
     let show_md_preview = has_editor && state.is_markdown_preview_visible();
     let pane_navigation_mode = matches!(
         state.focus_layer(),
         crate::state::FocusLayer::Pane | crate::state::FocusLayer::PaneFilter
     );
-    let cheap_tools_mode = !editor_fullscreen && pane_navigation_mode;
+    let cheap_tools_mode = !editor_fullscreen && !preview_fullscreen && pane_navigation_mode;
     let show_tools = has_editor || is_preview_open;
 
     let tools_pct = if has_editor { 50u16 } else { 40u16 };
@@ -102,7 +103,7 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         crate::ui::terminal::render_terminal(frame, t_area, &state.terminal, palette, focused);
     }
 
-    let (pane_area, tools_area_opt) = if editor_fullscreen {
+    let (pane_area, tools_area_opt) = if editor_fullscreen || preview_fullscreen {
         (Rect::default(), Some(main_content_area))
     } else if show_tools {
         let vertical = Layout::default()
@@ -122,8 +123,10 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
     let mut editor_panel_rect = None;
     let mut file_preview_panel_rect = None;
     let mut markdown_preview_panel_rect = None;
+    let mut editor_visible_start: usize = 0;
+    let mut editor_scroll_col: usize = 0;
 
-    if !editor_fullscreen {
+    if !editor_fullscreen && !preview_fullscreen {
         if state.git_diff_active {
             git_diff::render_git_diff_view(frame, pane_area, state);
         } else {
@@ -209,6 +212,8 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
                     ed_cfg.tab_width,
                     ed_cfg.word_wrap,
                 );
+                editor_visible_start = editor_view.visible_start;
+                editor_scroll_col = editor_view.scroll_col;
                 render_editor(
                     frame,
                     editor_area,
@@ -345,6 +350,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
             hint_bar: areas[3],
             menu_popup: menu_popup_rect,
             terminal_panel: terminal_area,
+            workspace_pill_rects,
+            editor_visible_start,
+            editor_scroll_col,
         };
     }
 
@@ -444,6 +452,9 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
         hint_bar: areas[3],
         menu_popup: menu_popup_rect,
         terminal_panel: terminal_area,
+        workspace_pill_rects,
+        editor_visible_start,
+        editor_scroll_col,
     }
 }
 

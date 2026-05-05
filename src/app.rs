@@ -362,6 +362,22 @@ impl App {
                     } else {
                         action
                     };
+
+                    // Intercept editor mouse-click/drag actions so we can resolve
+                    // screen coordinates using the layout cache before handing
+                    // to the state.
+                    match action {
+                        Action::EditorClickAt { col, row } => {
+                            self.handle_editor_click(col, row, false)?;
+                            return Ok(());
+                        }
+                        Action::EditorDragTo { col, row } => {
+                            self.handle_editor_click(col, row, true)?;
+                            return Ok(());
+                        }
+                        _ => {}
+                    }
+
                     self.dispatch(action)?;
                 }
             }
@@ -464,6 +480,39 @@ impl App {
                     }
                 }
             },
+        }
+        Ok(())
+    }
+
+    /// Resolve an editor mouse click or drag (screen coords) to buffer coordinates
+    /// and call the appropriate `EditorBuffer` method.
+    /// `is_drag` = false for a new click (sets anchor + cursor), true for drag (moves cursor only).
+    fn handle_editor_click(&mut self, col: u16, row: u16, is_drag: bool) -> Result<()> {
+        const GUTTER_WIDTH: u16 = 6;
+        let Some(editor_rect) = self.layout_cache.editor_panel else {
+            return Ok(());
+        };
+        let tab_width = self.state.config().editor.tab_width;
+        let Some(editor) = self.state.editor_mut() else {
+            return Ok(());
+        };
+
+        // Convert screen col/row to viewport-relative coords.
+        // Editor content starts 1 col inside the border + gutter.
+        let content_start_col = editor_rect.x + 1 + GUTTER_WIDTH;
+        let content_start_row = editor_rect.y + 1;
+
+        // Clamp to the content area to avoid underflow.
+        let viewport_col = col.saturating_sub(content_start_col) as usize;
+        let viewport_row = row.saturating_sub(content_start_row) as usize;
+
+        let logical_line = self.layout_cache.editor_visible_start + viewport_row;
+        let display_col = viewport_col + self.layout_cache.editor_scroll_col;
+
+        if is_drag {
+            editor.extend_selection_to_line_display_col(logical_line, display_col, tab_width);
+        } else {
+            editor.start_selection_at_line_display_col(logical_line, display_col, tab_width);
         }
         Ok(())
     }
@@ -1123,7 +1172,12 @@ fn route_mouse_event(
             // Menu open: allow menu bar clicks (switch menus) and popup item clicks.
             if matches!(focus, FocusLayer::Modal(ModalKind::Menu)) {
                 if rect_contains(cache.menu_bar, col, row) {
-                    return route_menu_bar_click(col, cache.menu_bar.x, menu_ctx);
+                    return route_menu_bar_click(
+                        col,
+                        cache.menu_bar.x,
+                        menu_ctx,
+                        &cache.workspace_pill_rects,
+                    );
                 }
                 if let Some(popup) = cache.menu_popup {
                     if rect_contains(popup, col, row) {
@@ -1148,7 +1202,12 @@ fn route_mouse_event(
 
             // Click on menu bar item.
             if rect_contains(cache.menu_bar, col, row) {
-                return route_menu_bar_click(col, cache.menu_bar.x, menu_ctx);
+                return route_menu_bar_click(
+                    col,
+                    cache.menu_bar.x,
+                    menu_ctx,
+                    &cache.workspace_pill_rects,
+                );
             }
 
             if let Some(md_rect) = cache.markdown_preview_panel {
@@ -1165,7 +1224,8 @@ fn route_mouse_event(
                     if focus == FocusLayer::MarkdownPreview {
                         return Some(Action::FocusMarkdownPreview);
                     }
-                    return None;
+                    // Click inside the editor viewport: position cursor.
+                    return Some(Action::EditorClickAt { col, row });
                 }
             }
 
@@ -1233,6 +1293,16 @@ fn route_mouse_event(
                     return Some(Action::MenuSetSelection(item_row));
                 }
             }
+            // Drag inside editor: extend selection.
+            if let MouseEventKind::Drag(MouseButton::Left) = event.kind {
+                if focus == FocusLayer::Editor {
+                    if let Some(editor_rect) = cache.editor_panel {
+                        if rect_contains(editor_rect, col, row) {
+                            return Some(Action::EditorDragTo { col, row });
+                        }
+                    }
+                }
+            }
             None
         }
 
@@ -1241,12 +1311,14 @@ fn route_mouse_event(
 }
 
 /// Map an x-coordinate in the menu bar to either an `OpenMenu` action or a
-/// workspace switch action.
+/// workspace switch action using pill rects from the layout cache.
 fn route_menu_bar_click(
     col: u16,
     bar_x: u16,
     menu_ctx: crate::state::MenuContext,
+    workspace_pill_rects: &[Option<ratatui::layout::Rect>; 4],
 ) -> Option<Action> {
+    // Walk menu tabs on the left side of the bar.
     let mut cursor = bar_x + 8;
     for tab in crate::state::menu_tabs(menu_ctx) {
         let start = cursor;
@@ -1257,14 +1329,14 @@ fn route_menu_bar_click(
         cursor += tab.label.len() as u16;
     }
 
-    cursor += 1; // spacer before workspace pills
-    for workspace_idx in 0..4usize {
-        let start = cursor;
-        let end = cursor + 2; // `[N]`
-        if col >= start && col <= end {
-            return Some(Action::SwitchToWorkspace(workspace_idx));
+    // Workspace pills on the right side — use rects computed at render time
+    // so positions are exact regardless of terminal width.
+    for (idx, rect_opt) in workspace_pill_rects.iter().enumerate() {
+        if let Some(rect) = rect_opt {
+            if col >= rect.x && col < rect.x + rect.width {
+                return Some(Action::SwitchToWorkspace(idx));
+            }
         }
-        cursor += 4; // `[N]` plus trailing spacer
     }
 
     None
@@ -1471,6 +1543,37 @@ mod tests {
     use super::{route_key_event, route_mouse_event};
 
     fn test_cache() -> LayoutCache {
+        // Workspace pills occupy the right side of an 80-column menu bar.
+        // With 4 pills each " N " (3 cols wide) plus 1-col gap between = 3+1+3+1+3+1+3 = 15 cols
+        // plus 1 leading space. Right-justified in an 80-col bar: pills start at col ~64.
+        // For tests, place them at fixed columns:
+        //   pill 0: x=65 w=3, pill 1: x=69 w=3, pill 2: x=73 w=3, pill 3: x=77 w=3
+        let pill_rects: [Option<ratatui::layout::Rect>; 4] = [
+            Some(Rect {
+                x: 65,
+                y: 0,
+                width: 3,
+                height: 1,
+            }),
+            Some(Rect {
+                x: 69,
+                y: 0,
+                width: 3,
+                height: 1,
+            }),
+            Some(Rect {
+                x: 73,
+                y: 0,
+                width: 3,
+                height: 1,
+            }),
+            Some(Rect {
+                x: 77,
+                y: 0,
+                width: 3,
+                height: 1,
+            }),
+        ];
         LayoutCache {
             menu_bar: Rect {
                 x: 0,
@@ -1503,6 +1606,9 @@ mod tests {
             menu_popup: None,
             hint_bar: Rect::default(),
             terminal_panel: None,
+            workspace_pill_rects: pill_rects,
+            editor_visible_start: 0,
+            editor_scroll_col: 0,
         }
     }
 
@@ -1617,10 +1723,8 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                // Pane tabs: " File "(6)+" Navigate "(10)+" View "(6)+" Help "(6)=28
-                // cursor = bar_x(0) + 8 + 28 + 1(spacer) = 37
-                // pill ws_idx 1: start=41 (37+4)
-                column: 41,
+                // pill ws_idx 1 rect: x=69, width=3 → click at col=70
+                column: 70,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },
@@ -1636,8 +1740,8 @@ mod tests {
         let action = route_mouse_event(
             MouseEvent {
                 kind: MouseEventKind::Down(MouseButton::Left),
-                // pill ws_idx 3: start=49 (37+4+4+4)
-                column: 49,
+                // pill ws_idx 3 rect: x=77, width=3 → click at col=78
+                column: 78,
                 row: 0,
                 modifiers: KeyModifiers::NONE,
             },
@@ -1881,5 +1985,149 @@ mod tests {
             crate::state::MenuContext::Pane,
         );
         assert_eq!(action, None);
+    }
+
+    // --- workspace pill rect-based routing ---------------------------------
+
+    #[test]
+    fn route_menu_bar_click_workspace_pill_1_via_rect() {
+        // Pill 0 rect: x=65, width=3. Click at col 65 (leftmost cell).
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 65,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, Some(Action::SwitchToWorkspace(0)));
+    }
+
+    #[test]
+    fn route_menu_bar_click_workspace_pill_3_via_rect() {
+        // Pill 2 rect: x=73, width=3. Click at col 74 (middle cell).
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 74,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(action, Some(Action::SwitchToWorkspace(2)));
+    }
+
+    #[test]
+    fn route_menu_bar_click_between_pills_opens_no_workspace() {
+        // Col 68 falls in the 1-col gap between pill 0 (x=65..68) and pill 1 (x=69..72).
+        // It should NOT trigger SwitchToWorkspace.
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 68,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &test_cache(),
+            FocusLayer::Pane,
+            crate::state::MenuContext::Pane,
+        );
+        // Should fall through to None (no menu tab or pill at col 68).
+        assert!(
+            !matches!(action, Some(Action::SwitchToWorkspace(_))),
+            "gap between pills should not route to a workspace switch"
+        );
+    }
+
+    // --- editor mouse click routing ----------------------------------------
+
+    #[test]
+    fn left_click_inside_editor_rect_produces_editor_click_at() {
+        use crate::state::FocusLayer;
+        let mut cache = test_cache();
+        cache.editor_panel = Some(Rect {
+            x: 0,
+            y: 1,
+            width: 80,
+            height: 20,
+        });
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 20,
+                row: 5,
+                modifiers: KeyModifiers::NONE,
+            },
+            &cache,
+            FocusLayer::Editor,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(
+            action,
+            Some(Action::EditorClickAt { col: 20, row: 5 }),
+            "click inside editor rect should produce EditorClickAt"
+        );
+    }
+
+    #[test]
+    fn drag_inside_editor_rect_while_editor_focused_produces_drag_to() {
+        use crate::state::FocusLayer;
+        let mut cache = test_cache();
+        cache.editor_panel = Some(Rect {
+            x: 0,
+            y: 1,
+            width: 80,
+            height: 20,
+        });
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 25,
+                row: 8,
+                modifiers: KeyModifiers::NONE,
+            },
+            &cache,
+            FocusLayer::Editor,
+            crate::state::MenuContext::Pane,
+        );
+        assert_eq!(
+            action,
+            Some(Action::EditorDragTo { col: 25, row: 8 }),
+            "left drag inside editor rect should produce EditorDragTo"
+        );
+    }
+
+    #[test]
+    fn drag_outside_editor_rect_does_not_produce_drag_action() {
+        use crate::state::FocusLayer;
+        let mut cache = test_cache();
+        cache.editor_panel = Some(Rect {
+            x: 0,
+            y: 5,
+            width: 80,
+            height: 15,
+        });
+        // row=3 is above the editor rect (y=5).
+        let action = route_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Drag(MouseButton::Left),
+                column: 10,
+                row: 3,
+                modifiers: KeyModifiers::NONE,
+            },
+            &cache,
+            FocusLayer::Editor,
+            crate::state::MenuContext::Pane,
+        );
+        assert!(
+            !matches!(action, Some(Action::EditorDragTo { .. })),
+            "drag outside editor rect should not route to EditorDragTo"
+        );
     }
 }

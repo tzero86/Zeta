@@ -142,6 +142,7 @@ pub enum Action {
     ClearMarks,
     ToggleHiddenFiles,
     TogglePreviewPanel,
+    TogglePreviewFullscreen,
     ToggleEditorFullscreen,
     ToggleTerminalFullscreen,
     ToggleMarkdownPreview,
@@ -168,6 +169,18 @@ pub enum Action {
     OpenSshConnect,
     SshDialogInput(char),
     SshDialogBackspace,
+    /// Move the editor cursor to the cell at (`col`, `row`) in screen coordinates.
+    /// Used for mouse click navigation within the editor viewport.
+    EditorClickAt {
+        col: u16,
+        row: u16,
+    },
+    /// Extend the selection from the current anchor to the cell at (`col`, `row`).
+    /// Used for mouse drag selection within the editor viewport.
+    EditorDragTo {
+        col: u16,
+        row: u16,
+    },
     SshDialogToggleField,
     SshDialogToggleAuthMethod,
     SshConnectConfirm,
@@ -882,6 +895,10 @@ impl Action {
             KeyCode::PageUp => Some(Self::ScrollPreviewPageUp),
             KeyCode::PageDown => Some(Self::ScrollPreviewPageDown),
             KeyCode::Esc => Some(Self::FocusPreviewPanel),
+            KeyCode::F(11) if key_event.modifiers == KeyModifiers::SHIFT => {
+                Some(Self::TogglePreviewFullscreen)
+            }
+            KeyCode::F(11) => Some(Self::TogglePreviewFullscreen),
             KeyCode::Char('w') if key_event.modifiers == KeyModifiers::CONTROL => {
                 Some(Self::CycleFocus)
             }

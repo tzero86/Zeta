@@ -178,6 +178,8 @@ pub struct WorkspaceState {
     editor_fullscreen: bool,
     /// When true, the terminal panel expands to fill the full content area.
     terminal_fullscreen: bool,
+    /// When true, the file preview panel expands to fill the full content area.
+    preview_fullscreen: bool,
     /// Cached git status for [Left=0, Right=1] pane working directories.
     git: [Option<crate::git::RepoStatus>; 2],
     pending_reveal: Option<(PaneId, PathBuf)>,
@@ -209,6 +211,7 @@ impl WorkspaceState {
             file_operation_status: None,
             editor_fullscreen: false,
             terminal_fullscreen: false,
+            preview_fullscreen: false,
             git: [None, None],
             pending_reveal: None,
             pending_collision: None,
@@ -786,6 +789,7 @@ impl AppState {
                 Action::SetPaneLayout(_)
                     | Action::TogglePreviewPanel
                     | Action::ToggleEditorFullscreen
+                    | Action::TogglePreviewFullscreen
                     | Action::ToggleMarkdownPreview
                     | Action::ToggleHiddenFiles
                     | Action::ShrinkLeftPane
@@ -924,6 +928,8 @@ impl AppState {
                     self.editor.markdown_preview_focused = false;
                     self.panes.focus = if self.panes.focus == PaneFocus::Preview {
                         self.set_status(String::from("preview focus returned to file pane"));
+                        // Exit fullscreen when leaving the preview panel.
+                        self.preview_fullscreen = false;
                         PaneFocus::Left
                     } else {
                         self.set_status(String::from("preview panel focused"));
@@ -932,6 +938,7 @@ impl AppState {
                 } else if self.preview.panel_open {
                     if self.panes.focus == PaneFocus::Preview {
                         self.panes.focus = PaneFocus::Left;
+                        self.preview_fullscreen = false;
                     }
                     self.set_status(String::from("preview panel has no content to focus"));
                 }
@@ -1483,6 +1490,16 @@ impl AppState {
                         String::from("editor fullscreen enabled")
                     } else {
                         String::from("editor fullscreen disabled")
+                    });
+                }
+            }
+            Action::TogglePreviewFullscreen => {
+                if self.preview.panel_open {
+                    self.preview_fullscreen = !self.preview_fullscreen;
+                    self.set_status(if self.preview_fullscreen {
+                        String::from("preview fullscreen enabled")
+                    } else {
+                        String::from("preview fullscreen disabled")
                     });
                 }
             }
@@ -3171,6 +3188,10 @@ impl AppState {
 
     pub fn is_terminal_fullscreen(&self) -> bool {
         self.terminal_fullscreen
+    }
+
+    pub fn is_preview_fullscreen(&self) -> bool {
+        self.preview_fullscreen
     }
 
     /// Computes the current UI context for menu/status display.
@@ -6411,5 +6432,77 @@ mod tests {
         state.apply(Action::OpenContextMenu { x: 5, y: 5 }).unwrap();
         state.apply(Action::CloseContextMenu).unwrap();
         assert_eq!(state.focus_layer(), FocusLayer::Pane);
+    }
+
+    // --- TogglePreviewFullscreen -------------------------------------------
+
+    #[test]
+    fn toggle_preview_fullscreen_requires_preview_open() {
+        let mut state = test_state();
+        // Preview panel is closed — toggle should be a no-op.
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "fullscreen must not activate without an open preview"
+        );
+    }
+
+    #[test]
+    fn toggle_preview_fullscreen_on_open_preview_enables_fullscreen() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        // Focus the preview so it is active.
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        assert!(!state.is_preview_fullscreen(), "starts not-fullscreen");
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            state.is_preview_fullscreen(),
+            "should be fullscreen after toggle"
+        );
+    }
+
+    #[test]
+    fn toggle_preview_fullscreen_twice_returns_to_normal() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        state.apply(Action::FocusPreviewPanel).unwrap();
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(state.is_preview_fullscreen());
+
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "second toggle should exit fullscreen"
+        );
+    }
+
+    #[test]
+    fn leaving_preview_focus_resets_preview_fullscreen() {
+        let mut state = test_state();
+        state.preview.panel_open = true;
+        state.preview.view = Some((
+            PathBuf::from("note.txt"),
+            crate::preview::ViewBuffer::from_plain("hello"),
+        ));
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        state.apply(Action::TogglePreviewFullscreen).unwrap();
+        assert!(state.is_preview_fullscreen());
+
+        // Re-focusing preview (or closing) should reset fullscreen.
+        state.apply(Action::FocusPreviewPanel).unwrap();
+        assert!(
+            !state.is_preview_fullscreen(),
+            "fullscreen should reset when leaving preview focus"
+        );
     }
 }

@@ -390,6 +390,74 @@ impl EditorBuffer {
         self.cursor_char_idx = self.text.len_chars();
     }
 
+    /// Move the cursor to the nearest char position for the given logical
+    /// `line` (0-indexed) and `display_col` (tab-expanded column), without
+    /// modifying the selection anchor.
+    pub fn move_to_line_display_col(&mut self, line: usize, display_col: usize, tab_width: u8) {
+        let total = self.text.len_lines();
+        let clamped_line = line.min(total.saturating_sub(1));
+        let line_start = self.text.line_to_char(clamped_line);
+        let raw = self.text.line(clamped_line).to_string();
+        let raw_no_nl = raw.trim_end_matches(['\n', '\r']);
+        let tab_w = tab_width as usize;
+        let mut col = 0usize;
+        let mut char_offset = 0usize;
+        for ch in raw_no_nl.chars() {
+            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
+            if col + ch_width > display_col {
+                break;
+            }
+            col += ch_width;
+            char_offset += 1;
+        }
+        self.cursor_char_idx = line_start + char_offset;
+        self.sel_anchor = None;
+    }
+
+    /// Set (or move) the selection anchor to the nearest char position for the
+    /// given logical `line` and `display_col`, then move the cursor there.
+    /// This begins a new drag-selection from `(line, display_col)`.
+    pub fn start_selection_at_line_display_col(
+        &mut self,
+        line: usize,
+        display_col: usize,
+        tab_width: u8,
+    ) {
+        self.move_to_line_display_col(line, display_col, tab_width);
+        self.sel_anchor = Some(self.cursor_char_idx);
+    }
+
+    /// Extend the selection to the nearest char position for the given logical
+    /// `line` and `display_col`, keeping the existing anchor.
+    pub fn extend_selection_to_line_display_col(
+        &mut self,
+        line: usize,
+        display_col: usize,
+        tab_width: u8,
+    ) {
+        let total = self.text.len_lines();
+        let clamped_line = line.min(total.saturating_sub(1));
+        let line_start = self.text.line_to_char(clamped_line);
+        let raw = self.text.line(clamped_line).to_string();
+        let raw_no_nl = raw.trim_end_matches(['\n', '\r']);
+        let tab_w = tab_width as usize;
+        let mut col = 0usize;
+        let mut char_offset = 0usize;
+        for ch in raw_no_nl.chars() {
+            let ch_width = if ch == '\t' { tab_w - (col % tab_w) } else { 1 };
+            if col + ch_width > display_col {
+                break;
+            }
+            col += ch_width;
+            char_offset += 1;
+        }
+        // If no anchor is set yet, anchor at the current position before moving.
+        if self.sel_anchor.is_none() {
+            self.sel_anchor = Some(self.cursor_char_idx);
+        }
+        self.cursor_char_idx = line_start + char_offset;
+    }
+
     /// Map a char index within an original (non-tab-expanded) line string to
     /// the display column, accounting for tab stops.
     fn char_to_display_col(line: &str, char_idx: usize, tab_width: usize) -> usize {
@@ -459,19 +527,51 @@ impl EditorBuffer {
                 }
                 let line_char_start = self.text.line_to_char(logi);
                 let raw_line = self.text.line(logi).to_string();
-                let raw_line_no_nl = raw_line.trim_end_matches('\n');
+                // Strip both Unix (\n) and Windows (\r\n) line endings so that
+                // the trailing newline char is not counted as content.  This is
+                // what caused empty-looking lines (markdown table rows, blank
+                // lines inside fenced code blocks) to appear unselected.
+                let raw_line_no_nl = raw_line.trim_end_matches('\n').trim_end_matches('\r');
                 let raw_len = raw_line_no_nl.chars().count();
-                let line_char_end = line_char_start + raw_len;
-                // No overlap with selection.
-                if sel_end <= line_char_start || sel_start >= line_char_end {
+
+                // line_char_end is the exclusive char boundary of the
+                // *visible* content (no newline).  For an empty line (e.g. a
+                // blank line between paragraphs) raw_len == 0 and
+                // line_char_end == line_char_start.  We still want to mark it
+                // as selected when the selection spans through it, so we treat
+                // it as having 1 virtual char of width for the overlap check.
+                let line_char_end_content = line_char_start + raw_len;
+                // The actual char occupied by the newline (if present) sits at
+                // line_char_end_content.  A selection that covers it should
+                // highlight the line.
+                let line_char_end_with_nl =
+                    line_char_end_content + if raw_line.ends_with('\n') { 1 } else { 0 };
+
+                // No overlap: selection ends before this line starts, or starts
+                // at or after the newline (i.e. on the next line).
+                if sel_end <= line_char_start || sel_start >= line_char_end_with_nl {
                     return None;
                 }
+
+                // For empty lines that are within the selection, highlight the
+                // entire (zero-width) row.  Returning Some((0, 0)) is a signal
+                // to the renderer to draw a full-row highlight.
+                if raw_len == 0 {
+                    return Some((0, 0));
+                }
+
                 let rel_start = sel_start.saturating_sub(line_char_start);
                 let rel_end = (sel_end - line_char_start).min(raw_len);
                 let disp_start = Self::char_to_display_col(raw_line_no_nl, rel_start, tab_w);
                 let disp_end = Self::char_to_display_col(raw_line_no_nl, rel_end, tab_w);
+                // Ensure we always return a non-degenerate range for lines that
+                // are visually non-empty.
                 if disp_start < disp_end {
                     Some((disp_start, disp_end))
+                } else if raw_len > 0 {
+                    // Entire line is selected but display cols collapsed (e.g. all
+                    // tabs expand to the same position).  Fall back to full line.
+                    Some((0, disp_end.max(1)))
                 } else {
                     None
                 }
@@ -1351,6 +1451,194 @@ mod tests {
         let count = buf.replace_all("bar");
         assert_eq!(count, 3);
         assert_eq!(buf.contents(), "bar bar bar");
+    }
+
+    // --- visible_selection_display_ranges / selection skipping fix ---------
+
+    /// Helper: build a visible_lines vec from a buffer's content for the
+    /// first `n` logical lines (no wrap, no gutter stripping needed here).
+    fn make_visible_lines(buf: &EditorBuffer, start: usize, count: usize) -> Vec<String> {
+        (start..start + count)
+            .map(|i| {
+                if i < buf.text.len_lines() {
+                    buf.text.line(i).to_string()
+                } else {
+                    String::new()
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn selection_covers_empty_line_between_paragraphs() {
+        // "alpha\n\nbeta\n"  — line 1 is completely empty.
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "alpha\n\nbeta\n");
+        // SelectAll spans chars 0..12.
+        buf.sel_anchor = Some(0);
+        buf.cursor_char_idx = buf.text.len_chars();
+
+        let vis = make_visible_lines(&buf, 0, 3);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        // Line 0 (alpha): fully selected.
+        assert!(ranges[0].is_some(), "line 0 'alpha' should be selected");
+        // Line 1 (empty): must also be marked selected.
+        assert!(ranges[1].is_some(), "empty line 1 should be selected");
+        // Line 2 (beta): fully selected.
+        assert!(ranges[2].is_some(), "line 2 'beta' should be selected");
+    }
+
+    #[test]
+    fn selection_covers_blank_line_in_markdown_table() {
+        // A minimal markdown table with a separator row that looks "blank" from
+        // the perspective of non-newline characters.
+        let content = "| A | B |\n| - | - |\n| 1 | 2 |\n";
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, content);
+        buf.sel_anchor = Some(0);
+        buf.cursor_char_idx = buf.text.len_chars();
+
+        let vis = make_visible_lines(&buf, 0, 3);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        // All three rows of the table must be selected.
+        assert!(ranges[0].is_some(), "header row should be selected");
+        assert!(ranges[1].is_some(), "separator row should be selected");
+        assert!(ranges[2].is_some(), "data row should be selected");
+    }
+
+    #[test]
+    fn selection_covers_empty_line_after_backtick_fence() {
+        // Fenced code block with a blank line inside.
+        let content = "```\nhello\n\nworld\n```\n";
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, content);
+        buf.sel_anchor = Some(0);
+        buf.cursor_char_idx = buf.text.len_chars();
+
+        let vis = make_visible_lines(&buf, 0, 5);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        // Line 0: ```  Line 1: hello  Line 2: (blank)  Line 3: world  Line 4: ```
+        assert!(ranges[0].is_some(), "opening fence should be selected");
+        assert!(ranges[1].is_some(), "'hello' line should be selected");
+        assert!(
+            ranges[2].is_some(),
+            "blank line inside fence should be selected"
+        );
+        assert!(ranges[3].is_some(), "'world' line should be selected");
+        assert!(ranges[4].is_some(), "closing fence should be selected");
+    }
+
+    #[test]
+    fn selection_does_not_select_lines_outside_range() {
+        // Only lines 1-2 selected, not line 0.
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "first\nsecond\nthird\n");
+        // Chars: first\n = 0..6, second\n = 6..13, third\n = 13..19
+        buf.sel_anchor = Some(6); // start of "second"
+        buf.cursor_char_idx = 19; // end of "third\n"
+
+        let vis = make_visible_lines(&buf, 0, 3);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        assert!(ranges[0].is_none(), "line 0 should NOT be selected");
+        assert!(ranges[1].is_some(), "line 1 'second' should be selected");
+        assert!(ranges[2].is_some(), "line 2 'third' should be selected");
+    }
+
+    #[test]
+    fn selection_with_crlf_line_endings_covers_all_lines() {
+        // Windows-style CRLF should not confuse the selection logic.
+        let content = "line1\r\n\r\nline3\r\n";
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, content);
+        buf.sel_anchor = Some(0);
+        buf.cursor_char_idx = buf.text.len_chars();
+
+        let vis = make_visible_lines(&buf, 0, 3);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        assert!(ranges[0].is_some(), "line 0 should be selected with CRLF");
+        assert!(
+            ranges[1].is_some(),
+            "empty line should be selected with CRLF"
+        );
+        assert!(ranges[2].is_some(), "line 2 should be selected with CRLF");
+    }
+
+    #[test]
+    fn selection_single_line_returns_correct_display_range() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "hello world\n");
+        // Select "world" — chars 6..11.
+        buf.sel_anchor = Some(6);
+        buf.cursor_char_idx = 11;
+
+        let vis = make_visible_lines(&buf, 0, 1);
+        let ranges = buf.visible_selection_display_ranges(0, &vis, 4, false);
+
+        let range = ranges[0].expect("single line should have a selection range");
+        assert_eq!(range, (6, 11), "display range should match 'world' offsets");
+    }
+
+    // --- mouse click / drag position resolution ----------------------------
+
+    #[test]
+    fn move_to_line_display_col_moves_cursor_correctly() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "hello\nworld\n");
+        // Click at line 1, display col 3 → should land on 'l' of "world".
+        buf.move_to_line_display_col(1, 3, 4);
+        // "world" starts at char 6; col 3 puts us at char 6+3 = 9.
+        assert_eq!(buf.cursor_char_idx, 9);
+        assert!(buf.sel_anchor.is_none(), "move_to should clear anchor");
+    }
+
+    #[test]
+    fn start_selection_at_sets_anchor_and_cursor() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "abcdef\n");
+        buf.start_selection_at_line_display_col(0, 2, 4);
+        assert_eq!(buf.cursor_char_idx, 2);
+        assert_eq!(
+            buf.sel_anchor,
+            Some(2),
+            "anchor should be set at click point"
+        );
+    }
+
+    #[test]
+    fn extend_selection_to_creates_range() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "hello\nworld\n");
+        // Click at start of "hello".
+        buf.start_selection_at_line_display_col(0, 0, 4);
+        // Drag to end of "world".
+        buf.extend_selection_to_line_display_col(1, 5, 4);
+        let range = buf.selection_range().expect("should have selection");
+        // Anchor=0, cursor=11 (after "world").
+        assert_eq!(range, (0, 11));
+    }
+
+    #[test]
+    fn move_to_line_display_col_clamps_to_last_line() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "only\n");
+        // Request a line far beyond the buffer — should clamp.
+        buf.move_to_line_display_col(999, 0, 4);
+        assert!(buf.cursor_char_idx <= buf.text.len_chars());
+    }
+
+    #[test]
+    fn move_to_line_display_col_clamps_to_line_end() {
+        let mut buf = EditorBuffer::default();
+        buf.insert(0, "hi\n");
+        // Request a display col far beyond the line length.
+        buf.move_to_line_display_col(0, 999, 4);
+        // Should sit at the end of "hi" (char 2, before the newline).
+        assert_eq!(buf.cursor_char_idx, 2);
     }
 
     // --- performance -------------------------------------------------------
