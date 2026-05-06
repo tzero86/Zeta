@@ -40,7 +40,6 @@ use crate::fs;
 use crate::fs::EntryKind;
 use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
 use crate::pane::{InlineRenameState, PaneId, PaneState};
-use crate::screensaver::ScreensaverState;
 pub use ssh::*;
 
 pub use bookmarks::BookmarksState;
@@ -299,8 +298,6 @@ pub struct AppState {
     pub update_pulse_frame: u8,
     /// Whether the context-aware quick-reference cheatsheet overlay is visible.
     pub show_cheatsheet: bool,
-    /// Weather-themed ASCII screensaver state.
-    pub screensaver: ScreensaverState,
 }
 
 impl AppState {
@@ -461,10 +458,6 @@ impl AppState {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
-            screensaver: ScreensaverState::new(
-                loaded_config.config.screensaver_timeout_secs,
-                loaded_config.config.screensaver_enabled,
-            ),
         })
     }
 
@@ -658,15 +651,6 @@ impl AppState {
                         String::from("terminal fullscreen disabled")
                     });
                 }
-            }
-            Action::ActivateScreensaver => {
-                self.screensaver.active = true;
-                self.set_needs_redraw();
-            }
-            Action::DismissScreensaver => {
-                self.screensaver.active = false;
-                self.screensaver.last_interaction = Instant::now();
-                self.set_needs_redraw();
             }
             _ => {
                 let cwd = self.panes.active_pane().cwd.clone();
@@ -3095,32 +3079,6 @@ impl AppState {
                 });
                 let _ = self.config.save(Path::new(&self.config_path));
             }
-            SettingsField::ScreensaverEnabled(v) => {
-                let next = !v;
-                self.config.screensaver_enabled = next;
-                self.screensaver.enabled = next;
-                self.set_status(if next {
-                    String::from("screensaver enabled")
-                } else {
-                    String::from("screensaver disabled")
-                });
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
-            SettingsField::ScreensaverTimeout(v) => {
-                let next = match v {
-                    0 => 30,
-                    30 => 60,
-                    60 => 120,
-                    120 => 300,
-                    300 => 600,
-                    600 => 1800,
-                    _ => 0,
-                };
-                self.config.screensaver_timeout_secs = next;
-                self.screensaver.timeout_secs = next;
-                self.set_status(format!("screensaver timeout set to {next}s"));
-                let _ = self.config.save(Path::new(&self.config_path));
-            }
             SettingsField::EditorTabWidth(current) => {
                 let next = match current {
                     2 => 4,
@@ -3230,11 +3188,6 @@ impl AppState {
     /// Derive the current input focus layer from state.
     /// Priority (highest → lowest): Palette > FileFinder > Collision > DestructiveConfirm > UpdatePrompt > Prompt > Dialog > Menu > Settings > Bookmarks > PaneFilter > MarkdownPreview > Editor > Preview > Pane.
     pub fn focus_layer(&self) -> FocusLayer {
-        // Screensaver must be checked first — it captures all input regardless of
-        // what other panels (editor, preview, terminal) happen to be open.
-        if self.screensaver.active {
-            return FocusLayer::Screensaver;
-        }
         if self.is_palette_open() {
             return FocusLayer::Modal(ModalKind::Palette);
         }
@@ -3735,22 +3688,6 @@ impl AppState {
                 field: SettingsField::PreviewOnSelection,
             },
             SettingsEntry {
-                label: "Screensaver",
-                value: if self.config.screensaver_enabled {
-                    String::from("on")
-                } else {
-                    String::from("off")
-                },
-                hint: "Space",
-                field: SettingsField::ScreensaverEnabled(self.config.screensaver_enabled),
-            },
-            SettingsEntry {
-                label: "Screensaver timeout",
-                value: format!("{}s", self.config.screensaver_timeout_secs),
-                hint: "Space",
-                field: SettingsField::ScreensaverTimeout(self.config.screensaver_timeout_secs),
-            },
-            SettingsEntry {
                 label: "Terminal on startup",
                 value: if self.config.terminal_open_by_default {
                     String::from("yes")
@@ -3863,8 +3800,6 @@ impl AppState {
                             | SettingsField::PreviewPanel
                             | SettingsField::PreviewOnSelection
                             | SettingsField::TerminalOpenByDefault
-                            | SettingsField::ScreensaverEnabled(_)
-                            | SettingsField::ScreensaverTimeout(_)
                     )
                 })
                 .collect(),
@@ -4164,7 +4099,6 @@ mod tests {
     use crate::fs::{EntryInfo, EntryKind};
     use crate::jobs::{FileOperationIdentity, FileOperationStatus, JobResult};
     use crate::pane::{InlineRenameState, PaneId, PaneState, SortMode};
-    use crate::screensaver::ScreensaverState;
     use crate::state::DebugState;
 
     use super::{
@@ -4609,7 +4543,6 @@ mod tests {
             update_state: UpdateState::default(),
             update_pulse_frame: 0,
             show_cheatsheet: false,
-            screensaver: ScreensaverState::new(300, true),
         }
     }
 
