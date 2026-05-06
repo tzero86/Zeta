@@ -1363,29 +1363,7 @@ fn route_menu_bar_click(
 fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!();
     println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
-    println!("   This may take a few minutes.");
     println!();
-
-    // On Windows, the current exe file is locked by our running process.
-    // cargo install builds a new binary in a temp dir and then tries to move it
-    // to replace the original — that move fails with "Access is denied" (os error 5)
-    // because Windows won't replace a file that belongs to a running process.
-    //
-    // Renaming the current exe is allowed even while it is running (the OS holds a
-    // handle to the inode, not the path), so we park the old binary under a .bak
-    // name to free the destination slot, run cargo install, then clean up.
-    #[cfg(windows)]
-    let (original_exe, backup_path) = {
-        let exe = std::env::current_exe().context("could not resolve current executable path")?;
-        let bak = exe.with_extension("exe.bak");
-        match std::fs::rename(&exe, &bak) {
-            Ok(()) => (exe, Some(bak)),
-            Err(e) => {
-                eprintln!("⚠️  Could not rename current exe before update ({e}). Proceeding anyway — install may fail.");
-                (exe, None)
-            }
-        }
-    };
 
     let mut cargo_args = vec!["install", "--git", "https://github.com/tzero86/Zeta"];
     // Pin to the exact release tag when available so we install a reproducible build.
@@ -1394,6 +1372,69 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     }
     cargo_args.push("--locked");
 
+    // On Windows, running cargo install synchronously in the same console session
+    // keeps this process alive for the entire build (potentially several minutes).
+    // When the process finally exits, Windows Terminal may restart the profile if
+    // the session is configured to run zeta directly, or the terminal host may
+    // redraw stale content from cargo's progress output — either way the new TUI
+    // appears as a ghost frame before the shell prompt is restored.
+    //
+    // Fix: rename the current exe to free the install target path (the same rename
+    // trick as before), then immediately hand off to a new console window and exit.
+    // The build runs completely independently; the original terminal session is
+    // already idle before cargo even starts, eliminating the race.
+    //
+    // On Unix, exec() replaces the process image in-place so the shell waits on
+    // the same PID and the new binary takes over the terminal cleanly.
+    #[cfg(windows)]
+    {
+        // Renaming is allowed even for a running exe (the OS holds an inode handle,
+        // not a path handle), so this frees the destination slot for cargo install.
+        let exe = std::env::current_exe().context("could not resolve current executable path")?;
+        let bak = exe.with_extension("exe.bak");
+        if let Err(e) = std::fs::rename(&exe, &bak) {
+            eprintln!(
+                "⚠️  Could not rename current exe before update ({e}). \
+                 Proceeding anyway — install may fail."
+            );
+        }
+
+        // Build the command string that the new window will execute.
+        // On success it prints a confirmation; on failure it prints instructions.
+        // `pause` keeps the window open so the user can read the result.
+        let cargo_cmd = format!("cargo {}", cargo_args.join(" "));
+        let script = format!(
+            "{cargo_cmd} \
+            && (echo. & echo [OK] Update installed. Run 'zeta' to start the new version. & pause) \
+            || (echo. & echo [FAIL] cargo install failed. & echo. & echo Run: {cargo_cmd} & pause)"
+        );
+
+        // Spawn a completely independent console window.  `cmd /c start` launches
+        // a new window and exits immediately, so this process is free to exit
+        // before cargo build even begins.
+        match std::process::Command::new("cmd")
+            .args(["/c", "start", "Zeta Update", "cmd.exe", "/k", &script])
+            .spawn()
+        {
+            Ok(_) => {
+                println!("🔄 Update started in a new window (\"Zeta Update\").");
+                println!("   That window shows build progress and waits for a keypress when done.");
+                println!("   Then run 'zeta' to start the updated version.");
+                println!();
+                // Any leftover .bak that could not be deleted here will be cleaned up
+                // by cleanup_update_backup() on the next zeta launch.
+                return Ok(());
+            }
+            Err(e) => {
+                // Could not open the update window — restore the backup so the user
+                // still has a working binary.
+                let _ = std::fs::rename(&bak, &exe);
+                return Err(anyhow::anyhow!("failed to open update window: {e}"));
+            }
+        }
+    }
+
+    // Non-Windows path: run cargo install synchronously then exec() into the new binary.
     let status = std::process::Command::new("cargo")
         .args(&cargo_args)
         .status()
@@ -1410,58 +1451,25 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
         })?;
 
     if status.success() {
-        // Best-effort: remove the parked backup. This may fail if the OS still
-        // holds the file open; it will be cleaned up on next launch instead.
-        #[cfg(windows)]
-        if let Some(bak) = &backup_path {
-            let _ = std::fs::remove_file(bak);
-        }
-
         println!();
         println!("✅ Update installed successfully!");
         println!();
 
-        // On Windows, spawning a child that shares the parent console causes a
-        // race: the shell reclaims the console when the parent exits, so the
-        // new Zeta process and the shell prompt fight over the same window.
-        // The result is a TUI that flashes once and then dies or appears
-        // corrupted.  Tell the user to restart manually instead.
-        //
-        // On Unix, exec() replaces the current process image in-place, so the
-        // shell continues waiting for the same PID and the new binary takes
-        // over the terminal cleanly.
-        #[cfg(windows)]
-        {
-            println!("   Run 'zeta' to start the updated version.");
-            println!();
-        }
         #[cfg(not(windows))]
         {
             println!("   Relaunching Zeta...");
             println!();
-            // Relaunch from the freshly-installed binary, not from the backup path.
             relaunch_self()?;
         }
     } else {
-        // Restore the backup so the user still has a working binary.
-        #[cfg(windows)]
-        if let Some(bak) = &backup_path {
-            if let Err(e) = std::fs::rename(bak, &original_exe) {
-                eprintln!("⚠️  Could not restore backup exe: {e}");
-                eprintln!("    Your backup is at: {}", bak.display());
-            }
-        }
-
         eprintln!();
         eprintln!(
             "❌ Update failed (cargo install exited with {:?})",
             status.code()
         );
         eprintln!();
-        eprintln!("   To install manually, close Zeta completely and run:");
+        eprintln!("   To install manually, run:");
         eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
-        eprintln!();
-        eprintln!("   (On Windows, Zeta must not be running when cargo installs the update.)");
         eprintln!();
         return Err(anyhow::anyhow!(
             "cargo install failed with exit code {:?}",
