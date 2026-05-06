@@ -46,6 +46,9 @@ pub struct App {
     last_clock_second: u8,
     /// Tracks a pending Ctrl+Q press for double-press confirmation.
     pending_quit: Option<std::time::Instant>,
+    /// Time of the last forced full repaint.  Used to schedule periodic full repaints
+    /// as a catch-all for terminals that don't emit FocusGained / Resize on restore.
+    last_forced_full_redraw: std::time::Instant,
 }
 
 impl App {
@@ -72,6 +75,7 @@ impl App {
             config_path,
             last_clock_second: 255, // force redraw on first tick
             pending_quit: None,
+            last_forced_full_redraw: Instant::now(),
         };
 
         for command in app.state.initial_commands() {
@@ -295,6 +299,17 @@ impl App {
                 self.last_clock_second = current_second;
                 self.state.set_needs_redraw();
             }
+            // Periodic full repaint every 30 s.  This is a catch-all for terminals
+            // that don't emit FocusGained (focus-change escape not supported) and
+            // don't send a Resize event when the window is restored.  After a long
+            // idle period the screen can appear frozen; the periodic clear+redraw
+            // ensures the display is always refreshed within 30 s of being stale.
+            const FORCED_REDRAW_INTERVAL: Duration = Duration::from_secs(30);
+            if self.last_forced_full_redraw.elapsed() >= FORCED_REDRAW_INTERVAL {
+                self.state.set_full_redraw();
+                self.state.set_needs_redraw();
+                self.last_forced_full_redraw = std::time::Instant::now();
+            }
             return Ok(());
         }
 
@@ -309,7 +324,13 @@ impl App {
             }
             Event::Resize(width, height) => {
                 self.handle_event(AppEvent::Resize { width, height })?;
+                // Always force a full repaint on resize.  Restoring a minimised window
+                // reliably sends a Resize event on virtually every terminal/OS, making
+                // this more dependable than FocusGained (which requires terminal support
+                // for the EnableFocusChange escape sequence).
+                self.state.set_full_redraw();
                 self.state.set_needs_redraw();
+                self.last_forced_full_redraw = std::time::Instant::now();
             }
             // When the terminal regains focus, force a full repaint so ratatui's
             // differential renderer doesn't apply a diff to a potentially corrupted
@@ -317,6 +338,7 @@ impl App {
             Event::FocusGained => {
                 self.state.set_full_redraw();
                 self.state.set_needs_redraw();
+                self.last_forced_full_redraw = std::time::Instant::now();
             }
             _ => {}
         }
@@ -2218,12 +2240,38 @@ mod tests {
         let mut state =
             AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
 
-        // Normal key / mouse / resize events must NOT set the full_redraw flag.
+        // Key / mouse events must NOT set the full_redraw flag.
         state.mark_drawn();
         state.set_needs_redraw(); // key event
         assert!(
             !state.take_full_redraw(),
-            "regular events must not trigger a full terminal clear"
+            "key/mouse events must not trigger a full terminal clear"
+        );
+    }
+
+    /// Resize events must trigger a full repaint.  When a window is restored from
+    /// minimised the OS emits a Resize event on virtually every terminal/platform.
+    /// This is more reliable than FocusGained which requires terminal support for
+    /// the EnableFocusChange escape sequence.
+    #[test]
+    fn resize_event_triggers_full_redraw() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        state.mark_drawn();
+        // Simulate what process_next_event does on Event::Resize.
+        state.set_full_redraw();
+        state.set_needs_redraw();
+
+        assert!(state.needs_redraw(), "Resize must set needs_redraw");
+        assert!(
+            state.take_full_redraw(),
+            "Resize must set full_redraw so terminal.clear() is called on restore"
         );
     }
 }
