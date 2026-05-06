@@ -46,9 +46,6 @@ pub struct App {
     last_clock_second: u8,
     /// Tracks a pending Ctrl+Q press for double-press confirmation.
     pending_quit: Option<std::time::Instant>,
-    /// Time of the last forced full repaint.  Used to schedule periodic full repaints
-    /// as a catch-all for terminals that don't emit FocusGained / Resize on restore.
-    last_forced_full_redraw: std::time::Instant,
 }
 
 impl App {
@@ -75,7 +72,6 @@ impl App {
             config_path,
             last_clock_second: 255, // force redraw on first tick
             pending_quit: None,
-            last_forced_full_redraw: Instant::now(),
         };
 
         for command in app.state.initial_commands() {
@@ -299,17 +295,6 @@ impl App {
                 self.last_clock_second = current_second;
                 self.state.set_needs_redraw();
             }
-            // Periodic full repaint every 30 s.  This is a catch-all for terminals
-            // that don't emit FocusGained (focus-change escape not supported) and
-            // don't send a Resize event when the window is restored.  After a long
-            // idle period the screen can appear frozen; the periodic clear+redraw
-            // ensures the display is always refreshed within 30 s of being stale.
-            const FORCED_REDRAW_INTERVAL: Duration = Duration::from_secs(30);
-            if self.last_forced_full_redraw.elapsed() >= FORCED_REDRAW_INTERVAL {
-                self.state.set_full_redraw();
-                self.state.set_needs_redraw();
-                self.last_forced_full_redraw = std::time::Instant::now();
-            }
             return Ok(());
         }
 
@@ -330,7 +315,6 @@ impl App {
                 // for the EnableFocusChange escape sequence).
                 self.state.set_full_redraw();
                 self.state.set_needs_redraw();
-                self.last_forced_full_redraw = std::time::Instant::now();
             }
             // When the terminal regains focus, force a full repaint so ratatui's
             // differential renderer doesn't apply a diff to a potentially corrupted
@@ -338,7 +322,6 @@ impl App {
             Event::FocusGained => {
                 self.state.set_full_redraw();
                 self.state.set_needs_redraw();
-                self.last_forced_full_redraw = std::time::Instant::now();
             }
             _ => {}
         }
