@@ -27,7 +27,6 @@ use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
 use crate::pane::PaneId;
-use crate::screensaver;
 use crate::state::{AppState, MessageKind, PaneLayout};
 use crate::ui::bookmarks::render_bookmarks_modal;
 use crate::ui::editor_textarea::{render_textarea_editor, RenderTextareaEditorArgs};
@@ -419,11 +418,6 @@ pub fn render(frame: &mut Frame<'_>, state: &mut AppState) -> LayoutCache {
 
     render_status_bar(frame, areas[2], state, palette);
     render_key_hints(frame, areas[3], state, palette);
-
-    // Screensaver overlay (renders on top of everything)
-    if state.screensaver.active {
-        screensaver::render_screensaver(&state.screensaver, areas[1], frame.buffer_mut());
-    }
 
     // Debug panel renders last so it always floats above everything else.
     debug::render_debug_panel(frame, areas[1], state);

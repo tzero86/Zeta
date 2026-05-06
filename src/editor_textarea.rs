@@ -798,8 +798,11 @@ impl TextAreaAdapter {
         let gutter_width = (line_count.ilog10() + 1 + 2) as u16;
         self.viewport_content_width = (area.width.saturating_sub(gutter_width)) as usize;
         let cursor_col = self.inner.cursor().1;
-        self.viewport_col_left =
-            Self::next_scroll_left(self.viewport_col_left, cursor_col, self.viewport_content_width);
+        self.viewport_col_left = Self::next_scroll_left(
+            self.viewport_col_left,
+            cursor_col,
+            self.viewport_content_width,
+        );
         self.scroll_col = self.viewport_col_left;
     }
 

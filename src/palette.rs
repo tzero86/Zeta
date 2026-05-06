@@ -329,12 +329,6 @@ pub fn all_entries() -> Vec<PaletteEntry> {
         },
         PaletteEntry {
             category: "System",
-            label: "Activate screensaver",
-            hint: "",
-            action: Action::ActivateScreensaver,
-        },
-        PaletteEntry {
-            category: "System",
             label: "Help",
             hint: "F1",
             action: Action::OpenHelpDialog,

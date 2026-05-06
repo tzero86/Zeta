@@ -41,8 +41,6 @@ pub struct App {
     config_path: std::path::PathBuf,
     /// Last second value displayed in the clock; used to trigger a redraw each second.
     last_clock_second: u8,
-    /// Tracks the last time any user interaction (key/mouse/resize) occurred.
-    last_interaction: std::time::Instant,
     /// Tracks a pending Ctrl+Q press for double-press confirmation.
     pending_quit: Option<std::time::Instant>,
 }
@@ -70,7 +68,6 @@ impl App {
             last_pane_click: None,
             config_path,
             last_clock_second: 255, // force redraw on first tick
-            last_interaction: std::time::Instant::now(),
             pending_quit: None,
         };
 
@@ -123,18 +120,7 @@ impl App {
                     // corrupts the output buffer and can panic on dimension arithmetic.
                     if size.width == 0 || size.height == 0 {
                         self.state.mark_drawn();
-                        // The screensaver frame timer in process_next_event will
-                        // reschedule a redraw once valid dimensions are restored.
                     } else {
-                        // Screensaver animation frame tick
-                        if self.state.screensaver.active {
-                            let now = std::time::Instant::now();
-                            let delta = (now - self.state.screensaver.last_frame).as_secs_f64();
-                            if delta >= 1.0 / 12.0 {
-                                self.state.screensaver.tick(size.width, size.height, delta);
-                                self.state.screensaver.last_frame = now;
-                            }
-                        }
                         let mut cache = LayoutCache::default();
                         terminal.draw(|frame| {
                             cache = ui::render(frame, &mut self.state);
@@ -151,12 +137,6 @@ impl App {
                             }
                         }
                         self.state.mark_drawn(); // clears needs_redraw
-                        // Screensaver next-frame scheduling is handled by the idle-tick
-                        // check in process_next_event (capped at ~12 FPS) so we do NOT
-                        // call set_needs_redraw() here.  The old pattern of setting it
-                        // immediately caused a ~60 FPS render loop that flooded the PTY
-                        // write buffer when the terminal window was minimized, eventually
-                        // blocking the write syscall and freezing the entire event loop.
                     }
                 }
             }
@@ -294,26 +274,6 @@ impl App {
             if let Some(command) = self.state.preview_command_due() {
                 self.execute_command(command)?;
             }
-            // Screensaver idle detection
-            if !self.state.screensaver.active
-                && self.state.screensaver.enabled
-                && self.state.screensaver.timeout_secs > 0
-                && self.last_interaction.elapsed()
-                    > std::time::Duration::from_secs(self.state.screensaver.timeout_secs)
-            {
-                self.state.screensaver.active = true;
-                self.state.set_needs_redraw();
-            }
-            // Screensaver animation cadence: schedule the next frame only when the
-            // frame interval (~83 ms for 12 FPS) has actually elapsed.  This caps
-            // PTY writes at 12 FPS instead of the ~60 FPS spin that the old
-            // "set_needs_redraw after every draw" pattern produced, preventing the
-            // PTY output buffer from filling up when the terminal is minimized.
-            if self.state.screensaver.active
-                && self.state.screensaver.last_frame.elapsed().as_secs_f64() >= 1.0 / 12.0
-            {
-                self.state.set_needs_redraw();
-            }
             // Trigger a redraw whenever the wall-clock second advances so the status
             // bar clock stays live even when the user isn't pressing keys.
             let current_second = (std::time::SystemTime::now()
@@ -343,8 +303,6 @@ impl App {
             }
             _ => {}
         }
-
-        self.last_interaction = std::time::Instant::now();
 
         Ok(())
     }
@@ -1083,7 +1041,6 @@ fn route_key_event(
             }
             Action::from_pane_key_event(key_event, keymap)
         }
-        FocusLayer::Screensaver => Some(Action::DismissScreensaver),
     }
 }
 
@@ -1104,11 +1061,6 @@ fn route_mouse_event(
     // cannot diverge from the file that will actually be renamed.
     if matches!(focus, FocusLayer::PaneInlineRename) {
         return None;
-    }
-
-    // Screensaver: any mouse click dismisses it.
-    if matches!(focus, FocusLayer::Screensaver) {
-        return Some(Action::DismissScreensaver);
     }
 
     match event.kind {
