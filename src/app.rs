@@ -438,32 +438,28 @@ impl App {
                                             .unwrap_or_else(|_| "user".to_string()),
                                         address
                                     );
-                                    self.workers
-                                        .sftp_tx
-                                        .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                                    // Use try_send so a full channel never blocks the event loop.
+                                    let _ = self.workers.sftp_tx.try_send(jobs::SftpRequest::Scan(
+                                        jobs::SftpScanRequest {
                                             workspace_id,
                                             pane,
                                             path: scan_path,
                                             session_id,
-                                        }))
-                                        .context("failed to queue SFTP scan job")?;
+                                        },
+                                    ));
                                 } else {
-                                    self.workers
-                                        .scan_tx
-                                        .send(ScanRequest {
-                                            workspace_id,
-                                            pane,
-                                            path: scan_path.clone(),
-                                        })
-                                        .context("failed to queue background scan job")?;
-                                    self.workers
-                                        .git_tx
-                                        .send(GitStatusRequest {
-                                            workspace_id,
-                                            pane,
-                                            path: scan_path,
-                                        })
-                                        .context("failed to queue git status job")?;
+                                    // Background refresh jobs: drop silently when workers are
+                                    // backlogged rather than blocking the main thread.
+                                    let _ = self.workers.scan_tx.try_send(ScanRequest {
+                                        workspace_id,
+                                        pane,
+                                        path: scan_path.clone(),
+                                    });
+                                    let _ = self.workers.git_tx.try_send(GitStatusRequest {
+                                        workspace_id,
+                                        pane,
+                                        path: scan_path,
+                                    });
                                 }
                             }
                         }
@@ -492,15 +488,17 @@ impl App {
                         let ws = *workspace_id;
                         let p = *pane;
                         let sid = session_id.clone();
-                        self.workers
-                            .sftp_tx
-                            .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                        // Use try_send: if sftp_tx is full the scan will be re-triggered
+                        // after the existing jobs drain.  A blocking send here would stall
+                        // the event loop and kill keyboard responsiveness.
+                        let _ = self.workers.sftp_tx.try_send(jobs::SftpRequest::Scan(
+                            jobs::SftpScanRequest {
                                 workspace_id: ws,
                                 pane: p,
                                 path: std::path::PathBuf::from("/"),
                                 session_id: sid,
-                            }))
-                            .context("failed to queue SFTP home scan")?;
+                            },
+                        ));
                     }
                     let scanned_target =
                         if let JobResult::DirectoryScanned {
@@ -601,10 +599,10 @@ impl App {
         } else {
             Some(self.config_path.clone())
         };
-        self.workers
+        let _ = self
+            .workers
             .watch_tx
-            .send(WatchRequest { paths, config_path })
-            .context("failed to update watched directories")?;
+            .try_send(WatchRequest { paths, config_path });
         Ok(())
     }
 
@@ -722,17 +720,16 @@ impl App {
                         }
                     }
                 }
-                self.workers
-                    .preview_tx
-                    .send(PreviewRequest {
-                        workspace_id,
-                        path,
-                        syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
-                        archive,
-                        inner_path: inner,
-                        picker: self.state.image_picker().clone(),
-                    })
-                    .context("failed to queue background preview job")?;
+                // Preview requests are triggered by cursor movement and can arrive
+                // faster than the worker can consume them.  Drop silently when full.
+                let _ = self.workers.preview_tx.try_send(PreviewRequest {
+                    workspace_id,
+                    path,
+                    syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
+                    archive,
+                    inner_path: inner,
+                    picker: self.state.image_picker().clone(),
+                });
             }
             Command::RunFileOperation {
                 operation,
@@ -819,22 +816,16 @@ impl App {
                         }
                         self.post_scan_completed(workspace_id, pane)?;
                     } else {
-                        self.workers
-                            .scan_tx
-                            .send(ScanRequest {
-                                workspace_id,
-                                pane,
-                                path: path.clone(),
-                            })
-                            .context("failed to queue background scan job")?;
-                        self.workers
-                            .git_tx
-                            .send(GitStatusRequest {
-                                workspace_id,
-                                pane,
-                                path,
-                            })
-                            .context("failed to queue git status job")?;
+                        let _ = self.workers.scan_tx.try_send(ScanRequest {
+                            workspace_id,
+                            pane,
+                            path: path.clone(),
+                        });
+                        let _ = self.workers.git_tx.try_send(GitStatusRequest {
+                            workspace_id,
+                            pane,
+                            path,
+                        });
                     }
                 }
             }
@@ -935,23 +926,25 @@ impl App {
                     .context("failed to queue terminal spawn job")?;
             }
             Command::WriteTerminal(bytes) => {
-                self.workers
+                // PTY writes can arrive faster than the worker drains them.  Use
+                // try_send so a backlogged terminal worker never stalls the event loop.
+                let _ = self
+                    .workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Write {
+                    .try_send(crate::jobs::TerminalRequest::Write {
                         workspace_id: self.state.active_workspace_index(),
                         bytes,
-                    })
-                    .context("failed to queue terminal write job")?;
+                    });
             }
             Command::ResizeTerminal { cols, rows } => {
-                self.workers
+                let _ = self
+                    .workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Resize {
+                    .try_send(crate::jobs::TerminalRequest::Resize {
                         workspace_id: self.state.active_workspace_index(),
                         cols,
                         rows,
-                    })
-                    .context("failed to queue terminal resize job")?;
+                    });
             }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
