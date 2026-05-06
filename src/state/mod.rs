@@ -282,6 +282,11 @@ pub struct AppState {
     /// The event loop skips `terminal.draw()` when this is false, avoiding
     /// unconditional 60 fps redraws on resource-constrained machines.
     needs_redraw: bool,
+    /// When set, the event loop clears the terminal's internal buffer before
+    /// the next draw, forcing a full repaint instead of a diff.  Used after
+    /// `FocusGained` to recover from display corruption caused by switching
+    /// away from the terminal window and back.
+    needs_full_redraw: bool,
     /// Detected terminal graphics protocol picker.
     /// Initialized to halfblocks at bootstrap; upgraded after the terminal
     /// enters alternate screen in `App::run()`.
@@ -451,6 +456,7 @@ impl AppState {
             startup_time_ms: started_at.elapsed().as_millis(),
             should_quit: false,
             needs_redraw: true,
+            needs_full_redraw: false,
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
@@ -3413,6 +3419,22 @@ impl AppState {
 
     pub fn mark_drawn(&mut self) {
         self.redraw_count += 1;
+        self.needs_redraw = false;
+    }
+
+    /// Request a full terminal clear on the next draw (clears ratatui's diff
+    /// buffer so every cell is rewritten, recovering from display corruption).
+    pub fn set_full_redraw(&mut self) {
+        self.needs_full_redraw = true;
+    }
+
+    /// Consume and return the full-redraw flag.  Returns `true` at most once
+    /// per `set_full_redraw()` call so only the immediately following draw
+    /// pays the clear cost.
+    pub fn take_full_redraw(&mut self) -> bool {
+        let v = self.needs_full_redraw;
+        self.needs_full_redraw = false;
+        v
     }
 
     pub fn image_picker(&self) -> &Picker {
@@ -4536,6 +4558,7 @@ mod tests {
             startup_time_ms: 0,
             should_quit: false,
             needs_redraw: true,
+            needs_full_redraw: false,
             image_picker: Picker::halfblocks(),
             debug_visible: false,
             debug: DebugState::default(),
@@ -6429,6 +6452,67 @@ mod tests {
         assert!(
             !state.is_preview_fullscreen(),
             "fullscreen should reset when leaving preview focus"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Tests for redraw flag management (issue: mark_drawn must clear the flag)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn mark_drawn_clears_needs_redraw() {
+        let mut state = test_state();
+        state.set_needs_redraw();
+        assert!(state.needs_redraw(), "needs_redraw should be set");
+        state.mark_drawn();
+        assert!(
+            !state.needs_redraw(),
+            "mark_drawn must clear needs_redraw so the event loop avoids unnecessary redraws"
+        );
+    }
+
+    #[test]
+    fn mark_drawn_increments_redraw_count() {
+        let mut state = test_state();
+        let before = state.redraw_count;
+        state.set_needs_redraw();
+        state.mark_drawn();
+        assert_eq!(state.redraw_count, before + 1);
+    }
+
+    #[test]
+    fn set_full_redraw_and_take_full_redraw() {
+        let mut state = test_state();
+        assert!(
+            !state.take_full_redraw(),
+            "full_redraw flag must be false initially"
+        );
+        state.set_full_redraw();
+        assert!(
+            state.take_full_redraw(),
+            "take_full_redraw must return true after set_full_redraw"
+        );
+        assert!(
+            !state.take_full_redraw(),
+            "take_full_redraw must consume the flag — second call must return false"
+        );
+    }
+
+    #[test]
+    fn full_redraw_independent_of_needs_redraw() {
+        let mut state = test_state();
+        // set_full_redraw does not implicitly set needs_redraw;
+        // callers must set both.
+        state.set_full_redraw();
+        // needs_redraw starts true in test_state, mark it drawn first.
+        state.mark_drawn();
+        assert!(
+            !state.needs_redraw(),
+            "needs_redraw should be clear after mark_drawn"
+        );
+        assert!(
+            state.take_full_redraw(),
+            "full_redraw flag must survive mark_drawn — they are independent"
         );
     }
 }

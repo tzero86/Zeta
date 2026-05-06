@@ -5,7 +5,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Receiver;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event,
+    KeyEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -121,6 +124,13 @@ impl App {
                     if size.width == 0 || size.height == 0 {
                         self.state.mark_drawn();
                     } else {
+                        // On focus-gain, clear ratatui's internal buffer so the next draw
+                        // is a full repaint rather than a diff.  This fixes visual corruption
+                        // (black squares, stale cells) that can appear after switching away
+                        // from the terminal window and back.
+                        if self.state.take_full_redraw() {
+                            terminal.terminal.clear()?;
+                        }
                         let mut cache = LayoutCache::default();
                         terminal.draw(|frame| {
                             cache = ui::render(frame, &mut self.state);
@@ -136,7 +146,7 @@ impl App {
                                 }
                             }
                         }
-                        self.state.mark_drawn(); // clears needs_redraw
+                        self.state.mark_drawn();
                     }
                 }
             }
@@ -299,6 +309,13 @@ impl App {
             }
             Event::Resize(width, height) => {
                 self.handle_event(AppEvent::Resize { width, height })?;
+                self.state.set_needs_redraw();
+            }
+            // When the terminal regains focus, force a full repaint so ratatui's
+            // differential renderer doesn't apply a diff to a potentially corrupted
+            // display buffer (the cause of black-square corruption after alt-tab).
+            Event::FocusGained => {
+                self.state.set_full_redraw();
                 self.state.set_needs_redraw();
             }
             _ => {}
@@ -1404,14 +1421,29 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
 
         println!();
         println!("✅ Update installed successfully!");
-        println!("   Relaunching Zeta...");
         println!();
 
-        // Relaunch from the freshly-installed binary, not from the backup path.
+        // On Windows, spawning a child that shares the parent console causes a
+        // race: the shell reclaims the console when the parent exits, so the
+        // new Zeta process and the shell prompt fight over the same window.
+        // The result is a TUI that flashes once and then dies or appears
+        // corrupted.  Tell the user to restart manually instead.
+        //
+        // On Unix, exec() replaces the current process image in-place, so the
+        // shell continues waiting for the same PID and the new binary takes
+        // over the terminal cleanly.
         #[cfg(windows)]
-        relaunch_self_from(&original_exe)?;
+        {
+            println!("   Run 'zeta' to start the updated version.");
+            println!();
+        }
         #[cfg(not(windows))]
-        relaunch_self()?;
+        {
+            println!("   Relaunching Zeta...");
+            println!();
+            // Relaunch from the freshly-installed binary, not from the backup path.
+            relaunch_self()?;
+        }
     } else {
         // Restore the backup so the user still has a working binary.
         #[cfg(windows)]
@@ -1464,18 +1496,6 @@ fn relaunch_self() -> Result<()> {
     }
 }
 
-/// Windows-only: relaunch from an explicit path rather than `current_exe()`.
-/// Used after a self-update where the old binary has been renamed to a .bak,
-/// so `current_exe()` would point at the backup, not the freshly installed one.
-#[cfg(windows)]
-fn relaunch_self_from(exe: &std::path::Path) -> Result<()> {
-    std::process::Command::new(exe)
-        .args(std::env::args().skip(1))
-        .spawn()
-        .context("failed to relaunch Zeta after update")?;
-    Ok(())
-}
-
 /// Remove any leftover `*.exe.bak` files left by a previous interrupted update.
 /// Called at startup; failures are silently ignored so a stale backup never
 /// prevents the app from launching.
@@ -1498,8 +1518,13 @@ impl TerminalSession {
         enable_raw_mode().context("failed to enable raw mode")?;
 
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
-            .context("failed to enter alternate screen and enable mouse")?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableFocusChange
+        )
+        .context("failed to enter alternate screen and enable mouse")?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
@@ -1524,6 +1549,7 @@ impl Drop for TerminalSession {
         let _ = disable_raw_mode();
         let _ = execute!(
             self.terminal.backend_mut(),
+            DisableFocusChange,
             LeaveAlternateScreen,
             DisableMouseCapture
         );
@@ -2131,6 +2157,73 @@ mod tests {
         assert!(
             !matches!(action, Some(Action::EditorDragTo { .. })),
             "drag outside editor rect should not route to EditorDragTo"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // FocusGained / full-redraw regression tests
+    //
+    // The FocusGained event must:
+    //   1. Set needs_redraw so the event loop draws on the next tick.
+    //   2. Set the full_redraw flag so the draw loop calls terminal.clear()
+    //      before rendering, recovering from display corruption that occurs
+    //      when the user switches away from and back to the terminal window.
+    //
+    // The handler in process_next_event does exactly:
+    //   self.state.set_full_redraw();
+    //   self.state.set_needs_redraw();
+    // These unit tests verify that state API contract is solid.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn focus_gained_state_sets_both_flags() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        // Build a minimal AppState the same way bootstrap() does.
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        // Simulate what process_next_event does on Event::FocusGained.
+        state.mark_drawn(); // reset from initial needs_redraw=true
+        assert!(
+            !state.needs_redraw(),
+            "baseline: needs_redraw should be false"
+        );
+        assert!(
+            !state.take_full_redraw(),
+            "baseline: full_redraw should be false"
+        );
+
+        // FocusGained handler
+        state.set_full_redraw();
+        state.set_needs_redraw();
+
+        assert!(state.needs_redraw(), "FocusGained must set needs_redraw");
+        assert!(
+            state.take_full_redraw(),
+            "FocusGained must set full_redraw so terminal.clear() is called"
+        );
+    }
+
+    #[test]
+    fn no_spurious_full_redraw_on_normal_events() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        // Normal key / mouse / resize events must NOT set the full_redraw flag.
+        state.mark_drawn();
+        state.set_needs_redraw(); // key event
+        assert!(
+            !state.take_full_redraw(),
+            "regular events must not trigger a full terminal clear"
         );
     }
 }
