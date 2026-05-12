@@ -1,0 +1,64 @@
+name: Test
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.label }} (${{ matrix.features }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x86_64
+            features: default
+          - os: ubuntu-latest
+            label: linux-x86_64
+            features: minimal
+          - os: windows-latest
+            label: windows-x86_64
+            features: default
+          - os: windows-latest
+            label: windows-x86_64
+            features: minimal
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: |
+          if ("${{ matrix.features }}" -eq "minimal") {
+            cargo build --workspace --no-default-features --locked
+          } else {
+            cargo build --workspace --locked
+          }
+        shell: pwsh
+
+      - name: Run tests
+        run: |
+          if ("${{ matrix.features }}" -eq "minimal") {
+            cargo test --workspace --no-default-features --locked
+          } else {
+            cargo test --workspace --locked
+          }
+        shell: pwsh
