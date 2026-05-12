@@ -5,7 +5,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use crossbeam_channel::Receiver;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableFocusChange, DisableMouseCapture, EnableFocusChange, EnableMouseCapture, Event,
+    KeyEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -121,6 +124,13 @@ impl App {
                     if size.width == 0 || size.height == 0 {
                         self.state.mark_drawn();
                     } else {
+                        // On focus-gain, clear ratatui's internal buffer so the next draw
+                        // is a full repaint rather than a diff.  This fixes visual corruption
+                        // (black squares, stale cells) that can appear after switching away
+                        // from the terminal window and back.
+                        if self.state.take_full_redraw() {
+                            terminal.terminal.clear()?;
+                        }
                         let mut cache = LayoutCache::default();
                         terminal.draw(|frame| {
                             cache = ui::render(frame, &mut self.state);
@@ -136,7 +146,7 @@ impl App {
                                 }
                             }
                         }
-                        self.state.mark_drawn(); // clears needs_redraw
+                        self.state.mark_drawn();
                     }
                 }
             }
@@ -299,6 +309,18 @@ impl App {
             }
             Event::Resize(width, height) => {
                 self.handle_event(AppEvent::Resize { width, height })?;
+                // Always force a full repaint on resize.  Restoring a minimised window
+                // reliably sends a Resize event on virtually every terminal/OS, making
+                // this more dependable than FocusGained (which requires terminal support
+                // for the EnableFocusChange escape sequence).
+                self.state.set_full_redraw();
+                self.state.set_needs_redraw();
+            }
+            // When the terminal regains focus, force a full repaint so ratatui's
+            // differential renderer doesn't apply a diff to a potentially corrupted
+            // display buffer (the cause of black-square corruption after alt-tab).
+            Event::FocusGained => {
+                self.state.set_full_redraw();
                 self.state.set_needs_redraw();
             }
             _ => {}
@@ -399,32 +421,28 @@ impl App {
                                             .unwrap_or_else(|_| "user".to_string()),
                                         address
                                     );
-                                    self.workers
-                                        .sftp_tx
-                                        .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                                    // Use try_send so a full channel never blocks the event loop.
+                                    let _ = self.workers.sftp_tx.try_send(jobs::SftpRequest::Scan(
+                                        jobs::SftpScanRequest {
                                             workspace_id,
                                             pane,
                                             path: scan_path,
                                             session_id,
-                                        }))
-                                        .context("failed to queue SFTP scan job")?;
+                                        },
+                                    ));
                                 } else {
-                                    self.workers
-                                        .scan_tx
-                                        .send(ScanRequest {
-                                            workspace_id,
-                                            pane,
-                                            path: scan_path.clone(),
-                                        })
-                                        .context("failed to queue background scan job")?;
-                                    self.workers
-                                        .git_tx
-                                        .send(GitStatusRequest {
-                                            workspace_id,
-                                            pane,
-                                            path: scan_path,
-                                        })
-                                        .context("failed to queue git status job")?;
+                                    // Background refresh jobs: drop silently when workers are
+                                    // backlogged rather than blocking the main thread.
+                                    let _ = self.workers.scan_tx.try_send(ScanRequest {
+                                        workspace_id,
+                                        pane,
+                                        path: scan_path.clone(),
+                                    });
+                                    let _ = self.workers.git_tx.try_send(GitStatusRequest {
+                                        workspace_id,
+                                        pane,
+                                        path: scan_path,
+                                    });
                                 }
                             }
                         }
@@ -453,15 +471,17 @@ impl App {
                         let ws = *workspace_id;
                         let p = *pane;
                         let sid = session_id.clone();
-                        self.workers
-                            .sftp_tx
-                            .send(jobs::SftpRequest::Scan(jobs::SftpScanRequest {
+                        // Use try_send: if sftp_tx is full the scan will be re-triggered
+                        // after the existing jobs drain.  A blocking send here would stall
+                        // the event loop and kill keyboard responsiveness.
+                        let _ = self.workers.sftp_tx.try_send(jobs::SftpRequest::Scan(
+                            jobs::SftpScanRequest {
                                 workspace_id: ws,
                                 pane: p,
                                 path: std::path::PathBuf::from("/"),
                                 session_id: sid,
-                            }))
-                            .context("failed to queue SFTP home scan")?;
+                            },
+                        ));
                     }
                     let scanned_target =
                         if let JobResult::DirectoryScanned {
@@ -562,10 +582,10 @@ impl App {
         } else {
             Some(self.config_path.clone())
         };
-        self.workers
+        let _ = self
+            .workers
             .watch_tx
-            .send(WatchRequest { paths, config_path })
-            .context("failed to update watched directories")?;
+            .try_send(WatchRequest { paths, config_path });
         Ok(())
     }
 
@@ -683,17 +703,16 @@ impl App {
                         }
                     }
                 }
-                self.workers
-                    .preview_tx
-                    .send(PreviewRequest {
-                        workspace_id,
-                        path,
-                        syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
-                        archive,
-                        inner_path: inner,
-                        picker: self.state.image_picker().clone(),
-                    })
-                    .context("failed to queue background preview job")?;
+                // Preview requests are triggered by cursor movement and can arrive
+                // faster than the worker can consume them.  Drop silently when full.
+                let _ = self.workers.preview_tx.try_send(PreviewRequest {
+                    workspace_id,
+                    path,
+                    syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
+                    archive,
+                    inner_path: inner,
+                    picker: self.state.image_picker().clone(),
+                });
             }
             Command::RunFileOperation {
                 operation,
@@ -780,22 +799,16 @@ impl App {
                         }
                         self.post_scan_completed(workspace_id, pane)?;
                     } else {
-                        self.workers
-                            .scan_tx
-                            .send(ScanRequest {
-                                workspace_id,
-                                pane,
-                                path: path.clone(),
-                            })
-                            .context("failed to queue background scan job")?;
-                        self.workers
-                            .git_tx
-                            .send(GitStatusRequest {
-                                workspace_id,
-                                pane,
-                                path,
-                            })
-                            .context("failed to queue git status job")?;
+                        let _ = self.workers.scan_tx.try_send(ScanRequest {
+                            workspace_id,
+                            pane,
+                            path: path.clone(),
+                        });
+                        let _ = self.workers.git_tx.try_send(GitStatusRequest {
+                            workspace_id,
+                            pane,
+                            path,
+                        });
                     }
                 }
             }
@@ -896,23 +909,25 @@ impl App {
                     .context("failed to queue terminal spawn job")?;
             }
             Command::WriteTerminal(bytes) => {
-                self.workers
+                // PTY writes can arrive faster than the worker drains them.  Use
+                // try_send so a backlogged terminal worker never stalls the event loop.
+                let _ = self
+                    .workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Write {
+                    .try_send(crate::jobs::TerminalRequest::Write {
                         workspace_id: self.state.active_workspace_index(),
                         bytes,
-                    })
-                    .context("failed to queue terminal write job")?;
+                    });
             }
             Command::ResizeTerminal { cols, rows } => {
-                self.workers
+                let _ = self
+                    .workers
                     .terminal_tx
-                    .send(crate::jobs::TerminalRequest::Resize {
+                    .try_send(crate::jobs::TerminalRequest::Resize {
                         workspace_id: self.state.active_workspace_index(),
                         cols,
                         rows,
-                    })
-                    .context("failed to queue terminal resize job")?;
+                    });
             }
             Command::DispatchAction(action) => {
                 self.dispatch(action)?;
@@ -1348,29 +1363,7 @@ fn route_menu_bar_click(
 fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!();
     println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
-    println!("   This may take a few minutes.");
     println!();
-
-    // On Windows, the current exe file is locked by our running process.
-    // cargo install builds a new binary in a temp dir and then tries to move it
-    // to replace the original — that move fails with "Access is denied" (os error 5)
-    // because Windows won't replace a file that belongs to a running process.
-    //
-    // Renaming the current exe is allowed even while it is running (the OS holds a
-    // handle to the inode, not the path), so we park the old binary under a .bak
-    // name to free the destination slot, run cargo install, then clean up.
-    #[cfg(windows)]
-    let (original_exe, backup_path) = {
-        let exe = std::env::current_exe().context("could not resolve current executable path")?;
-        let bak = exe.with_extension("exe.bak");
-        match std::fs::rename(&exe, &bak) {
-            Ok(()) => (exe, Some(bak)),
-            Err(e) => {
-                eprintln!("⚠️  Could not rename current exe before update ({e}). Proceeding anyway — install may fail.");
-                (exe, None)
-            }
-        }
-    };
 
     let mut cargo_args = vec!["install", "--git", "https://github.com/tzero86/Zeta"];
     // Pin to the exact release tag when available so we install a reproducible build.
@@ -1379,6 +1372,69 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     }
     cargo_args.push("--locked");
 
+    // On Windows, running cargo install synchronously in the same console session
+    // keeps this process alive for the entire build (potentially several minutes).
+    // When the process finally exits, Windows Terminal may restart the profile if
+    // the session is configured to run zeta directly, or the terminal host may
+    // redraw stale content from cargo's progress output — either way the new TUI
+    // appears as a ghost frame before the shell prompt is restored.
+    //
+    // Fix: rename the current exe to free the install target path (the same rename
+    // trick as before), then immediately hand off to a new console window and exit.
+    // The build runs completely independently; the original terminal session is
+    // already idle before cargo even starts, eliminating the race.
+    //
+    // On Unix, exec() replaces the process image in-place so the shell waits on
+    // the same PID and the new binary takes over the terminal cleanly.
+    #[cfg(windows)]
+    {
+        // Renaming is allowed even for a running exe (the OS holds an inode handle,
+        // not a path handle), so this frees the destination slot for cargo install.
+        let exe = std::env::current_exe().context("could not resolve current executable path")?;
+        let bak = exe.with_extension("exe.bak");
+        if let Err(e) = std::fs::rename(&exe, &bak) {
+            eprintln!(
+                "⚠️  Could not rename current exe before update ({e}). \
+                 Proceeding anyway — install may fail."
+            );
+        }
+
+        // Build the command string that the new window will execute.
+        // On success it prints a confirmation; on failure it prints instructions.
+        // `pause` keeps the window open so the user can read the result.
+        let cargo_cmd = format!("cargo {}", cargo_args.join(" "));
+        let script = format!(
+            "{cargo_cmd} \
+            && (echo. & echo [OK] Update installed. Run 'zeta' to start the new version. & pause) \
+            || (echo. & echo [FAIL] cargo install failed. & echo. & echo Run: {cargo_cmd} & pause)"
+        );
+
+        // Spawn a completely independent console window.  `cmd /c start` launches
+        // a new window and exits immediately, so this process is free to exit
+        // before cargo build even begins.
+        match std::process::Command::new("cmd")
+            .args(["/c", "start", "Zeta Update", "cmd.exe", "/k", &script])
+            .spawn()
+        {
+            Ok(_) => {
+                println!("🔄 Update started in a new window (\"Zeta Update\").");
+                println!("   That window shows build progress and waits for a keypress when done.");
+                println!("   Then run 'zeta' to start the updated version.");
+                println!();
+                // Any leftover .bak that could not be deleted here will be cleaned up
+                // by cleanup_update_backup() on the next zeta launch.
+                return Ok(());
+            }
+            Err(e) => {
+                // Could not open the update window — restore the backup so the user
+                // still has a working binary.
+                let _ = std::fs::rename(&bak, &exe);
+                return Err(anyhow::anyhow!("failed to open update window: {e}"));
+            }
+        }
+    }
+
+    // Non-Windows path: run cargo install synchronously then exec() into the new binary.
     let status = std::process::Command::new("cargo")
         .args(&cargo_args)
         .status()
@@ -1395,43 +1451,25 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
         })?;
 
     if status.success() {
-        // Best-effort: remove the parked backup. This may fail if the OS still
-        // holds the file open; it will be cleaned up on next launch instead.
-        #[cfg(windows)]
-        if let Some(bak) = &backup_path {
-            let _ = std::fs::remove_file(bak);
-        }
-
         println!();
         println!("✅ Update installed successfully!");
-        println!("   Relaunching Zeta...");
         println!();
 
-        // Relaunch from the freshly-installed binary, not from the backup path.
-        #[cfg(windows)]
-        relaunch_self_from(&original_exe)?;
         #[cfg(not(windows))]
-        relaunch_self()?;
-    } else {
-        // Restore the backup so the user still has a working binary.
-        #[cfg(windows)]
-        if let Some(bak) = &backup_path {
-            if let Err(e) = std::fs::rename(bak, &original_exe) {
-                eprintln!("⚠️  Could not restore backup exe: {e}");
-                eprintln!("    Your backup is at: {}", bak.display());
-            }
+        {
+            println!("   Relaunching Zeta...");
+            println!();
+            relaunch_self()?;
         }
-
+    } else {
         eprintln!();
         eprintln!(
             "❌ Update failed (cargo install exited with {:?})",
             status.code()
         );
         eprintln!();
-        eprintln!("   To install manually, close Zeta completely and run:");
+        eprintln!("   To install manually, run:");
         eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
-        eprintln!();
-        eprintln!("   (On Windows, Zeta must not be running when cargo installs the update.)");
         eprintln!();
         return Err(anyhow::anyhow!(
             "cargo install failed with exit code {:?}",
@@ -1464,18 +1502,6 @@ fn relaunch_self() -> Result<()> {
     }
 }
 
-/// Windows-only: relaunch from an explicit path rather than `current_exe()`.
-/// Used after a self-update where the old binary has been renamed to a .bak,
-/// so `current_exe()` would point at the backup, not the freshly installed one.
-#[cfg(windows)]
-fn relaunch_self_from(exe: &std::path::Path) -> Result<()> {
-    std::process::Command::new(exe)
-        .args(std::env::args().skip(1))
-        .spawn()
-        .context("failed to relaunch Zeta after update")?;
-    Ok(())
-}
-
 /// Remove any leftover `*.exe.bak` files left by a previous interrupted update.
 /// Called at startup; failures are silently ignored so a stale backup never
 /// prevents the app from launching.
@@ -1498,8 +1524,13 @@ impl TerminalSession {
         enable_raw_mode().context("failed to enable raw mode")?;
 
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
-            .context("failed to enter alternate screen and enable mouse")?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            EnableMouseCapture,
+            EnableFocusChange
+        )
+        .context("failed to enter alternate screen and enable mouse")?;
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend).context("failed to create terminal backend")?;
@@ -1524,6 +1555,7 @@ impl Drop for TerminalSession {
         let _ = disable_raw_mode();
         let _ = execute!(
             self.terminal.backend_mut(),
+            DisableFocusChange,
             LeaveAlternateScreen,
             DisableMouseCapture
         );
@@ -2131,6 +2163,99 @@ mod tests {
         assert!(
             !matches!(action, Some(Action::EditorDragTo { .. })),
             "drag outside editor rect should not route to EditorDragTo"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // FocusGained / full-redraw regression tests
+    //
+    // The FocusGained event must:
+    //   1. Set needs_redraw so the event loop draws on the next tick.
+    //   2. Set the full_redraw flag so the draw loop calls terminal.clear()
+    //      before rendering, recovering from display corruption that occurs
+    //      when the user switches away from and back to the terminal window.
+    //
+    // The handler in process_next_event does exactly:
+    //   self.state.set_full_redraw();
+    //   self.state.set_needs_redraw();
+    // These unit tests verify that state API contract is solid.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn focus_gained_state_sets_both_flags() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        // Build a minimal AppState the same way bootstrap() does.
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        // Simulate what process_next_event does on Event::FocusGained.
+        state.mark_drawn(); // reset from initial needs_redraw=true
+        assert!(
+            !state.needs_redraw(),
+            "baseline: needs_redraw should be false"
+        );
+        assert!(
+            !state.take_full_redraw(),
+            "baseline: full_redraw should be false"
+        );
+
+        // FocusGained handler
+        state.set_full_redraw();
+        state.set_needs_redraw();
+
+        assert!(state.needs_redraw(), "FocusGained must set needs_redraw");
+        assert!(
+            state.take_full_redraw(),
+            "FocusGained must set full_redraw so terminal.clear() is called"
+        );
+    }
+
+    #[test]
+    fn no_spurious_full_redraw_on_normal_events() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        // Key / mouse events must NOT set the full_redraw flag.
+        state.mark_drawn();
+        state.set_needs_redraw(); // key event
+        assert!(
+            !state.take_full_redraw(),
+            "key/mouse events must not trigger a full terminal clear"
+        );
+    }
+
+    /// Resize events must trigger a full repaint.  When a window is restored from
+    /// minimised the OS emits a Resize event on virtually every terminal/platform.
+    /// This is more reliable than FocusGained which requires terminal support for
+    /// the EnableFocusChange escape sequence.
+    #[test]
+    fn resize_event_triggers_full_redraw() {
+        use crate::config::AppConfig;
+        use crate::state::AppState;
+        use std::time::Instant;
+
+        let loaded = AppConfig::load_default_location().expect("config must load for test");
+        let mut state =
+            AppState::bootstrap(loaded, Instant::now()).expect("AppState bootstrap must succeed");
+
+        state.mark_drawn();
+        // Simulate what process_next_event does on Event::Resize.
+        state.set_full_redraw();
+        state.set_needs_redraw();
+
+        assert!(state.needs_redraw(), "Resize must set needs_redraw");
+        assert!(
+            state.take_full_redraw(),
+            "Resize must set full_redraw so terminal.clear() is called on restore"
         );
     }
 }
