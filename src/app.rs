@@ -15,14 +15,17 @@ use crossterm::terminal::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::{Frame, Terminal};
+#[cfg(feature = "image-preview")]
 use ratatui_image::picker::Picker;
 
 use crate::action::{Action, Command};
 use crate::config::{AppConfig, RuntimeKeymap};
 use crate::event::AppEvent;
+#[cfg(feature = "auto-update")]
+use crate::jobs::UpdateCheckRequest;
 use crate::jobs::{
     self, DirSizeRequest, EditorLoadRequest, FileOpRequest, FindRequest, GitStatusRequest,
-    JobResult, PreviewRequest, ScanRequest, UpdateCheckRequest, WatchRequest, WorkerChannels,
+    JobResult, PreviewRequest, ScanRequest, WatchRequest, WorkerChannels,
 };
 use crate::state::{AppState, FocusLayer, ModalKind};
 use crate::ui;
@@ -79,12 +82,15 @@ impl App {
         }
 
         // Spawn background update check on startup
-        let current_version = env!("CARGO_PKG_VERSION").to_string();
-        if app.state.config().check_updates_on_startup {
-            let _ = app
-                .workers
-                .update_check_tx
-                .send(UpdateCheckRequest::CheckLatestRelease { current_version });
+        #[cfg(feature = "auto-update")]
+        {
+            let current_version = env!("CARGO_PKG_VERSION").to_string();
+            if app.state.config().check_updates_on_startup {
+                let _ = app
+                    .workers
+                    .update_check_tx
+                    .send(UpdateCheckRequest::CheckLatestRelease { current_version });
+            }
         }
 
         Ok(app)
@@ -106,6 +112,7 @@ impl App {
 
             // Use halfblocks by default to avoid potential hangs with from_query_stdio().
             // The query can block indefinitely in some terminal environments (e.g., WSL).
+            #[cfg(feature = "image-preview")]
             self.state.set_image_picker(Picker::halfblocks());
 
             while !self.state.should_quit() {
@@ -217,6 +224,7 @@ impl App {
 
     fn execute_command_try(&mut self, command: Command) -> Result<()> {
         match command {
+            #[cfg(feature = "terminal-panel")]
             Command::ResizeTerminal { cols, rows } => {
                 let _ = self
                     .workers
@@ -263,6 +271,7 @@ impl App {
         }
 
         // Handle update check results
+        #[cfg(feature = "auto-update")]
         if let Ok(result) = self.workers.update_check_rx.try_recv() {
             match result.release {
                 Ok(Some(release)) => {
@@ -414,6 +423,7 @@ impl App {
                             let pane_state = self.state.workspace(workspace_id).panes.pane(pane);
                             if pane_state.cwd == path {
                                 let scan_path = path.clone();
+                                #[cfg(feature = "sftp")]
                                 if let Some(address) = pane_state.remote_address() {
                                     let session_id = format!(
                                         "{}@{}",
@@ -430,7 +440,9 @@ impl App {
                                             session_id,
                                         },
                                     ));
-                                } else {
+                                    continue;
+                                }
+                                {
                                     // Background refresh jobs: drop silently when workers are
                                     // backlogged rather than blocking the main thread.
                                     let _ = self.workers.scan_tx.try_send(ScanRequest {
@@ -461,6 +473,7 @@ impl App {
                 other => {
                     // When SSH connects, queue an SFTP home scan BEFORE delegating to state,
                     // so the pane-mode change and scan happen atomically from the UI's perspective.
+                    #[cfg(feature = "sftp")]
                     if let jobs::JobResult::SshConnected {
                         workspace_id,
                         pane,
@@ -547,6 +560,7 @@ impl App {
     }
 
     fn dispatch(&mut self, action: Action) -> Result<()> {
+        #[cfg(feature = "auto-update")]
         if action == Action::CheckForUpdates {
             let current_version = env!("CARGO_PKG_VERSION").to_string();
             self.state.update_state.set_checking();
@@ -708,9 +722,11 @@ impl App {
                 let _ = self.workers.preview_tx.try_send(PreviewRequest {
                     workspace_id,
                     path,
+                    #[cfg(feature = "syntax-highlight")]
                     syntect_theme: self.state.theme().palette.syntect_theme.to_string(),
                     archive,
                     inner_path: inner,
+                    #[cfg(feature = "image-preview")]
                     picker: self.state.image_picker().clone(),
                 });
             }
@@ -720,8 +736,10 @@ impl App {
                 collision,
             } => {
                 let workspace_id = self.state.active_workspace_index();
+                #[allow(unused_variables)]
                 let (src_session, dst_session) = self.determine_backends_for_operation(&operation);
 
+                #[cfg(feature = "sftp")]
                 if src_session.is_some() || dst_session.is_some() {
                     self.workers
                         .sftp_tx
@@ -734,7 +752,9 @@ impl App {
                             collision,
                         }))
                         .context("failed to queue SFTP file operation")?;
-                } else {
+                    return Ok(());
+                }
+                {
                     self.workers
                         .file_op_tx
                         .send(FileOpRequest {
@@ -751,6 +771,7 @@ impl App {
             }
             Command::ScanPane { pane, path } => {
                 let workspace_id = self.state.active_workspace_index();
+                #[cfg(feature = "sftp")]
                 if let Some(address) = self.state.panes.pane(pane).remote_address() {
                     let session_id = format!(
                         "{}@{}",
@@ -767,7 +788,9 @@ impl App {
                             session_id,
                         }))
                         .context("failed to queue SFTP scan job")?;
-                } else {
+                    return Ok(());
+                }
+                {
                     // For local panes, serve from the scan cache when it is still
                     // fresh (directory mtime unchanged).  Cloning the entries
                     // inside the scoped block ends the immutable borrow before
@@ -868,6 +891,7 @@ impl App {
                 enable_raw_mode().ok();
             }
 
+            #[cfg(feature = "sftp")]
             Command::ConnectSSH {
                 address,
                 auth_method,
@@ -888,6 +912,11 @@ impl App {
                     })
                     .context("failed to queue SSH connect job")?;
             }
+            #[cfg(not(feature = "sftp"))]
+            Command::ConnectSSH { .. } => {
+                self.state
+                    .set_error_status("SSH support is not enabled in this build");
+            }
             Command::DisconnectSSH { pane } => {
                 self.state.panes.pane_mut(pane).mode = crate::pane::PaneMode::Real;
                 let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
@@ -896,6 +925,7 @@ impl App {
                     path: std::path::PathBuf::from(home),
                 })?;
             }
+            #[cfg(feature = "terminal-panel")]
             Command::SpawnTerminal { cwd, spawn_id } => {
                 self.workers
                     .terminal_tx
@@ -908,6 +938,7 @@ impl App {
                     })
                     .context("failed to queue terminal spawn job")?;
             }
+            #[cfg(feature = "terminal-panel")]
             Command::WriteTerminal(bytes) => {
                 // PTY writes can arrive faster than the worker drains them.  Use
                 // try_send so a backlogged terminal worker never stalls the event loop.
@@ -919,6 +950,7 @@ impl App {
                         bytes,
                     });
             }
+            #[cfg(feature = "terminal-panel")]
             Command::ResizeTerminal { cols, rows } => {
                 let _ = self
                     .workers
@@ -971,6 +1003,12 @@ impl App {
                     }
                 });
             }
+            #[cfg(not(feature = "terminal-panel"))]
+            Command::SpawnTerminal { .. } => {}
+            #[cfg(not(feature = "terminal-panel"))]
+            Command::WriteTerminal(_) => {}
+            #[cfg(not(feature = "terminal-panel"))]
+            Command::ResizeTerminal { .. } => {}
         }
 
         Ok(())
@@ -1360,6 +1398,7 @@ fn route_menu_bar_click(
     None
 }
 
+#[allow(unreachable_code)]
 fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
     println!();
     println!("🔄 Installing update from https://github.com/tzero86/Zeta ...");
@@ -1434,6 +1473,8 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
         }
     }
 
+    #[cfg(not(windows))]
+    {
     // Non-Windows path: run cargo install synchronously then exec() into the new binary.
     let status = std::process::Command::new("cargo")
         .args(&cargo_args)
@@ -1475,6 +1516,8 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
             "cargo install failed with exit code {:?}",
             status.code()
         ));
+    }
+
     }
 
     Ok(())

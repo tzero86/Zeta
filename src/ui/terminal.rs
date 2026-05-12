@@ -40,7 +40,22 @@ pub fn render_terminal(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if let Ok(parser) = terminal.parser.lock() {
+    #[cfg(feature = "terminal-panel")]
+    render_vt100_content(frame, inner, terminal, palette, focused);
+
+    #[cfg(not(feature = "terminal-panel"))]
+    render_disabled_placeholder(frame, inner, palette);
+}
+
+#[cfg(feature = "terminal-panel")]
+fn render_vt100_content(
+    frame: &mut Frame<'_>,
+    inner: Rect,
+    terminal: &TerminalState,
+    palette: ThemePalette,
+    focused: bool,
+) {
+    if let Some(parser) = terminal.parser.lock() {
         let screen = parser.screen();
         let (rows, cols) = screen.size();
         let (cursor_row, cursor_col) = screen.cursor_position();
@@ -128,6 +143,19 @@ pub fn render_terminal(
     }
 }
 
+#[cfg(not(feature = "terminal-panel"))]
+fn render_disabled_placeholder(frame: &mut Frame<'_>, inner: Rect, palette: ThemePalette) {
+    let msg = " [ Terminal panel disabled — rebuild with --features terminal-panel ] ";
+    let x = inner.x + (inner.width.saturating_sub(msg.len() as u16)) / 2;
+    let y = inner.y + inner.height / 2;
+    if x < inner.x + inner.width && y < inner.y + inner.height {
+        frame
+            .buffer_mut()
+            .set_string(x, y, msg, Style::default().fg(palette.text_muted));
+    }
+}
+
+#[cfg(feature = "terminal-panel")]
 fn map_vt100_color(color: vt100::Color) -> Option<Color> {
     match color {
         vt100::Color::Default => None,

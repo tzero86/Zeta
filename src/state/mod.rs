@@ -27,7 +27,19 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::Result;
+#[cfg(feature = "image-preview")]
 use ratatui_image::picker::Picker;
+
+#[cfg(not(feature = "image-preview"))]
+#[derive(Clone, Debug)]
+pub struct Picker;
+
+#[cfg(not(feature = "image-preview"))]
+impl Picker {
+    pub fn halfblocks() -> Self {
+        Self
+    }
+}
 
 use crate::action::{Action, CollisionPolicy, Command, FileOperation, MenuId, RefreshTarget};
 use crate::config::{
@@ -4125,11 +4137,9 @@ mod tests {
 
     use super::{
         resolve_prompt_target, AppState, CollisionState, FocusLayer, MessageKind, ModalKind,
-        ModalState, OverlayState, PaneFocus, PaneLayout, PaneSetState, PreviewState, PromptKind,
-        PromptState, UpdateState, WorkspaceState,
+        ModalState, OverlayState, PaneFocus, PaneLayout, PaneSetState, Picker, PreviewState,
+        PromptKind, PromptState, UpdateState, WorkspaceState,
     };
-    use ratatui_image::picker::Picker;
-
     // -------------------------------------------------------------------
     // Tests for StatusMessage
     // -------------------------------------------------------------------

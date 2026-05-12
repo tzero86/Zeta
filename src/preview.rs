@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-#[cfg(test)]
-use image;
 use ratatui::style::{Color, Modifier};
 
 #[cfg(test)]
@@ -74,26 +72,24 @@ pub struct HexDumpData {
 
 pub const HEX_DUMP_MAX_BYTES: usize = 4096;
 
-use ratatui_image::protocol::StatefulProtocol;
-
 /// Pre-decoded image with protocol-specific encoding for terminal graphics rendering.
 /// `ratatui-image` auto-detects Kitty → Sixels → iTerm2 → halfblock based on the terminal.
+/// When the `image-preview` feature is disabled the protocol payload is omitted.
 pub struct ImagePreviewData {
     pub filename: String,
     pub orig_width: u32,
     pub orig_height: u32,
-    /// Shared protocol state. `Arc` allows O(1) clone (ViewBuffer cache).
-    /// `Mutex` provides interior mutability so `render_stateful_widget` can
-    /// mutate the protocol from an immutable `&ViewBuffer` borrow on the UI thread.
-    protocol: std::sync::Arc<std::sync::Mutex<StatefulProtocol>>,
+    #[cfg(feature = "image-preview")]
+    protocol: std::sync::Arc<std::sync::Mutex<ratatui_image::protocol::StatefulProtocol>>,
 }
 
+#[cfg(feature = "image-preview")]
 impl ImagePreviewData {
     pub fn new(
         filename: String,
         orig_width: u32,
         orig_height: u32,
-        protocol: StatefulProtocol,
+        protocol: ratatui_image::protocol::StatefulProtocol,
     ) -> Self {
         Self {
             filename,
@@ -105,8 +101,21 @@ impl ImagePreviewData {
 
     /// Acquire a lock on the stateful protocol for rendering.
     /// Only called from the UI render thread — contention is impossible.
-    pub fn lock_protocol(&self) -> std::sync::MutexGuard<'_, StatefulProtocol> {
+    pub fn lock_protocol(
+        &self,
+    ) -> std::sync::MutexGuard<'_, ratatui_image::protocol::StatefulProtocol> {
         self.protocol.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+#[cfg(not(feature = "image-preview"))]
+impl ImagePreviewData {
+    pub fn new(filename: String, orig_width: u32, orig_height: u32, _protocol: ()) -> Self {
+        Self {
+            filename,
+            orig_width,
+            orig_height,
+        }
     }
 }
 
@@ -116,6 +125,7 @@ impl Clone for ImagePreviewData {
             filename: self.filename.clone(),
             orig_width: self.orig_width,
             orig_height: self.orig_height,
+            #[cfg(feature = "image-preview")]
             protocol: std::sync::Arc::clone(&self.protocol),
         }
     }
@@ -476,6 +486,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "image-preview")]
     fn image_preview_data_stores_protocol() {
         use ratatui_image::picker::Picker;
         let picker = Picker::halfblocks();

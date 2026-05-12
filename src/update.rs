@@ -1,4 +1,3 @@
-use serde_json;
 use std::cmp::Ordering;
 use thiserror::Error;
 
@@ -81,7 +80,15 @@ pub struct UpdateChecker;
 
 impl UpdateChecker {
     /// Query GitHub API for the latest release of Zeta.
+    /// When the `auto-update` feature is disabled this always returns `Ok(None)`.
+    #[cfg(not(feature = "auto-update"))]
+    pub fn check_latest_release(_current_version: &str) -> Result<Option<Release>, UpdateError> {
+        Ok(None)
+    }
+
+    /// Query GitHub API for the latest release of Zeta.
     /// Returns Release if found and newer, None if current, error otherwise.
+    #[cfg(feature = "auto-update")]
     pub fn check_latest_release(current_version: &str) -> Result<Option<Release>, UpdateError> {
         let url = "https://api.github.com/repos/tzero86/Zeta/releases/latest";
 
