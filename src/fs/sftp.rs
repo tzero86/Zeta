@@ -49,12 +49,14 @@ impl SftpBackend {
             EntryKind::Other
         };
 
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("")
+            .to_string();
         EntryInfo {
-            name: path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("")
-                .to_string(),
+            lower_name: name.to_lowercase(),
+            name,
             path: path.to_path_buf(),
             kind,
             size_bytes: Some(stat.size.unwrap_or(0)),
@@ -85,6 +87,7 @@ impl FsBackend for SftpBackend {
         // Add parent directory entry ("..")
         if let Some(parent) = remote_path.parent() {
             result.push(EntryInfo {
+                lower_name: "..".to_string(),
                 name: "..".to_string(),
                 path: parent.to_path_buf(),
                 kind: EntryKind::Directory,

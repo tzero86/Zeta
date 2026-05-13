@@ -85,6 +85,7 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
 
     // Populate left pane with a file entry so OpenSelectedInEditor has something to open.
     let file_entry = EntryInfo {
+        lower_name: "readme.md".into(),
         name: "readme.md".into(),
         path: base.join("readme.md"),
         kind: EntryKind::File,
@@ -122,6 +123,7 @@ fn on_open_hook_fires_via_apply_for_file_not_dir() {
 
     // Negative case: directory selected → hook must NOT fire.
     let dir_entry = EntryInfo {
+        lower_name: "subdir".into(),
         name: "subdir".into(),
         path: base.join("subdir"),
         kind: EntryKind::Directory,
@@ -192,6 +194,7 @@ fn on_cd_hook_fires_on_directory_change_not_refresh() {
 
     // Populate entries so the pane has non-empty state, enabling refresh detection.
     let dummy_entry = zeta::fs::EntryInfo {
+        lower_name: "file.txt".into(),
         name: "file.txt".into(),
         path: new_path.join("file.txt"),
         kind: zeta::fs::EntryKind::File,

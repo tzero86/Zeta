@@ -299,20 +299,20 @@ impl PaneState {
         self.entries.get(idx)
     }
 
-    pub fn selected_path(&self) -> Option<PathBuf> {
-        self.selected_entry().map(|entry| entry.path.clone())
+    pub fn selected_path(&self) -> Option<&std::path::Path> {
+        self.selected_entry().map(|entry| entry.path.as_path())
     }
 
-    pub fn selected_marked_path(&self) -> Option<PathBuf> {
+    pub fn selected_marked_path(&self) -> Option<&std::path::Path> {
         self.selected_path()
     }
 
     pub fn toggle_mark_selected(&mut self) -> Option<bool> {
-        let path = self.selected_path()?;
         // ".." is a navigation sentinel — never mark it.
         if self.selected_entry().is_some_and(|e| e.name == "..") {
             return None;
         }
+        let path = self.selected_entry()?.path.clone();
         if self.marked.contains(&path) {
             self.marked.remove(&path);
             Some(false)
@@ -337,16 +337,16 @@ impl PaneState {
         if self.mark_anchor.is_none() {
             self.mark_anchor = Some(self.selection);
             // Mark the anchor entry.
-            if let Some(path) = self.selected_path() {
-                if self.selected_entry().is_some_and(|e| e.name != "..") {
-                    self.marked.insert(path);
+            if self.selected_entry().is_some_and(|e| e.name != "..") {
+                if let Some(path) = self.selected_path() {
+                    self.marked.insert(path.to_path_buf());
                 }
             }
         }
         self.move_selection_down();
-        if let Some(path) = self.selected_path() {
-            if self.selected_entry().is_some_and(|e| e.name != "..") {
-                self.marked.insert(path);
+        if self.selected_entry().is_some_and(|e| e.name != "..") {
+            if let Some(path) = self.selected_path() {
+                self.marked.insert(path.to_path_buf());
             }
         }
     }
@@ -357,16 +357,16 @@ impl PaneState {
         if self.mark_anchor.is_none() {
             self.mark_anchor = Some(self.selection);
             // Mark the anchor entry.
-            if let Some(path) = self.selected_path() {
-                if self.selected_entry().is_some_and(|e| e.name != "..") {
-                    self.marked.insert(path);
+            if self.selected_entry().is_some_and(|e| e.name != "..") {
+                if let Some(path) = self.selected_path() {
+                    self.marked.insert(path.to_path_buf());
                 }
             }
         }
         self.move_selection_up();
-        if let Some(path) = self.selected_path() {
-            if self.selected_entry().is_some_and(|e| e.name != "..") {
-                self.marked.insert(path);
+        if self.selected_entry().is_some_and(|e| e.name != "..") {
+            if let Some(path) = self.selected_path() {
+                self.marked.insert(path.to_path_buf());
             }
         }
     }
@@ -509,23 +509,33 @@ impl PaneState {
     }
 
     fn rebuild_cache(&self) {
-        let indices: Vec<usize> = (0..self.entries.len()).collect();
-        // Always pin ".." at index 0, sort/filter everything else.
-        let (parent_indices, mut rest_indices): (Vec<usize>, Vec<usize>) = indices
-            .into_iter()
-            .partition(|&i| self.entries[i].name == "..");
+        let mut filtered = self.filtered_indices.borrow_mut();
+        filtered.clear();
+        filtered.reserve(self.entries.len());
 
-        // Pre-compute lowercase names once to avoid repeated per-comparison allocations.
-        let lower_names: Vec<String> = self.entries.iter().map(|e| e.name.to_lowercase()).collect();
+        // Partition: ".." goes straight into output, everything else into
+        // rest_indices for sorting/filtering.
+        let mut rest_indices = Vec::with_capacity(self.entries.len());
+        for i in 0..self.entries.len() {
+            if self.entries[i].name == ".." {
+                filtered.push(i);
+            } else {
+                rest_indices.push(i);
+            }
+        }
+
+        // lower_name is cached in EntryInfo, so no need to recompute here.
 
         rest_indices.sort_by(|&left_idx, &right_idx| {
             let left = &self.entries[left_idx];
             let right = &self.entries[right_idx];
             match self.sort_mode {
-                SortMode::Name => dir_first(left, right)
-                    .then_with(|| lower_names[left_idx].cmp(&lower_names[right_idx])),
-                SortMode::NameDesc => dir_first(left, right)
-                    .then_with(|| lower_names[right_idx].cmp(&lower_names[left_idx])),
+                SortMode::Name => {
+                    dir_first(left, right).then_with(|| left.lower_name.cmp(&right.lower_name))
+                }
+                SortMode::NameDesc => {
+                    dir_first(left, right).then_with(|| right.lower_name.cmp(&left.lower_name))
+                }
                 SortMode::Size => dir_first(left, right).then_with(|| {
                     left.size_bytes
                         .unwrap_or(0)
@@ -558,7 +568,7 @@ impl PaneState {
                         .to_lowercase();
                     ext_a
                         .cmp(&ext_b)
-                        .then_with(|| lower_names[left_idx].cmp(&lower_names[right_idx]))
+                        .then_with(|| left.lower_name.cmp(&right.lower_name))
                 }),
             }
         });
@@ -570,11 +580,7 @@ impl PaneState {
             });
         }
 
-        // Prepend ".." (if present) before all other entries.
-        let mut indices = parent_indices;
-        indices.extend(rest_indices);
-
-        *self.filtered_indices.borrow_mut() = indices;
+        filtered.extend(rest_indices);
         self.cache_entry_count.set(self.entries.len());
         self.cache_sort_mode.set(self.sort_mode);
         self.cache_filter_active.set(self.filter_active);
@@ -602,9 +608,12 @@ mod tests {
     use super::{PaneState, SortMode};
 
     fn file(name: &str) -> EntryInfo {
+        let name = name.to_string();
+        let path = PathBuf::from(format!("./{name}"));
         EntryInfo {
-            name: name.to_string(),
-            path: PathBuf::from(format!("./{name}")),
+            lower_name: name.to_lowercase(),
+            name,
+            path,
             kind: EntryKind::File,
             size_bytes: Some(1),
             modified: None,
@@ -613,9 +622,12 @@ mod tests {
     }
 
     fn dir(name: &str) -> EntryInfo {
+        let name = name.to_string();
+        let path = PathBuf::from(format!("./{name}"));
         EntryInfo {
-            name: name.to_string(),
-            path: PathBuf::from(format!("./{name}")),
+            lower_name: name.to_lowercase(),
+            name,
+            path,
             kind: EntryKind::Directory,
             size_bytes: None,
             modified: None,
@@ -644,13 +656,17 @@ mod tests {
     fn visible_selection_tracks_scrolled_window() {
         let mut pane = pane_with_entries(
             (0..10)
-                .map(|index| EntryInfo {
-                    name: format!("item-{index}"),
-                    path: PathBuf::from(format!("./item-{index}")),
-                    kind: EntryKind::File,
-                    size_bytes: Some(index as u64 * 16),
-                    modified: None,
-                    link_target: None,
+                .map(|index| {
+                    let name = format!("item-{index}");
+                    EntryInfo {
+                        lower_name: name.to_lowercase(),
+                        name,
+                        path: PathBuf::from(format!("./item-{index}")),
+                        kind: EntryKind::File,
+                        size_bytes: Some(index as u64 * 16),
+                        modified: None,
+                        link_target: None,
+                    }
                 })
                 .collect(),
         );

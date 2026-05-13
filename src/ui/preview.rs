@@ -95,7 +95,7 @@ pub fn wrap_preview_line(
 
 pub fn preview_gutter_label(line_number: usize, is_continuation: bool) -> String {
     if is_continuation {
-        " ".repeat(PREVIEW_GUTTER_WIDTH as usize)
+        crate::ui::REPEAT_CACHE.space(PREVIEW_GUTTER_WIDTH as usize)
     } else {
         format!("{:>3} ", line_number)
     }

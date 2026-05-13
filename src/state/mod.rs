@@ -1015,7 +1015,7 @@ impl AppState {
             }
             Action::OpenInDefaultApp => {
                 if let Some(path) = self.panes.active_pane().selected_path() {
-                    match open::that(&path) {
+                    match open::that(path) {
                         Ok(()) => {
                             self.status_message = StatusMessage::info(format!(
                                 "opened {} with system default",
@@ -1671,7 +1671,7 @@ impl AppState {
                     self.overlay.modal = Some(crate::state::overlay::ModalState::OpenWith {
                         items,
                         selection: 0,
-                        target: path,
+                        target: path.to_path_buf(),
                     });
                 } else {
                     self.set_status(String::from("no file selected"));
@@ -2639,6 +2639,7 @@ impl AppState {
                 } else {
                     // Full replace (navigation to a new directory).
                     let parent_entry = path.parent().map(|parent| crate::fs::EntryInfo {
+                        lower_name: String::from(".."),
                         name: String::from(".."),
                         path: parent.to_path_buf(),
                         kind: EntryKind::Directory,
@@ -4162,6 +4163,7 @@ mod tests {
             title: String::from("left"),
             cwd: PathBuf::from("."),
             entries: vec![EntryInfo {
+                lower_name: String::from("note.txt"),
                 name: String::from("note.txt"),
                 path: PathBuf::from(path),
                 kind: EntryKind::File,
@@ -4954,6 +4956,7 @@ mod tests {
         let mut state = test_state();
         state.panes.right.cwd = PathBuf::from("/tmp/target");
         state.panes.left.entries.push(EntryInfo {
+            lower_name: String::from("two.txt"),
             name: String::from("two.txt"),
             path: PathBuf::from("./two.txt"),
             kind: EntryKind::File,

@@ -13,6 +13,7 @@ use crate::git::{FileStatus, RepoStatus};
 use crate::icon::icon_for_entry;
 use crate::pane::PaneState;
 use crate::state::AppState;
+use crate::ui::REPEAT_CACHE;
 
 pub struct PaneChrome {
     pub border: Style,
@@ -252,7 +253,7 @@ pub fn render_pane(frame: &mut Frame<'_>, area: Rect, args: RenderPaneArgs<'_>) 
                 query_display,
                 pane_filter_strip_style(palette).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" ".repeat(pad), pane_filter_strip_style(palette)),
+            Span::styled(REPEAT_CACHE.space(pad), pane_filter_strip_style(palette)),
             Span::styled(
                 count_display,
                 Style::default()
@@ -369,7 +370,7 @@ fn render_item(args: RenderItemArgs<'_>) -> ListItem<'static> {
             Span::styled(git_char, Style::default().fg(git_colour)),
             Span::raw(" "),
             Span::styled(name, name_style),
-            Span::raw(" ".repeat(spacer_width)),
+            Span::styled(REPEAT_CACHE.space(spacer_width), Style::default()),
             Span::styled(size_str, row_styles.meta),
             Span::raw(" "),
             Span::styled(date_str, row_styles.meta),
@@ -695,6 +696,7 @@ mod tests {
         ] {
             let item = render_item(RenderItemArgs {
                 entry: &EntryInfo {
+                    lower_name: String::from("note.txt"),
                     name: String::from("note.txt"),
                     path: PathBuf::from("./note.txt"),
                     kind: EntryKind::File,
@@ -745,6 +747,7 @@ mod tests {
     fn normal_pane_row_uses_full_available_width() {
         let item = render_item(RenderItemArgs {
             entry: &EntryInfo {
+                lower_name: String::from("note.txt"),
                 name: String::from("note.txt"),
                 path: PathBuf::from("./note.txt"),
                 kind: EntryKind::File,
