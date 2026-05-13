@@ -102,6 +102,7 @@ fn open_tar_reader_for_format<'a, R: Read + 'a>(
 
 pub type SessionId = String;
 
+#[cfg(feature = "sftp")]
 #[derive(Clone, Debug)]
 pub struct SftpScanRequest {
     pub workspace_id: usize,
@@ -110,6 +111,7 @@ pub struct SftpScanRequest {
     pub session_id: SessionId,
 }
 
+#[cfg(feature = "sftp")]
 #[derive(Clone, Debug)]
 pub struct SftpFileOpRequest {
     pub workspace_id: usize,
@@ -120,6 +122,7 @@ pub struct SftpFileOpRequest {
     pub collision: CollisionPolicy,
 }
 
+#[cfg(feature = "sftp")]
 pub enum SftpRequest {
     Connect {
         workspace_id: usize,
@@ -138,6 +141,7 @@ pub enum SftpRequest {
     FileOp(SftpFileOpRequest),
 }
 
+#[cfg(feature = "sftp")]
 /// Result of a host-key verification check.
 #[derive(Debug)]
 enum HostCheckResult {
@@ -149,6 +153,7 @@ enum HostCheckResult {
     Failure(String),
 }
 
+#[cfg(feature = "sftp")]
 /// Internal outcome type for `connect_sftp`.
 enum SftpConnectOutcome {
     Connected(SessionId, crate::fs::sftp::SftpBackend),
@@ -196,9 +201,11 @@ pub struct FileOpRequest {
 pub struct PreviewRequest {
     pub workspace_id: usize,
     pub path: PathBuf,
+    #[cfg(feature = "syntax-highlight")]
     pub syntect_theme: String,
     pub archive: Option<PathBuf>,
     pub inner_path: Option<PathBuf>,
+    #[cfg(feature = "image-preview")]
     pub picker: ratatui_image::picker::Picker,
 }
 
@@ -237,6 +244,7 @@ pub struct DirSizeRequest {
     pub path: PathBuf,
 }
 
+#[cfg(feature = "terminal-panel")]
 #[derive(Clone, Debug)]
 pub enum TerminalRequest {
     Spawn {
@@ -257,10 +265,12 @@ pub enum TerminalRequest {
     },
 }
 
+#[cfg(feature = "auto-update")]
 pub enum UpdateCheckRequest {
     CheckLatestRelease { current_version: String },
 }
 
+#[cfg(feature = "auto-update")]
 pub struct UpdateCheckResult {
     pub release: Result<Option<crate::update::Release>, crate::update::UpdateError>,
 }
@@ -502,10 +512,14 @@ pub struct WorkerChannels {
     pub find_tx: Sender<FindRequest>,
     pub watch_tx: Sender<WatchRequest>,
     pub archive_tx: Sender<ArchiveListRequest>,
+    #[cfg(feature = "sftp")]
     pub sftp_tx: Sender<SftpRequest>,
+    #[cfg(feature = "terminal-panel")]
     pub terminal_tx: Sender<TerminalRequest>,
     pub dir_size_tx: Sender<DirSizeRequest>,
+    #[cfg(feature = "auto-update")]
     pub update_check_tx: Sender<UpdateCheckRequest>,
+    #[cfg(feature = "auto-update")]
     pub update_check_rx: Receiver<UpdateCheckResult>,
     pub result_tx: Sender<JobResult>,
 }
@@ -517,7 +531,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
     let (result_tx, result_rx) = bounded::<JobResult>(512);
     // Dedicated unbounded channel for PTY output. Isolated from the shared queue so
     // the reader thread never blocks and a verbose process cannot starve input handling.
-    let (term_out_tx, term_out_rx) = unbounded::<JobResult>();
+    let (_term_out_tx, term_out_rx) = unbounded::<JobResult>();
 
     // --- Scan worker ---
     let (scan_tx, scan_rx) = bounded::<ScanRequest>(32);
@@ -590,8 +604,29 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .name("zeta-preview".into())
             .spawn(move || {
                 for req in preview_rx {
+                    #[cfg(feature = "syntax-highlight")]
+                    let theme = &req.syntect_theme;
+                    #[cfg(not(feature = "syntax-highlight"))]
+                    let theme = "";
+
+                    #[cfg(feature = "image-preview")]
+                    let load_image = |bytes: &[u8], path: &Path| -> crate::preview::ViewBuffer {
+                        load_image_preview(bytes, path, &req.picker)
+                    };
+                    #[cfg(not(feature = "image-preview"))]
+                    let load_image = |_bytes: &[u8], _path: &Path| -> crate::preview::ViewBuffer {
+                        crate::preview::ViewBuffer::from_plain("[Image preview disabled]")
+                    };
+
                     let view = if req.archive.is_none() {
-                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
+                        if is_image_file(&req.path) {
+                            match std::fs::read(&req.path) {
+                                Ok(bytes) => load_image(&bytes, &req.path),
+                                Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                            }
+                        } else {
+                            load_preview_content(&req.path, theme)
+                        }
                     } else if let (Some(archive_path), Some(inner_path)) =
                         (req.archive.clone(), req.inner_path.clone())
                     {
@@ -616,12 +651,15 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                                     let _ = entry
                                                         .take(MEMBER_PREVIEW_LIMIT)
                                                         .read_to_end(&mut buf);
-                                                    load_preview_from_bytes(
-                                                        &buf,
-                                                        &inner_path,
-                                                        &req.syntect_theme,
-                                                        &req.picker,
-                                                    )
+                                                    if is_image_file(&inner_path) {
+                                                        load_image(&buf, &inner_path)
+                                                    } else {
+                                                        load_preview_from_bytes(
+                                                            &buf,
+                                                            &inner_path,
+                                                            theme,
+                                                        )
+                                                    }
                                                 }
                                                 Err(_) => crate::preview::ViewBuffer::from_plain(
                                                     "[empty file]",
@@ -663,12 +701,15 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                                 }
                                             }
                                             if let Some(buf) = found {
-                                                load_preview_from_bytes(
-                                                    &buf,
-                                                    &inner_path,
-                                                    &req.syntect_theme,
-                                                    &req.picker,
-                                                )
+                                                if is_image_file(&inner_path) {
+                                                    load_image(&buf, &inner_path)
+                                                } else {
+                                                    load_preview_from_bytes(
+                                                        &buf,
+                                                        &inner_path,
+                                                        theme,
+                                                    )
+                                                }
                                             } else {
                                                 crate::preview::ViewBuffer::from_plain(
                                                     "[empty file]",
@@ -681,7 +722,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                             Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
                         }
                     } else {
-                        load_preview_content(&req.path, &req.syntect_theme, &req.picker)
+                        if is_image_file(&req.path) {
+                            match std::fs::read(&req.path) {
+                                Ok(bytes) => load_image(&bytes, &req.path),
+                                Err(_) => crate::preview::ViewBuffer::from_plain("[empty file]"),
+                            }
+                        } else {
+                            load_preview_content(&req.path, theme)
+                        }
                     };
                     if result_tx_preview
                         .send(JobResult::PreviewLoaded {
@@ -986,8 +1034,10 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .expect("failed to spawn archive worker");
     }
 
+    #[cfg(feature = "sftp")]
     // --- SFTP worker ---
     let (sftp_tx, sftp_rx) = bounded::<SftpRequest>(8);
+    #[cfg(feature = "sftp")]
     {
         let result_tx = result_tx.clone();
         thread::Builder::new()
@@ -1120,11 +1170,13 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .expect("failed to spawn sftp worker");
     }
 
+    #[cfg(feature = "terminal-panel")]
     // --- Terminal worker ---
     let (terminal_tx, terminal_rx) = bounded::<TerminalRequest>(16);
+    #[cfg(feature = "terminal-panel")]
     {
         let result_tx = result_tx.clone();
-        let term_out_tx = term_out_tx.clone();
+        let term_out_tx = _term_out_tx.clone();
         thread::Builder::new()
             .name("zeta-terminal".into())
             .spawn(move || {
@@ -1158,9 +1210,12 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             .expect("failed to spawn dir-size worker");
     }
 
+    #[cfg(feature = "auto-update")]
     // --- Update check worker ---
     let (update_check_tx_main, update_check_rx_worker) = bounded::<UpdateCheckRequest>(1);
+    #[cfg(feature = "auto-update")]
     let (update_check_tx_result, update_check_rx_main) = bounded::<UpdateCheckResult>(1);
+    #[cfg(feature = "auto-update")]
     {
         thread::Builder::new()
             .name("zeta-update".into())
@@ -1186,10 +1241,14 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
             find_tx,
             watch_tx,
             archive_tx,
+            #[cfg(feature = "sftp")]
             sftp_tx,
+            #[cfg(feature = "terminal-panel")]
             terminal_tx,
             dir_size_tx,
+            #[cfg(feature = "auto-update")]
             update_check_tx: update_check_tx_main,
+            #[cfg(feature = "auto-update")]
             update_check_rx: update_check_rx_main,
             result_tx,
         },
@@ -1521,6 +1580,7 @@ pub fn test_load_hex_dump_preview(bytes: &[u8], path: &Path) -> crate::preview::
     load_hex_dump_preview_internal(bytes, path)
 }
 
+#[cfg(feature = "image-preview")]
 /// Test-only shim. Not part of the public API.
 /// Exposed as `pub` solely because integration tests compile as a separate crate.
 #[doc(hidden)]
@@ -1532,6 +1592,7 @@ pub fn test_load_image_preview(
     load_image_preview(bytes, path, picker)
 }
 
+#[cfg(feature = "image-preview")]
 fn load_image_preview(
     bytes: &[u8],
     path: &Path,
@@ -1573,11 +1634,14 @@ fn load_image_preview(
     ))
 }
 
-fn load_preview_content(
-    path: &Path,
-    syntect_theme: &str,
-    picker: &ratatui_image::picker::Picker,
-) -> crate::preview::ViewBuffer {
+fn is_image_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
+    )
+}
+
+fn load_preview_content(path: &Path, _syntect_theme: &str) -> crate::preview::ViewBuffer {
     const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024; // 8 MB
     if let Ok(meta) = std::fs::metadata(path) {
         if meta.len() > PREVIEW_MAX_BYTES {
@@ -1591,28 +1655,19 @@ fn load_preview_content(
         Ok(b) => b,
         Err(_) => return crate::preview::ViewBuffer::from_plain("[empty file]"),
     };
-    load_preview_from_bytes(&bytes, path, syntect_theme, picker)
+    load_preview_from_bytes(&bytes, path, _syntect_theme)
 }
 
 fn load_preview_from_bytes(
     bytes: &[u8],
     path: &Path,
-    syntect_theme: &str,
-    picker: &ratatui_image::picker::Picker,
+    _syntect_theme: &str,
 ) -> crate::preview::ViewBuffer {
     if bytes.is_empty() {
         return crate::preview::ViewBuffer::from_plain("[empty file]");
     }
 
-    // Render image files as halfblock art before the binary check intercepts them.
     let extension = path.extension().and_then(|e| e.to_str());
-    let is_image_ext = matches!(
-        extension,
-        Some("png") | Some("jpg") | Some("jpeg") | Some("gif") | Some("bmp") | Some("webp")
-    );
-    if is_image_ext {
-        return load_image_preview(bytes, path, picker);
-    }
 
     // Archive files: show file listing.
     let is_archive_ext = {
@@ -1645,7 +1700,8 @@ fn load_preview_from_bytes(
         return crate::preview::ViewBuffer::from_markdown(text.into_owned());
     }
 
-    if let Some(lines) = crate::highlight::highlight_text(&text, extension, syntect_theme) {
+    #[cfg(feature = "syntax-highlight")]
+    if let Some(lines) = crate::highlight::highlight_text(&text, extension, _syntect_theme) {
         return crate::preview::ViewBuffer::from_highlighted(lines);
     }
 
@@ -1662,6 +1718,7 @@ fn load_preview_from_bytes(
     crate::preview::ViewBuffer::from_plain(&truncated)
 }
 
+#[cfg(feature = "sftp")]
 /// Format raw host key bytes as a colon-separated MD5 fingerprint for display.
 fn format_md5_fingerprint(bytes: &[u8]) -> String {
     bytes
@@ -1671,11 +1728,13 @@ fn format_md5_fingerprint(bytes: &[u8]) -> String {
         .join(":")
 }
 
+#[cfg(feature = "sftp")]
 /// Format SHA256 fingerprint in OpenSSH format (SHA256:base64).
 fn format_sha256_fingerprint(bytes: &[u8]) -> String {
     format!("SHA256:{}", base64_encode(bytes))
 }
 
+#[cfg(feature = "sftp")]
 /// Get both MD5 and SHA256 fingerprints for a host key.
 fn get_host_key_fingerprints(
     session: &ssh2::Session,
@@ -1693,6 +1752,7 @@ fn get_host_key_fingerprints(
     })
 }
 
+#[cfg(feature = "sftp")]
 /// Encode bytes as standard base64 (RFC 4648, with padding).
 /// Avoids an external dependency for this single use-case.
 fn base64_encode(bytes: &[u8]) -> String {
@@ -1720,6 +1780,7 @@ fn base64_encode(bytes: &[u8]) -> String {
     out
 }
 
+#[cfg(feature = "sftp")]
 /// Append the server's host key to `~/.ssh/known_hosts` in OpenSSH format.
 ///
 /// Creates `~/.ssh/` (mode 0700 on Unix) and the file if they don't exist.
@@ -1781,6 +1842,7 @@ fn persist_host_key(host: &str, port: u16, session: &ssh2::Session) {
         .and_then(|mut f| f.write_all(entry.as_bytes()));
 }
 
+#[cfg(feature = "sftp")]
 /// Verify SSH host key against known_hosts.
 ///
 /// Returns a structured `HostCheckResult` instead of `Result<(), String>` so the
@@ -1838,6 +1900,7 @@ fn verify_host_key(
     }
 }
 
+#[cfg(feature = "sftp")]
 /// Parse SSH address in format user@host:port or user@host
 fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
     let (user, rest) = address
@@ -1855,11 +1918,13 @@ fn parse_ssh_address(address: &str) -> Result<(String, String, u16), String> {
     Ok((user.to_string(), host.to_string(), port))
 }
 
+#[cfg(feature = "sftp")]
 /// Detect if SSH Agent is available by checking SSH_AUTH_SOCK environment variable.
 fn has_ssh_agent() -> bool {
     std::env::var("SSH_AUTH_SOCK").is_ok()
 }
 
+#[cfg(feature = "sftp")]
 /// Connect to SSH host and create SftpBackend.
 ///
 /// When `trust_unknown_host` is true the connection proceeds even when the host
@@ -2020,6 +2085,7 @@ fn connect_sftp(
     SftpConnectOutcome::Connected(session_id, backend)
 }
 
+#[cfg(feature = "sftp")]
 /// Execute a file operation with SFTP backends (cross-backend support)
 fn execute_sftp_file_op(
     operation: &FileOperation,
@@ -2517,6 +2583,7 @@ fn run_extract_archive(
     }
 }
 
+#[cfg(feature = "terminal-panel")]
 /// Terminal worker: handles PTY spawn and raw I/O.
 ///
 /// Uses `conpty` on Windows and `portable-pty` on Unix via [`crate::pty::PtySession`].

@@ -7,6 +7,7 @@ use std::io::Write;
 // Helpers
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "image-preview")]
 fn png_1x1_bytes() -> Vec<u8> {
     // Generate a valid 1×1 RGBA PNG using the image crate.
     let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 0, 0, 255]));
@@ -36,6 +37,7 @@ fn make_zip_bytes(entries: &[(&str, &[u8])]) -> Vec<u8> {
 // Image tests
 // ---------------------------------------------------------------------------
 
+#[cfg(feature = "image-preview")]
 #[test]
 fn png_file_produces_image_buffer_not_hex_dump() {
     let picker = ratatui_image::picker::Picker::halfblocks();
@@ -45,6 +47,7 @@ fn png_file_produces_image_buffer_not_hex_dump() {
     assert!(!vb.is_hex_dump());
 }
 
+#[cfg(feature = "image-preview")]
 #[test]
 fn halfblocks_picker_always_succeeds() {
     let picker = ratatui_image::picker::Picker::halfblocks();

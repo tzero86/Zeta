@@ -6,46 +6,97 @@
 
 use std::io::{self, Read, Write};
 use std::path::Path;
-#[cfg(not(windows))]
-use std::sync::{Arc, Mutex};
 
 /// A running pseudo-terminal session.
 pub struct PtySession {
+    #[cfg(feature = "terminal-panel")]
     inner: PlatformPty,
+    #[cfg(not(feature = "terminal-panel"))]
+    _dummy: (),
 }
 
 impl PtySession {
     /// Spawn a shell inside a new PTY of the given size.
     pub fn spawn(cwd: &Path, cols: u16, rows: u16) -> io::Result<Self> {
-        let inner = PlatformPty::spawn(cwd, cols, rows)?;
-        Ok(Self { inner })
+        #[cfg(feature = "terminal-panel")]
+        {
+            let inner = PlatformPty::spawn(cwd, cols, rows)?;
+            Ok(Self { inner })
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            let _ = (cwd, cols, rows);
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "terminal-panel feature is disabled",
+            ))
+        }
     }
 
     /// Take the output reader (moves ownership — call once).
     pub fn take_reader(&mut self) -> io::Result<Box<dyn Read + Send>> {
-        self.inner.take_reader()
+        #[cfg(feature = "terminal-panel")]
+        {
+            self.inner.take_reader()
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "terminal-panel feature is disabled",
+            ))
+        }
     }
 
     /// Take the input writer (moves ownership — call once).
     pub fn take_writer(&mut self) -> io::Result<Box<dyn Write + Send>> {
-        self.inner.take_writer()
+        #[cfg(feature = "terminal-panel")]
+        {
+            self.inner.take_writer()
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "terminal-panel feature is disabled",
+            ))
+        }
     }
 
     /// Resize the PTY.
     pub fn resize(&mut self, cols: u16, rows: u16) -> io::Result<()> {
-        self.inner.resize(cols, rows)
+        #[cfg(feature = "terminal-panel")]
+        {
+            self.inner.resize(cols, rows)
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            let _ = (cols, rows);
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "terminal-panel feature is disabled",
+            ))
+        }
     }
 
     /// Return a closure that blocks until the child process exits.
     /// The closure is `Send` so it can run on a dedicated watcher thread.
     pub fn exit_waiter(&self) -> io::Result<Box<dyn FnOnce() + Send>> {
-        self.inner.exit_waiter()
+        #[cfg(feature = "terminal-panel")]
+        {
+            self.inner.exit_waiter()
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "terminal-panel feature is disabled",
+            ))
+        }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Windows implementation — conpty
-// ---------------------------------------------------------------------------
+#[cfg(feature = "terminal-panel")]
 #[cfg(windows)]
 struct PlatformPty {
     proc: conpty::Process,
@@ -53,6 +104,7 @@ struct PlatformPty {
     writer_taken: bool,
 }
 
+#[cfg(feature = "terminal-panel")]
 #[cfg(windows)]
 fn which_shell() -> String {
     // 1. pwsh.exe (PowerShell 7+) — modern, works well with ConPTY
@@ -65,6 +117,7 @@ fn which_shell() -> String {
     std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
 }
 
+#[cfg(feature = "terminal-panel")]
 #[cfg(windows)]
 impl PlatformPty {
     fn spawn(cwd: &Path, cols: u16, rows: u16) -> io::Result<Self> {
@@ -151,12 +204,14 @@ impl PlatformPty {
 // ---------------------------------------------------------------------------
 // Unix implementation — portable-pty
 // ---------------------------------------------------------------------------
+#[cfg(feature = "terminal-panel")]
 #[cfg(not(windows))]
 struct PlatformPty {
     master: Option<Box<dyn portable_pty::MasterPty + Send>>,
-    _child: Option<Arc<Mutex<Box<dyn portable_pty::Child + Send>>>>,
+    _child: Option<std::sync::Arc<std::sync::Mutex<Box<dyn portable_pty::Child + Send>>>>,
 }
 
+#[cfg(feature = "terminal-panel")]
 #[cfg(not(windows))]
 impl PlatformPty {
     fn spawn(cwd: &Path, cols: u16, rows: u16) -> io::Result<Self> {
@@ -188,7 +243,7 @@ impl PlatformPty {
 
         Ok(Self {
             master: Some(pair.master),
-            _child: Some(Arc::new(Mutex::new(child))),
+            _child: Some(std::sync::Arc::new(std::sync::Mutex::new(child))),
         })
     }
 

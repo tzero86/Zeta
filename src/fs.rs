@@ -101,6 +101,7 @@ pub enum FileSystemError {
 pub mod backend;
 pub mod local;
 pub mod scan_diff;
+#[cfg(feature = "sftp")]
 pub mod sftp;
 
 #[derive(Clone, Debug, Eq, PartialEq)]

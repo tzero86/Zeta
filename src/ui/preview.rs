@@ -356,6 +356,7 @@ pub fn render_preview_panel(frame: &mut Frame<'_>, area: Rect, args: RenderPrevi
     }
 }
 
+#[cfg(feature = "image-preview")]
 fn render_image_preview(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -401,6 +402,29 @@ fn render_image_preview(
     let image_widget =
         ratatui_image::StatefulImage::<ratatui_image::protocol::StatefulProtocol>::default();
     frame.render_stateful_widget(image_widget, image_area, &mut *proto);
+}
+
+#[cfg(not(feature = "image-preview"))]
+fn render_image_preview(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    view: &ViewBuffer,
+    palette: ThemePalette,
+) {
+    let Some(data) = &view.image_data else {
+        return;
+    };
+    let msg = format!(
+        " [ Image preview disabled — rebuild with --features image-preview ]  {} ({}×{}px) ",
+        data.filename, data.orig_width, data.orig_height
+    );
+    let x = area.x + (area.width.saturating_sub(msg.len() as u16)) / 2;
+    let y = area.y + area.height / 2;
+    if x < area.x + area.width && y < area.y + area.height {
+        frame
+            .buffer_mut()
+            .set_string(x, y, msg, Style::default().fg(palette.text_muted));
+    }
 }
 
 fn render_archive_preview(

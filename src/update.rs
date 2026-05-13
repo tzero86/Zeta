@@ -1,4 +1,4 @@
-use serde_json;
+#[cfg(feature = "auto-update")]
 use std::cmp::Ordering;
 use thiserror::Error;
 
@@ -35,6 +35,7 @@ pub enum UpdateError {
 
 /// Compare semantic versions: returns true if `available > current`.
 /// Splits by dots, compares numeric parts left-to-right.
+#[cfg(feature = "auto-update")]
 fn is_newer_version(current: &str, available: &str) -> bool {
     let current_parts: Vec<&str> = current.split('.').collect();
     let available_parts: Vec<&str> = available.split('.').collect();
@@ -61,6 +62,7 @@ fn is_newer_version(current: &str, available: &str) -> bool {
 /// Parse version from GitHub tag (e.g., "v0.5.0" -> "0.5.0", "0.5.0" -> "0.5.0").
 /// Enforces strict semantic version shape: MAJOR.MINOR[.PATCH[...]]
 /// Rejects malformed tags like "v1..0", "v.", "release-2026.04", or "foo1".
+#[cfg(feature = "auto-update")]
 fn parse_version_tag(tag: &str) -> Option<String> {
     let v = tag.trim_start_matches('v');
 
@@ -81,7 +83,15 @@ pub struct UpdateChecker;
 
 impl UpdateChecker {
     /// Query GitHub API for the latest release of Zeta.
+    /// When the `auto-update` feature is disabled this always returns `Ok(None)`.
+    #[cfg(not(feature = "auto-update"))]
+    pub fn check_latest_release(_current_version: &str) -> Result<Option<Release>, UpdateError> {
+        Ok(None)
+    }
+
+    /// Query GitHub API for the latest release of Zeta.
     /// Returns Release if found and newer, None if current, error otherwise.
+    #[cfg(feature = "auto-update")]
     pub fn check_latest_release(current_version: &str) -> Result<Option<Release>, UpdateError> {
         let url = "https://api.github.com/repos/tzero86/Zeta/releases/latest";
 
@@ -132,6 +142,7 @@ impl UpdateChecker {
 }
 
 #[cfg(test)]
+#[cfg(feature = "auto-update")]
 mod tests {
     use super::*;
 

@@ -4,12 +4,22 @@ version = "0.5.12"
 edition = "2021"
 
 [features]
-default = []
+default = ["syntax-highlight", "image-preview", "sftp", "terminal-panel", "auto-update"]
 # Enables extraction/preview of `.tar.bz2` and `.tar.xz` archives.
 # Off by default because bzip2-sys and lzma-sys are C builds that noticeably
 # slow `cargo install zeta`. Without this feature those formats produce a
 # clear runtime error; `.zip`, `.tar`, `.tar.gz` continue to work.
 archives-extra = ["dep:bzip2", "dep:xz2"]
+# Syntax highlighting for file previews (syntect + two-face). Heavy (~5-8 MB).
+syntax-highlight = ["dep:syntect", "dep:two-face"]
+# Image preview rendering (image + ratatui-image). Adds ~3-5 MB.
+image-preview = ["dep:image", "dep:ratatui-image"]
+# SSH/SFTP remote filesystem support (ssh2 + C libssh2 build).
+sftp = ["dep:ssh2"]
+# Embedded terminal panel (vt100 + portable-pty/conpty).
+terminal-panel = ["dep:vt100", "dep:conpty", "dep:portable-pty"]
+# Automatic update checks via GitHub API (ureq).
+auto-update = ["dep:ureq"]
 
 [dependencies]
 anyhow = "1.0"
@@ -26,10 +36,10 @@ ratatui = "0.30"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 trash = { version = "5", default-features = false, features = ["coinit_apartmentthreaded"] }
-syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes"] }
+syntect = { version = "5.3", default-features = false, features = ["default-fancy", "default-syntaxes"], optional = true }
 thiserror = "2.0"
-ssh2 = "0.9"
-two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] }
+ssh2 = { version = "0.9", optional = true }
+two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"], optional = true }
 tui-input = "0.14"
 unicode-width = "0.2"
 # basic-toml is a slim TOML parser/serializer (no `toml_edit`/`winnow`).
@@ -47,24 +57,24 @@ xz2 = { version = "0.1", optional = true }
 # Trim chrono: drop default `oldtime`, `wasmbind`, etc. We only need clock + std for
 # formatting/now(); this also avoids pulling iana-time-zone where unnecessary.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp"], optional = true }
 tempfile = "3"
-vt100 = "0.15"
+vt100 = { version = "0.15", optional = true }
 # Disable `image-defaults` (re-enables every image codec) and `chafa-dyn`
 # (runs pkg-config at build looking for libchafa). We provide our own
 # image features above; halfblocks/sixel/kitty work without them.
-ratatui-image = { version = "10", default-features = false, features = ["crossterm"] }
-ureq = { version = "3", default-features = false, features = ["rustls"] }
+ratatui-image = { version = "10", default-features = false, features = ["crossterm"], optional = true }
+ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
 tui-textarea-2 = { version = "0.11", default-features = false, features = ["crossterm_0_28"] }
 
 [target.'cfg(windows)'.dependencies]
-conpty = "0.7"
+conpty = { version = "0.7", optional = true }
 
 # portable-pty is only used by the Unix branch of src/pty.rs; on Windows we use
 # conpty directly. Scoping it to cfg(unix) avoids compiling portable-pty + nix +
 # serial2 + filedescriptor on Windows builds.
 [target.'cfg(unix)'.dependencies]
-portable-pty = "0.9"
+portable-pty = { version = "0.9", optional = true }
 
 [profile.release]
 opt-level = "z"     # optimise for binary size
