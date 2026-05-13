@@ -1475,49 +1475,48 @@ fn run_update_and_restart(target_tag: Option<&str>) -> Result<()> {
 
     #[cfg(not(windows))]
     {
-    // Non-Windows path: run cargo install synchronously then exec() into the new binary.
-    let status = std::process::Command::new("cargo")
-        .args(&cargo_args)
-        .status()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow::anyhow!(
-                    "`cargo` was not found in PATH.\n\
+        // Non-Windows path: run cargo install synchronously then exec() into the new binary.
+        let status = std::process::Command::new("cargo")
+            .args(&cargo_args)
+            .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    anyhow::anyhow!(
+                        "`cargo` was not found in PATH.\n\
                      Install Rust from https://rustup.rs then run:\n\
                      cargo install --git https://github.com/tzero86/Zeta"
-                )
-            } else {
-                anyhow::anyhow!("failed to run cargo install: {}", e)
-            }
-        })?;
+                    )
+                } else {
+                    anyhow::anyhow!("failed to run cargo install: {}", e)
+                }
+            })?;
 
-    if status.success() {
-        println!();
-        println!("✅ Update installed successfully!");
-        println!();
-
-        #[cfg(not(windows))]
-        {
-            println!("   Relaunching Zeta...");
+        if status.success() {
             println!();
-            relaunch_self()?;
-        }
-    } else {
-        eprintln!();
-        eprintln!(
-            "❌ Update failed (cargo install exited with {:?})",
-            status.code()
-        );
-        eprintln!();
-        eprintln!("   To install manually, run:");
-        eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
-        eprintln!();
-        return Err(anyhow::anyhow!(
-            "cargo install failed with exit code {:?}",
-            status.code()
-        ));
-    }
+            println!("✅ Update installed successfully!");
+            println!();
 
+            #[cfg(not(windows))]
+            {
+                println!("   Relaunching Zeta...");
+                println!();
+                relaunch_self()?;
+            }
+        } else {
+            eprintln!();
+            eprintln!(
+                "❌ Update failed (cargo install exited with {:?})",
+                status.code()
+            );
+            eprintln!();
+            eprintln!("   To install manually, run:");
+            eprintln!("   cargo install --git https://github.com/tzero86/Zeta --locked");
+            eprintln!();
+            return Err(anyhow::anyhow!(
+                "cargo install failed with exit code {:?}",
+                status.code()
+            ));
+        }
     }
 
     Ok(())
