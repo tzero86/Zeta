@@ -7,6 +7,7 @@ pub type HighlightToken = (Color, Modifier, Box<str>);
 pub type HighlightedLine = Vec<HighlightToken>;
 
 /// Files larger than this are returned as plain text (no highlight).
+#[cfg(feature = "syntax-highlight")]
 const MAX_HIGHLIGHT_BYTES: usize = 512 * 1024;
 
 /// Normalize preview text for terminal-safe rendering.

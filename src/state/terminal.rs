@@ -2,8 +2,8 @@ use crate::action::{Action, Command};
 use anyhow::Result;
 use std::fmt;
 use std::path::PathBuf;
+#[cfg(feature = "terminal-panel")]
 use std::sync::{Arc, Mutex};
-
 #[cfg(feature = "terminal-panel")]
 use vt100::Parser as VtParser;
 
@@ -27,6 +27,7 @@ impl TerminalParser {
         }
         #[cfg(not(feature = "terminal-panel"))]
         {
+            let _ = (rows, cols);
             Self { _dummy: () }
         }
     }
@@ -36,6 +37,10 @@ impl TerminalParser {
         if let Ok(mut p) = self.inner.lock() {
             *p = VtParser::new(rows, cols, 0);
         }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            let _ = (rows, cols);
+        }
     }
 
     pub fn set_size(&self, rows: u16, cols: u16) {
@@ -43,12 +48,20 @@ impl TerminalParser {
         if let Ok(mut p) = self.inner.lock() {
             p.set_size(rows, cols);
         }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            let _ = (rows, cols);
+        }
     }
 
     pub fn process(&self, bytes: &[u8]) {
         #[cfg(feature = "terminal-panel")]
         if let Ok(mut p) = self.inner.lock() {
             p.process(bytes);
+        }
+        #[cfg(not(feature = "terminal-panel"))]
+        {
+            let _ = bytes;
         }
     }
 

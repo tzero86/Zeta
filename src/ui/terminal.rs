@@ -2,7 +2,9 @@ use crate::config::ThemePalette;
 use crate::state::terminal::TerminalState;
 use crate::ui::styles::{panel_title_focused_style, panel_title_unfocused_style};
 use ratatui::layout::Rect;
-use ratatui::style::{Color, Modifier, Style};
+#[cfg(feature = "terminal-panel")]
+use ratatui::style::Color;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders};
 use ratatui::Frame;
@@ -10,7 +12,7 @@ use ratatui::Frame;
 pub fn render_terminal(
     frame: &mut Frame<'_>,
     area: Rect,
-    terminal: &TerminalState,
+    _terminal: &TerminalState,
     palette: ThemePalette,
     focused: bool,
 ) {
@@ -41,7 +43,7 @@ pub fn render_terminal(
     frame.render_widget(block, area);
 
     #[cfg(feature = "terminal-panel")]
-    render_vt100_content(frame, inner, terminal, palette, focused);
+    render_vt100_content(frame, inner, _terminal, palette, focused);
 
     #[cfg(not(feature = "terminal-panel"))]
     render_disabled_placeholder(frame, inner, palette);
