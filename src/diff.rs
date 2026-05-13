@@ -114,9 +114,12 @@ mod tests {
     use super::*;
 
     fn file(name: &str, size: u64) -> EntryInfo {
+        let name = name.to_string();
+        let path = PathBuf::from(&name);
         EntryInfo {
-            name: name.to_string(),
-            path: PathBuf::from(name),
+            lower_name: name.to_lowercase(),
+            name,
+            path,
             kind: EntryKind::File,
             size_bytes: Some(size),
             modified: None,
@@ -125,9 +128,12 @@ mod tests {
     }
 
     fn dir(name: &str) -> EntryInfo {
+        let name = name.to_string();
+        let path = PathBuf::from(&name);
         EntryInfo {
-            name: name.to_string(),
-            path: PathBuf::from(name),
+            lower_name: name.to_lowercase(),
+            name,
+            path,
             kind: EntryKind::Directory,
             size_bytes: None,
             modified: None,

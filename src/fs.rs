@@ -9,6 +9,9 @@ use crate::action::CollisionPolicy;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntryInfo {
     pub name: String,
+    /// Lower-case version of `name`, cached at construction to avoid repeated
+    /// `to_lowercase()` allocations during sorting and filtering.
+    pub lower_name: String,
     pub path: PathBuf,
     pub kind: EntryKind,
     pub size_bytes: Option<u64>,
@@ -164,6 +167,7 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
             None
         };
         results.push(EntryInfo {
+            lower_name: name.to_lowercase(),
             name,
             path: entry_path,
             kind,
@@ -192,7 +196,7 @@ pub fn scan_directory(path: &Path) -> Result<Vec<EntryInfo>, FileSystemError> {
     results.sort_by(|left, right| {
         left.kind
             .cmp(&right.kind)
-            .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            .then_with(|| left.lower_name.cmp(&right.lower_name))
     });
 
     Ok(results)

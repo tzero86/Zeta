@@ -70,9 +70,12 @@ mod tests {
     use std::time::{Duration, SystemTime};
 
     fn entry(name: &str, kind: EntryKind, size: u64, mtime_offset_secs: u64) -> EntryInfo {
+        let name = name.to_string();
+        let path = PathBuf::from(&name);
         EntryInfo {
-            name: name.to_string(),
-            path: PathBuf::from(name),
+            lower_name: name.to_lowercase(),
+            name,
+            path,
             kind,
             size_bytes: Some(size),
             modified: Some(SystemTime::UNIX_EPOCH + Duration::from_secs(mtime_offset_secs)),

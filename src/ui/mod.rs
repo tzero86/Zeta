@@ -25,6 +25,68 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use std::borrow::Cow;
+use std::sync::LazyLock;
+
+/// Pre-computed repeats of common chars to avoid per-frame allocations.
+/// Covers lengths 0–128; larger widths fall back to `String::repeat`.
+static REPEAT_CACHE: LazyLock<RepeatCache> = LazyLock::new(RepeatCache::new);
+
+struct RepeatCache {
+    space: Vec<&'static str>,
+    bar: Vec<&'static str>,
+    shade: Vec<&'static str>,
+}
+
+impl RepeatCache {
+    fn new() -> Self {
+        const MAX: usize = 128;
+        Self {
+            space: (0..=MAX)
+                .map(|n| {
+                    let s: &'static str = Box::leak(" ".repeat(n).into_boxed_str());
+                    s
+                })
+                .collect(),
+            bar: (0..=MAX)
+                .map(|n| {
+                    let s: &'static str = Box::leak("─".repeat(n).into_boxed_str());
+                    s
+                })
+                .collect(),
+            shade: (0..=MAX)
+                .map(|n| {
+                    let s: &'static str = Box::leak("░".repeat(n).into_boxed_str());
+                    s
+                })
+                .collect(),
+        }
+    }
+
+    fn space(&self, n: usize) -> Cow<'static, str> {
+        self.space
+            .get(n)
+            .copied()
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(" ".repeat(n)))
+    }
+
+    fn bar(&self, n: usize) -> Cow<'static, str> {
+        self.bar
+            .get(n)
+            .copied()
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned("─".repeat(n)))
+    }
+
+    fn shade(&self, n: usize) -> Cow<'static, str> {
+        self.shade
+            .get(n)
+            .copied()
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned("░".repeat(n)))
+    }
+}
 
 use crate::pane::PaneId;
 use crate::state::{AppState, MessageKind, PaneLayout};
@@ -447,7 +509,7 @@ fn render_status_bar(
     palette: crate::config::ThemePalette,
 ) {
     let zones = state.status_zones();
-    let mut spans = Vec::new();
+    let mut spans = Vec::with_capacity(6);
 
     if let Some(ref progress) = zones.progress {
         let op_text = format!(
@@ -461,8 +523,14 @@ fn render_status_bar(
             0
         };
         let empty = bar_width.saturating_sub(filled);
+        let cache = &*REPEAT_CACHE;
+        let mut bar = String::with_capacity(op_text.len() + filled + empty + 1);
+        bar.push_str(&op_text);
+        bar.push_str(&cache.bar(filled));
+        bar.push_str(&cache.shade(empty));
+        bar.push(' ');
         spans.push(Span::styled(
-            format!("{}{}{} ", op_text, "─".repeat(filled), "░".repeat(empty)),
+            bar,
             Style::default().fg(palette.status_fg).bg(palette.status_bg),
         ));
     } else {
@@ -774,7 +842,7 @@ fn render_key_hints(
     // Fill remainder with status background so the bar doesn't look torn.
     if used_width < area.width {
         spans.push(Span::styled(
-            " ".repeat((area.width - used_width) as usize),
+            REPEAT_CACHE.space((area.width - used_width) as usize),
             sep_style,
         ));
     }

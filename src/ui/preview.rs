@@ -3,6 +3,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
+use std::borrow::Cow;
 use unicode_width::UnicodeWidthChar;
 
 use crate::config::ThemePalette;
@@ -93,11 +94,11 @@ pub fn wrap_preview_line(
     rows
 }
 
-pub fn preview_gutter_label(line_number: usize, is_continuation: bool) -> String {
+pub fn preview_gutter_label(line_number: usize, is_continuation: bool) -> Cow<'static, str> {
     if is_continuation {
-        " ".repeat(PREVIEW_GUTTER_WIDTH as usize)
+        crate::ui::REPEAT_CACHE.space(PREVIEW_GUTTER_WIDTH as usize)
     } else {
-        format!("{:>3} ", line_number)
+        Cow::Owned(format!("{:>3} ", line_number))
     }
 }
 

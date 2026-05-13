@@ -900,6 +900,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                         None
                                     };
                                     entries.push(EntryInfo {
+                                        lower_name: first.to_lowercase(),
                                         name: first.clone(),
                                         path: archive_path.join(first),
                                         kind,
@@ -913,7 +914,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                             entries.sort_by(|l, r| {
                                 l.kind
                                     .cmp(&r.kind)
-                                    .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
+                                    .then_with(|| l.lower_name.cmp(&r.lower_name))
                             });
                             let _ = result_tx.send(JobResult::ArchiveListed {
                                 workspace_id: req.workspace_id,
@@ -1005,6 +1006,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                                     None
                                 };
                                 entries.push(EntryInfo {
+                                    lower_name: first.to_lowercase(),
                                     name: first.clone(),
                                     path: archive_path.join(first),
                                     kind,
@@ -1019,7 +1021,7 @@ pub fn spawn_workers() -> (WorkerChannels, Receiver<JobResult>, Receiver<JobResu
                     entries.sort_by(|l, r| {
                         l.kind
                             .cmp(&r.kind)
-                            .then_with(|| l.name.to_lowercase().cmp(&r.name.to_lowercase()))
+                            .then_with(|| l.lower_name.cmp(&r.lower_name))
                     });
                     let _ = result_tx.send(JobResult::ArchiveListed {
                         workspace_id: req.workspace_id,

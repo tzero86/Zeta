@@ -93,6 +93,7 @@ impl FsBackend for LocalBackend {
             None
         };
         Ok(EntryInfo {
+            lower_name: name.to_lowercase(),
             name,
             path: path.to_path_buf(),
             kind,
