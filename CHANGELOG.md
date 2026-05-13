@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-12
+
+### Added
+- **Feature-gating**: Five heavy dependencies are now gated behind Cargo features: `syntax-highlight`, `image-preview`, `sftp`, `terminal-panel`, and `auto-update`. The default build is significantly lighter (from ~387 to ~297 transitive crates), making `cargo install zeta` faster. Users can opt into specific features with `cargo install zeta --features feature-name` or all with `--all-features`.
+- **Site/makeover**: Project website redesigned with animated background, accessibility improvements, and updated keyboard shortcuts reference.
+
+### Performance
+- **Phase 2 render optimizations**:
+  - `EntryInfo` now caches `lower_name` at construction time, eliminating repeated `to_lowercase()` allocations during sorting and filtering.
+  - `rebuild_cache()` reuses the `filtered_indices` vector via `clear()` + `extend()` instead of allocating a new `Vec` on every keystroke.
+  - `selected_path()` returns `Option<&Path>` instead of `Option<PathBuf>`, so callers clone only when needed.
+  - Added `REPEAT_CACHE` static lookup for frequently repeated UI characters (`" "`, `"─"`, `"░"`) up to length 128. Spacers, progress bars, and preview gutters now use cached slices instead of calling `.repeat()` every frame.
+  - `REPEAT_CACHE` methods return `Cow<'static, str>` so cache hits pass borrowed strings directly to ratatui without any per-frame heap allocation.
+
 ## [0.4.6] - 2026-04-29
 
 ### Added
