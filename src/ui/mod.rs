@@ -25,6 +25,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 /// Pre-computed repeats of common chars to avoid per-frame allocations.
@@ -62,28 +63,28 @@ impl RepeatCache {
         }
     }
 
-    fn space(&self, n: usize) -> String {
+    fn space(&self, n: usize) -> Cow<'static, str> {
         self.space
             .get(n)
             .copied()
-            .map(String::from)
-            .unwrap_or_else(|| " ".repeat(n))
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned(" ".repeat(n)))
     }
 
-    fn bar(&self, n: usize) -> String {
+    fn bar(&self, n: usize) -> Cow<'static, str> {
         self.bar
             .get(n)
             .copied()
-            .map(String::from)
-            .unwrap_or_else(|| "─".repeat(n))
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned("─".repeat(n)))
     }
 
-    fn shade(&self, n: usize) -> String {
+    fn shade(&self, n: usize) -> Cow<'static, str> {
         self.shade
             .get(n)
             .copied()
-            .map(String::from)
-            .unwrap_or_else(|| "░".repeat(n))
+            .map(Cow::Borrowed)
+            .unwrap_or_else(|| Cow::Owned("░".repeat(n)))
     }
 }
 
