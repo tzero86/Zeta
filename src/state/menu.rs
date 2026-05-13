@@ -233,32 +233,45 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     action: Action::SetTheme(ThemePreset::Dracula),
                 },
             ],
-            MenuId::Help => vec![
-                MenuItem {
-                    label: "Help",
-                    shortcut: "F1",
-                    mnemonic: 'h',
-                    action: Action::OpenHelpDialog,
-                },
-                MenuItem {
-                    label: "Check for Updates",
-                    shortcut: "",
-                    mnemonic: 'c',
-                    action: Action::CheckForUpdates,
-                },
-                MenuItem {
-                    label: "Apply Update",
-                    shortcut: "",
-                    mnemonic: 'y',
-                    action: Action::ApplyUpdate,
-                },
-                MenuItem {
-                    label: "About Zeta",
-                    shortcut: "Enter",
-                    mnemonic: 'a',
-                    action: Action::OpenAboutDialog,
-                },
-            ],
+            MenuId::Help => {
+                #[cfg_attr(not(feature = "auto-update"), allow(unused_mut))]
+                let mut items = vec![
+                    MenuItem {
+                        label: "Help",
+                        shortcut: "F1",
+                        mnemonic: 'h',
+                        action: Action::OpenHelpDialog,
+                    },
+                    MenuItem {
+                        label: "About Zeta",
+                        shortcut: "Enter",
+                        mnemonic: 'a',
+                        action: Action::OpenAboutDialog,
+                    },
+                ];
+                #[cfg(feature = "auto-update")]
+                {
+                    items.insert(
+                        1,
+                        MenuItem {
+                            label: "Check for Updates",
+                            shortcut: "",
+                            mnemonic: 'c',
+                            action: Action::CheckForUpdates,
+                        },
+                    );
+                    items.insert(
+                        2,
+                        MenuItem {
+                            label: "Apply Update",
+                            shortcut: "",
+                            mnemonic: 'y',
+                            action: Action::ApplyUpdate,
+                        },
+                    );
+                }
+                items
+            }
             _ => vec![],
         }
     } else {
@@ -499,32 +512,45 @@ pub fn menu_items_for(menu: MenuId, ctx: MenuContext) -> Vec<MenuItem> {
                     action: Action::SetTheme(ThemePreset::Dracula),
                 },
             ],
-            MenuId::Help => vec![
-                MenuItem {
-                    label: "Help",
-                    shortcut: "F1",
-                    mnemonic: 'h',
-                    action: Action::OpenHelpDialog,
-                },
-                MenuItem {
-                    label: "Check for Updates",
-                    shortcut: "",
-                    mnemonic: 'c',
-                    action: Action::CheckForUpdates,
-                },
-                MenuItem {
-                    label: "Apply Update",
-                    shortcut: "",
-                    mnemonic: 'y',
-                    action: Action::ApplyUpdate,
-                },
-                MenuItem {
-                    label: "About Zeta",
-                    shortcut: "Enter",
-                    mnemonic: 'a',
-                    action: Action::OpenAboutDialog,
-                },
-            ],
+            MenuId::Help => {
+                #[cfg_attr(not(feature = "auto-update"), allow(unused_mut))]
+                let mut items = vec![
+                    MenuItem {
+                        label: "Help",
+                        shortcut: "F1",
+                        mnemonic: 'h',
+                        action: Action::OpenHelpDialog,
+                    },
+                    MenuItem {
+                        label: "About Zeta",
+                        shortcut: "Enter",
+                        mnemonic: 'a',
+                        action: Action::OpenAboutDialog,
+                    },
+                ];
+                #[cfg(feature = "auto-update")]
+                {
+                    items.insert(
+                        1,
+                        MenuItem {
+                            label: "Check for Updates",
+                            shortcut: "",
+                            mnemonic: 'c',
+                            action: Action::CheckForUpdates,
+                        },
+                    );
+                    items.insert(
+                        2,
+                        MenuItem {
+                            label: "Apply Update",
+                            shortcut: "",
+                            mnemonic: 'y',
+                            action: Action::ApplyUpdate,
+                        },
+                    );
+                }
+                items
+            }
             _ => vec![],
         }
     }

@@ -17,7 +17,7 @@ image-preview = ["dep:image", "dep:ratatui-image"]
 # SSH/SFTP remote filesystem support (ssh2 + C libssh2 build).
 sftp = ["dep:ssh2"]
 # Embedded terminal panel (vt100 + portable-pty/conpty).
-terminal-panel = ["dep:vt100"]
+terminal-panel = ["dep:vt100", "dep:conpty", "dep:portable-pty"]
 # Automatic update checks via GitHub API (ureq).
 auto-update = ["dep:ureq"]
 
@@ -68,13 +68,13 @@ ureq = { version = "3", default-features = false, features = ["rustls"], optiona
 tui-textarea-2 = { version = "0.11", default-features = false, features = ["crossterm_0_28"] }
 
 [target.'cfg(windows)'.dependencies]
-conpty = "0.7"
+conpty = { version = "0.7", optional = true }
 
 # portable-pty is only used by the Unix branch of src/pty.rs; on Windows we use
 # conpty directly. Scoping it to cfg(unix) avoids compiling portable-pty + nix +
 # serial2 + filedescriptor on Windows builds.
 [target.'cfg(unix)'.dependencies]
-portable-pty = "0.9"
+portable-pty = { version = "0.9", optional = true }
 
 [profile.release]
 opt-level = "z"     # optimise for binary size

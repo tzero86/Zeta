@@ -572,6 +572,12 @@ impl App {
                 .try_send(UpdateCheckRequest::CheckLatestRelease { current_version });
             return Ok(());
         }
+        #[cfg(not(feature = "auto-update"))]
+        if action == Action::CheckForUpdates {
+            self.state
+                .set_status_error("Update checks are disabled in this build");
+            return Ok(());
+        }
 
         let action_name = format!("{:?}", action);
         for command in self.state.apply(action)? {
